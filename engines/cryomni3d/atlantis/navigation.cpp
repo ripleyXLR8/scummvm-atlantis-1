@@ -426,7 +426,15 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 					pollEvents();
 					g_system->delayMillis(10);
 				}
-				clicked = false;
+				// The original's warp loop returns the character
+				// (0x0041c71e) after this frame's timer scan (0x0041c369);
+				// the place loop runs the conversation (0x00423c1c) and
+				// enters the loop again, whose first frame reads the clocks
+				// (0x0041c086).  Going on with this frame ran the timers on
+				// the clocks read before the conversation: CHAPI024 /280's
+				// Time1=0 (Carven's betrayal) was seen as the old count and
+				// the guard struck at once.  Start a new frame.
+				continue;
 			}
 		}
 
