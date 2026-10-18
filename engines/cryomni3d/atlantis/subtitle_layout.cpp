@@ -66,8 +66,9 @@ int subtitleLineY(uint i, uint n) {
 
 void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::String> &lines) {
 	lines.clear();
-	// The buffer at 0x00603d68 (atlantis-cd-en-688128): the byte after ']'
-	// (a space), the text, then NUL and CR.
+	// The buffer at 0x00603d68 (atlantis-cd-en-688128; atlantis-cd-fr-688640
+	// FUN_0042eab4, the same code, 0x00603ac0, emulated equal on its 2540
+	// French lines): the byte after ']' (a space), the text, then NUL and CR.
 	const Common::String b = " " + text;
 	const int len = (int)b.size();
 	auto at = [&](int i) -> int {

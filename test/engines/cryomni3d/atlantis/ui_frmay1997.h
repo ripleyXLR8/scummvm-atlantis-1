@@ -10,25 +10,77 @@
 //   M2 LOADMUSIK only with a current music volume of 5 or more
 //      (FUN_00429184 @ 0x00429c5e), and how soon a StartMusik reaches it
 //   B  the per-track copy kept for kEnhMinorBugFixes (the other builds' rule)
+//   A1 the subtitles: FONTS.BIN glyph = byte (FUN_0042eab4 / FUN_0042ec80)
+//      against the emulated golden on the 2540 French lines and its
+//      rendered PNG; the DOS code page bytes decoded as code page 850,
+//      never Windows-1252, by any other path
+//   E  the game-over voices of the May scripts (voice at entry, as
+//      en-688128), the player row `NOUVEAU JOUEUR` drawn as stored, the
+//      archives (FONTS.BIN the English one, WAV\ATA0897D.APC present).
 //
 // Port code exercised directly: conMusicApply / conLoadMusikVolumeOk
-// (con_eval.cpp), AtlantisMusicFade::tick (music_fade.h), atlantisExeBuild
-// (exe_build.h).
+// (con_eval.cpp), AtlantisMusicFade::tick (music_fade.h),
+// splitSubtitleBitmap / subtitleLineYBitmap / drawSubtitleBitmapRow
+// (subtitle_layout.cpp), atlantisExeBuild (exe_build.h), fontMinBlits
+// (menu_layout.cpp), ConScript, conGameOverNarrator, gameOverVoiceName.
+// Real files: `frmay1997` in atlantis_test.cfg (ATLANTIS.EXE and the four
+// May BIGCD*.BIG); the golden video_subtitles_fr688640.txt / .png; skipped
+// when absent.
 
 #include "atlantis_test_helper.h"
+#include "video_subtitles_en1997.h"
+#include "video_test_big.h"
 #include "../../../system/null_osystem.h"
 
+#include "common/algorithm.h"
 #include "common/array.h"
+#include "common/hashmap.h"
+#include "common/hash-str.h"
+#include "common/md5.h"
+#include "common/memstream.h"
+#include "common/ustr.h"
+#include "graphics/surface.h"
+#include "image/png.h"
 
 #include "cryomni3d/atlantis/con_eval.h"
+#include "cryomni3d/atlantis/con_script.h"
 #include "cryomni3d/atlantis/exe_build.h"
+#include "cryomni3d/atlantis/gameover.h"
+#include "cryomni3d/atlantis/menu_layout.h"
 #include "cryomni3d/atlantis/music_fade.h"
+#include "cryomni3d/atlantis/subtitle_layout.h"
 
 namespace UiFrMay1997 {
 
 using namespace CryOmni3D::Atlantis;
 
 inline const AtlantisExeBuild &may() { return atlantisExeBuild(688640); }
+
+inline Common::String dir() { return AtlantisTest::configValue("frmay1997"); }
+
+// The dialog texts of the May archives' CON files in name order, as the
+// harness takes them (tools/emu/video_subtitles_fr688640.py
+// con_dialog_texts).
+inline void dialogTexts(const VideoTest::Big &big, Common::Array<Common::String> &texts) {
+	Common::Array<Common::String> cons = big.names(".CON");
+	Common::sort(cons.begin(), cons.end());
+	for (uint f = 0; f < cons.size(); f++) {
+		if (!cons[f].hasPrefix("SCENAR\\"))
+			continue;
+		uint32 size = 0;
+		byte *b = big.get(cons[f], size);
+		if (!b)
+			continue;
+		VideoSubEn1997::conDialogTexts(b, size, texts);
+		delete[] b;
+	}
+}
+
+// The golden's "# scan of every dialog line" entry `key`, or -1.
+inline int scanField(const Common::String &scan, const char *key) {
+	const size_t p = scan.find(Common::String::format("'%s': ", key));
+	return p == Common::String::npos ? -1 : atoi(scan.c_str() + p + strlen(key) + 4);
+}
 
 } // End of namespace UiFrMay1997
 
@@ -150,6 +202,263 @@ public:
 		if (copies.size() == 1)
 			TS_ASSERT_EQUALS(copies[0], 6);
 		TS_ASSERT(conLoadMusikVolumeOk(0, 0));
+	}
+
+	// A1: the emulated breaker FUN_0042eab4 on every dialog line of the May
+	// CON files (the golden's scan): the port's splitSubtitleBitmap gives
+	// the same statistics, and the dialog bytes >= 0x80 are the golden's 11
+	// DOS code page bytes with its counts.
+	void test_subtitle_scan_vs_golden() {
+		using namespace CryOmni3D::Atlantis;
+		if (!AtlantisTest::haveData() || UiFrMay1997::dir().empty()) { TS_WARN("golden / frmay1997 not configured; skipped"); return; }
+		Common::Array<Common::String> lines;
+		TS_ASSERT(AtlantisTest::loadGoldenLines("video_subtitles_fr688640.txt", lines));
+		Common::String scan;
+		Common::HashMap<int, int> wantHigh;
+		for (uint i = 0; i < lines.size(); i++) {
+			if (lines[i].hasPrefix("# scan of every dialog line"))
+				scan = lines[i];
+			// "#   0x82:  1697  é / é  (as Windows-1252: '‚')"
+			if (lines[i].hasPrefix("#   0x") && lines[i].contains("Windows-1252"))
+				wantHigh[(int)strtol(lines[i].c_str() + 6, nullptr, 16)] = atoi(strchr(lines[i].c_str(), ':') + 1);
+		}
+		TS_ASSERT(!scan.empty());
+		TS_ASSERT_EQUALS(wantHigh.size(), 11u);
+		VideoTest::Big big(UiFrMay1997::dir());
+		TS_ASSERT(!big.empty());
+		Common::Array<Common::String> texts;
+		UiFrMay1997::dialogTexts(big, texts);
+		int maxLen = 0, over79 = 0, over84 = 0, withHigh = 0, hist[9] = { 0 };
+		Common::HashMap<int, int> high;
+		for (uint t = 0; t < texts.size(); t++) {
+			Common::Array<Common::String> rows;
+			splitSubtitleBitmap(texts[t], rows);
+			if (rows.size() < ARRAYSIZE(hist))
+				hist[rows.size()]++;
+			for (uint r = 0; r < rows.size(); r++) {
+				maxLen = MAX(maxLen, (int)rows[r].size());
+				over79 += rows[r].size() > 79;
+				over84 += rows[r].size() > 84;
+			}
+			bool any = false;
+			for (uint i = 0; i < texts[t].size(); i++) {
+				const byte c = (byte)texts[t][i];
+				if (c >= 0x80) {
+					high[c]++;
+					any = true;
+				}
+			}
+			withHigh += any;
+		}
+		TS_ASSERT_EQUALS((int)texts.size(), UiFrMay1997::scanField(scan, "lines"));
+		TS_ASSERT_EQUALS((int)texts.size(), 2540);
+		TS_ASSERT_EQUALS(maxLen, UiFrMay1997::scanField(scan, "max_row_len"));
+		TS_ASSERT_EQUALS(over79, UiFrMay1997::scanField(scan, "rows_over_79"));
+		TS_ASSERT_EQUALS(over84, UiFrMay1997::scanField(scan, "rows_over_84"));
+		TS_ASSERT_EQUALS(withHigh, UiFrMay1997::scanField(scan, "lines_with_high_bytes"));
+		// rows_hist: {1: 1891, 2: 555, 3: 73, 4: 16, 5: 4, 6: 1}
+		static const int kHist[][2] = { { 1, 1891 }, { 2, 555 }, { 3, 73 }, { 4, 16 }, { 5, 4 }, { 6, 1 } };
+		TS_ASSERT(scan.contains("'rows_hist': {1: 1891, 2: 555, 3: 73, 4: 16, 5: 4, 6: 1}"));
+		for (uint i = 0; i < ARRAYSIZE(kHist); i++)
+			TSM_ASSERT_EQUALS(kHist[i][0], hist[kHist[i][0]], kHist[i][1]);
+		TS_ASSERT_EQUALS(high.size(), wantHigh.size());
+		for (Common::HashMap<int, int>::const_iterator it = wantHigh.begin(); it != wantHigh.end(); ++it)
+			TSM_ASSERT_EQUALS(it->_key, high.getValOrDefault(it->_key, -1), it->_value);
+	}
+
+	// A1: the 11 DOS code page bytes of the texts are letters of code page
+	// 850 (the golden names each: "0x82: 1697  é / é"); the build's
+	// conCodePage decodes them so, where Windows-1252 gives '‚' ... (the
+	// golden's "as Windows-1252").  drawSubtitleRows's GDI path decodes
+	// with conCodePage, so no path decodes them as Windows-1252.
+	void test_code_page_850() {
+		using namespace CryOmni3D::Atlantis;
+		const AtlantisExeBuild &b = UiFrMay1997::may();
+		TS_ASSERT_EQUALS(b.conCodePage, Common::kDos850);
+		TS_ASSERT(b.bitmapSubtitles);
+		// "Créon", "île", "à", "ça" as the May CON files hold them
+		const Common::U32String s(Common::String("Cr\x82on \x8cle \x85 \x87" "a"), b.conCodePage);
+		TS_ASSERT_EQUALS(s.encode(Common::kUtf8), Common::String("Cr\xc3\xa9on \xc3\xaele \xc3\xa0 \xc3\xa7" "a"));
+		const Common::U32String w(Common::String("Cr\x82on"), Common::kWindows1252);
+		TS_ASSERT_DIFFERS(w.encode(Common::kUtf8), Common::String("Cr\xc3\xa9on"));
+		if (!AtlantisTest::haveData()) { TS_WARN("golden not configured; the golden's letters skipped"); return; }
+		Common::Array<Common::String> lines;
+		TS_ASSERT(AtlantisTest::loadGoldenLines("video_subtitles_fr688640.txt", lines));
+		int checked = 0;
+		for (uint i = 0; i < lines.size(); i++) {
+			if (!lines[i].hasPrefix("#   0x") || !lines[i].contains("Windows-1252"))
+				continue;
+			const byte c = (byte)strtol(lines[i].c_str() + 6, nullptr, 16);
+			// the letter: after the count, up to " / "
+			const char *p = strchr(lines[i].c_str(), ':') + 1;
+			while (*p == ' ')
+				p++;
+			while (*p >= '0' && *p <= '9')
+				p++;
+			while (*p == ' ')
+				p++;
+			const char *slash = strstr(p, " / ");
+			TS_ASSERT(slash);
+			if (!slash)
+				continue;
+			const Common::String letter(p, slash - p);
+			const char raw[2] = { (char)c, 0 };
+			TSM_ASSERT_EQUALS(c, Common::U32String(Common::String(raw), b.conCodePage).encode(Common::kUtf8), letter);
+			TSM_ASSERT_DIFFERS(c, Common::U32String(Common::String(raw), Common::kWindows1252).encode(Common::kUtf8), letter);
+			checked++;
+		}
+		TS_ASSERT_EQUALS(checked, 11);
+	}
+
+	// A1: the golden PNG: the first two-row line with four accented letters
+	// (SCENAR\CHAPI002.CON) drawn by the original FUN_0042ec80 with the May
+	// FONTS.BIN on a 640 x 480 RGB565 screen of 0x8410, rows 400..479; the
+	// port draws the same rows by byte: every pixel equal.
+	void test_pixels_vs_golden_png() {
+		using namespace CryOmni3D::Atlantis;
+		if (!AtlantisTest::haveData() || UiFrMay1997::dir().empty()) { TS_WARN("golden / frmay1997 not configured; skipped"); return; }
+		VideoTest::Big big(UiFrMay1997::dir());
+		uint32 fontSize = 0;
+		byte *raw = big.get("DIALOG\\FONTS.BIN", fontSize);
+		TS_ASSERT(raw && fontSize == 16384);
+		if (!raw)
+			return;
+		Common::Array<byte> font(raw, fontSize);
+		delete[] raw;
+		Common::Array<Common::String> texts;
+		UiFrMay1997::dialogTexts(big, texts);
+		Common::String sample;
+		for (uint t = 0; t < texts.size() && sample.empty(); t++) {
+			int high = 0;
+			for (uint i = 0; i < texts[t].size(); i++)
+				high += (byte)texts[t][i] >= 0x80;
+			if (high >= 4 && texts[t].size() > 80)
+				sample = texts[t];
+		}
+		TS_ASSERT(sample.hasPrefix("Non. Elle fait la tourn\x82" "e de l'\x8cle."));
+		Common::Array<uint16> screen(640 * 480, 0x8410);
+		Common::Array<Common::String> rows;
+		splitSubtitleBitmap(sample, rows);
+		TS_ASSERT_EQUALS(rows.size(), 2u);
+		for (uint i = 0; i < rows.size(); i++) {
+			const int y = subtitleLineYBitmap(i, rows.size());
+			drawSubtitleBitmapRow((byte *)screen.data(), 2, 640, 480, font.data(), fontSize,
+			                      kSubtitleX + 1, y + 1, rows[i], 0);
+			drawSubtitleBitmapRow((byte *)screen.data(), 2, 640, 480, font.data(), fontSize,
+			                      kSubtitleX, y, rows[i], 0xffff);
+		}
+		Common::File f;
+		TS_ASSERT(f.open(Common::FSNode(Common::Path(AtlantisTest::goldenDir(), '/')
+		                                .appendComponent("video_subtitles_fr688640.png"))));
+		Image::PNGDecoder png;
+		TS_ASSERT(png.loadStream(f));
+		const Graphics::Surface *s = png.getSurface();
+		TS_ASSERT(s && s->w == 640 && s->h == 80);
+		if (!s || s->w != 640 || s->h != 80)
+			return;
+		int diffs = 0, white = 0;
+		for (int y = 0; y < 80; y++) {
+			for (int x = 0; x < 640; x++) {
+				const uint16 v = screen[(400 + y) * 640 + x];
+				const uint8 r = (v >> 11) << 3, g = ((v >> 5) & 0x3f) << 2, bl = (v & 0x1f) << 3;
+				uint8 pr, pg, pb;
+				s->format.colorToRGB(s->getPixel(x, y), pr, pg, pb);
+				diffs += (r != pr || g != pg || bl != pb);
+				white += v == 0xffff;
+			}
+		}
+		TS_ASSERT_EQUALS(diffs, 0);
+		TS_ASSERT(white > 100);
+	}
+
+	// E: the game overs of the May scripts with en-688128's rule (voice at
+	// entry, the narrator line's letter, no alternative narration): 144,
+	// all voiced (experiment 2026-10-18-04, tools/compare/gameover_narrations.py).
+	void test_game_over_voices_may_scripts() {
+		using namespace CryOmni3D::Atlantis;
+		if (UiFrMay1997::dir().empty()) { TS_WARN("frmay1997 not configured; skipped"); return; }
+		TS_ASSERT(UiFrMay1997::may().gameOverVoiceAtEntry && !UiFrMay1997::may().altGameOverNarration);
+		VideoTest::Big big(UiFrMay1997::dir());
+		Common::HashMap<Common::String, bool> apc;
+		const Common::Array<Common::String> apcs = big.names(".APC");
+		for (uint i = 0; i < apcs.size(); i++)
+			apc[apcs[i]] = true;
+		int overs = 0, voiced = 0;
+		const Common::Array<Common::String> cons = big.names(".CON");
+		for (uint f = 0; f < cons.size(); f++) {
+			uint32 size = 0;
+			byte *b = big.get(cons[f], size);
+			if (!b)
+				continue;
+			ConScript script;
+			script.parse((const char *)b, size);
+			delete[] b;
+			for (const ConSection &sec : script.sections()) {
+				uint lineIdx = 0;
+				for (uint k = 0; k < sec.items.size(); k++) {
+					const ConSectionItem &it = sec.items[k];
+					if (!it.isSet) {
+						lineIdx++;
+						continue;
+					}
+					if (scumm_strnicmp(it.setCmd.c_str(), "gameover=", 9) != 0 ||
+					        atoi(it.setCmd.c_str() + 9) == 0)
+						continue;
+					Common::String text;
+					if (!conGameOverNarrator(sec.items, k, text))
+						continue;
+					overs++;
+					voiced += apc.contains("WAV\\" + gameOverVoiceName(sec.id, conTrackLetter(lineIdx)));
+				}
+			}
+		}
+		TS_ASSERT_EQUALS(overs, 144);
+		TS_ASSERT_EQUALS(voiced, 144);
+	}
+
+	// E: the player row `NOUVEAU JOUEUR` (0x0048654a, marker = label) drawn
+	// as stored by FUN_00420064 (no '#' rule): 13 glyphs; names typed
+	// 0x20..0x7a upper-cased (FUN_0041d728).
+	void test_player_row_and_names() {
+		using namespace CryOmni3D::Atlantis;
+		const AtlantisExeBuild &b = UiFrMay1997::may();
+		Common::Array<FontMinBlit> blits;
+		fontMinBlits(kFontMinPlayerList, "NOUVEAU JOUEUR", 185, 270, blits, !b.playerListVerbatim);
+		TS_ASSERT_EQUALS(blits.size(), 13u);
+		fontMinBlits(kFontMinPlayerList, "A#B", 100, 50, blits, !b.playerListVerbatim);
+		TS_ASSERT_EQUALS(blits.size(), 3u);
+		TS_ASSERT_EQUALS(nameEntryChar('e', b.upperCaseNames), 'E');
+		TS_ASSERT_EQUALS(nameEntryChar(0x82, b.upperCaseNames), -1);
+		TS_ASSERT_EQUALS(nameEntryChar(0x7b, b.upperCaseNames), -1);
+	}
+
+	// The May archives: DIALOG\FONTS.BIN is the English (reference) file,
+	// the code page 437 glyph set (md5 4aec21cc...); WAV\ATA0897D.APC is
+	// there (the August release lacks it); the CON texts hold the DOS code
+	// page bytes (0x82 'é' in CHAPI002).
+	void test_archives() {
+		if (UiFrMay1997::dir().empty()) { TS_WARN("frmay1997 not configured; skipped"); return; }
+		VideoTest::Big big(UiFrMay1997::dir());
+		TS_ASSERT(!big.empty());
+		uint32 size = 0;
+		byte *font = big.get("DIALOG\\FONTS.BIN", size);
+		TS_ASSERT(font);
+		if (font) {
+			Common::MemoryReadStream ms(font, size);
+			TS_ASSERT_EQUALS(Common::computeStreamMD5AsString(ms), Common::String("4aec21ccbf3bd593dc01751adb834964"));
+			delete[] font;
+		}
+		byte *apc = big.get("WAV\\ATA0897D.APC", size);
+		TS_ASSERT(apc);
+		TS_ASSERT_EQUALS(size, 37875u);
+		delete[] apc;
+		byte *con = big.get("SCENAR\\CHAPI002.CON", size);
+		TS_ASSERT(con);
+		if (con) {
+			const Common::String text((const char *)con, size);
+			TS_ASSERT(text.contains("Cr\x82on"));
+			delete[] con;
+		}
 	}
 };
 

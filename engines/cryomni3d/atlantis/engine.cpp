@@ -205,13 +205,16 @@ void CryOmni3DEngine_Atlantis::drawSubtitleRows(Graphics::ManagedSurface &dst,
 	// TextOutA takes the CON bytes as the ANSI code page (CreateFontA with
 	// DEFAULT_CHARSET, FUN_0041ae20): Windows-1252 for the shipped texts
 	// (the French ones use 0xe0..0xfb; atlantis-cd-fr-687104 FUN_0042e9cc,
-	// atlantis-re experiment 2026-10-18-03 item 1, decision 0019 A1).
+	// atlantis-re experiment 2026-10-18-03 item 1, decision 0019 A1).  The
+	// rows are decoded with the build's CON code page (exe_build.h
+	// conCodePage), never Windows-1252 for the DOS code page texts of
+	// atlantis-cd-fr-688640 (decision 0020 A1), should they reach this path.
 	const Graphics::Font *font = subtitleFont();
 	if (!font)
 		return;
 	for (uint i = 0; i < rows.size(); i++) {
 		const int y = subtitleLineY(i, rows.size()) + offY;
-		const Common::U32String row(rows[i], Common::kWindows1252);
+		const Common::U32String row(rows[i], _exeBuild->conCodePage);
 		font->drawString(&dst, row, kSubtitleX + 1, y + 1, widthBudget, black, Graphics::kTextAlignLeft);
 		font->drawString(&dst, row, kSubtitleX, y, widthBudget, white, Graphics::kTextAlignLeft);
 	}

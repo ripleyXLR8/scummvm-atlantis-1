@@ -479,6 +479,12 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 		// A row without its INITDIAL record leaves an empty UBB name: the
 		// original's open fails: an error box, then the line is not played
 		// (DialogView::headOpenFails; atlantis-re experiment 2026-10-16-15).
+		// [UNKNOWN] for atlantis-cd-fr-688640: its own May CRYO.DLL returns 0,
+		// not -1, for the failed open (its _GL_CreateFile @ 0x004159a6), so
+		// FUN_00433038 does not see the failure and the UBB2 header reader
+		// FUN_00432f10 runs on handle 0 with an uninitialised header
+		// (atlantis-re experiment 2026-10-18-04 E3).  The port keeps the
+		// behaviour below for this build too (decision 0020 D).
 		bool headFails = false;
 		if (!voiceOnly) {
 			Common::HashMap<int, DialInitEntry>::const_iterator it =

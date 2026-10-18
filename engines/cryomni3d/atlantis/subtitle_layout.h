@@ -43,7 +43,8 @@ int subtitleLineY(uint i, uint n);
 
 // The English retail build of 1997 (atlantis-cd-en-688128, exe_build.h
 // bitmapSubtitles; atlantis-re experiment 2026-10-18-01 item 1, decision
-// 0018).  FUN_0042e970 breaks the buffer " " + text: up to 75 bytes, one
+// 0018; also the French build of May 1997, atlantis-cd-fr-688640
+// FUN_0042eab4 / FUN_0042ec80, experiment 2026-10-18-04, decision 0020).  FUN_0042e970 breaks the buffer " " + text: up to 75 bytes, one
 // row; otherwise, from the end p of a 75-byte window, it scans forward (f)
 // and back (b) for a space (a CR stops the scan one byte further) and
 // breaks at the nearer one, the forward one when f < b: the row is the 75
