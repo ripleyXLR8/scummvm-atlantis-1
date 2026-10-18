@@ -28,9 +28,11 @@ namespace Atlantis {
 
 static const uint32 kPlayersMagic   = 0x41504c52u;  // 'APLR'
 static const uint32 kPlayersVersion = 2;             // v2 appends resume chapters
-static const uint32 kOrigPlayersSize = 97;     // English build: 6 chapter, 6 letter bytes
-static const uint32 kOrigPlayersSizeFr = 95;   // French build: 5 and 5, [INFERRED] from one
-                                               // third-party file (atlantis-re formats/ui-players-atl.md)
+static const uint32 kOrigPlayersSize = 97;     // 2001 build: 6 chapter, 6 letter bytes
+static const uint32 kOrigPlayersSizeFr = 95;   // 1997 builds: 5 and 5 (the English retail
+                                               // reader atlantis-cd-en-688128 @ 0x00419116..0x00419166,
+                                               // writers FUN_0041d6d0 / FUN_0041e030 / FUN_0042c164;
+                                               // atlantis-re formats/ui-players-atl.md)
 
 Common::String epiEpisodeName(const byte *text, uint32 size, uint chapter) {
 	// For chapter 1 the original scan only stops if the file does not start
@@ -67,7 +69,7 @@ static bool readOriginalPlayersAtl(Common::SeekableReadStream &in, Common::Strin
 	if (in.read(b, size) != size)
 		return false;
 	// names 5 x 17, then the chapters, then the save-file letters (one array
-	// of 6 bytes each in the English build, of 5 in the French one)
+	// of 6 bytes each in the 2001 build, of 5 in the 1997 ones)
 	const uint letterBase = (size == kOrigPlayersSize) ? 0x5b : 0x5a;
 	if (letters) {
 		for (uint i = 0; i < kSaveMaxPlayers; i++)
@@ -131,10 +133,11 @@ bool checkpointWritten(uint chapter) {
 	return chapter >= 1 && chapter < kSavePlayerSlotStride;
 }
 
-bool readOriginalPlayersLetters(Common::SeekableReadStream &in, char letters[kSaveMaxPlayers]) {
+bool readOriginalPlayersLetters(Common::SeekableReadStream &in, char letters[kSaveMaxPlayers],
+                                const Common::String &newPlayerMarker) {
 	Common::String players[kSaveMaxPlayers];
 	int chapters[kSaveMaxPlayers];
-	return readOriginalPlayersAtl(in, players, chapters, letters, "#New Player");
+	return readOriginalPlayersAtl(in, players, chapters, letters, newPlayerMarker);
 }
 
 bool parseOriginalCheckpoint(const byte *b, uint32 size, OrigCheckpoint &cp) {

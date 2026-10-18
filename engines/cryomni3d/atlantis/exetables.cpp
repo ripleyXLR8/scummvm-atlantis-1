@@ -36,13 +36,6 @@ namespace CryOmni3D {
 namespace Atlantis {
 
 void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
-	// PE section parameters for atlantis.exe (imageBase 0x400000, DGROUP
-	// section at vaddr 0x90000 / rawptr 0x71200) are stable for the
-	// builds of exe_build.h (DGROUP at 0x00490000 in both).
-	const uint32 kImageBase    = 0x400000;
-	const uint32 kDgroupVaddr   = 0x90000;
-	const uint32 kDgroupRawPtr  = 0x71200;
-
 	_inventoryObjectIds.clear();
 
 	Common::File exe;
@@ -51,14 +44,17 @@ void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 		return;
 	}
 
-	// Which build this is (exe_build.h): its table addresses and the code
-	// differences that change behaviour.
+	// Which build this is (exe_build.h): its DGROUP section, its table
+	// addresses and the code differences that change behaviour.
 	_exeBuild = &atlantisExeBuild((uint32)exe.size());
 	debugC(1, kDebugScript, "loadAtlantisExeTables: atlantis.exe is %s", _exeBuild->name);
+	const AtlantisExeBuild &build = *_exeBuild;
 
 	// The player-row strings: the marker at 0x00496570, the label right
-	// after its NUL (FUN_0041e8a8 / FUN_00420d8c read them by address).
-	exe.seek((0x00496570 - kImageBase - kDgroupVaddr) + kDgroupRawPtr);
+	// after its NUL (FUN_0041e8a8 / FUN_00420d8c read them by address).  The
+	// 1997 build stores and draws its single string `New Player`
+	// (0x0048654a, FUN_0041e030 / FUN_0041fff4); the names array follows.
+	exe.seek(build.fileOffset(build.playerRowVA));
 	auto readCString = [&exe]() {
 		Common::String str;
 		for (int i = 0; i < 32 && !exe.eos(); i++) {
@@ -70,13 +66,13 @@ void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 		return str;
 	};
 	_newPlayerMarker = readCString();
-	_newPlayerLabel = readCString();
+	_newPlayerLabel = build.playerLabelAfterMarker ? readCString() : _newPlayerMarker;
 	debugC(1, kDebugScript, "loadAtlantisExeTables: player row '%s' / '%s'",
 	       _newPlayerMarker.c_str(), _newPlayerLabel.c_str());
 
-	// The newsound APC names (exe_newsound.h); the table and its strings are
-	// at the same addresses in the known builds.
-	readNewSoundNames(exe, _newSoundApcNames);
+	// The newsound APC names (exe_newsound.h) at the build's address.
+	readNewSoundNames(exe, _newSoundApcNames, build.newSoundTableVA, build.dgroupVA, build.dgroupRawPtr,
+	                  build.newSoundPtrMin, build.newSoundPtrMax);
 	debugC(1, kDebugScript, "loadAtlantisExeTables: %u newsound APC names from atlantis.exe",
 	      _newSoundApcNames.size());
 
@@ -85,16 +81,13 @@ void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 	// atlantis.exe FUN_0042b328 scans it up to the -1 terminator: 51 entries,
 	// with 0 placeholders at 39, 46 and 47.  See atlantis-re:
 	// functions/graphics-FUN_0042b328.md.
-	const uint32 kInvTableVA = _exeBuild->inventoryVA;
-	const uint32 kInvTableFileOff =
-	    (kInvTableVA - kImageBase - kDgroupVaddr) + kDgroupRawPtr;
-	exe.seek(kInvTableFileOff);
+	exe.seek(build.fileOffset(build.inventoryVA));
 	readInventoryIconTable(exe, _inventoryObjectIds);
 
 	// Guest sprite table at VA 0x00496884: perso ids up to -1, the index being
 	// the sprite of SUIVEUR.SPR (atlantis.exe FUN_0042b480).
 	_guestSpriteIds.clear();
-	exe.seek((_exeBuild->guestVA - kImageBase - kDgroupVaddr) + kDgroupRawPtr);
+	exe.seek(build.fileOffset(build.guestVA));
 	for (int i = 0; i < 64 && !exe.eos(); i++) {
 		int32 id = exe.readSint32LE();
 		if (id == -1)
@@ -108,10 +101,7 @@ void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 	// char code, for proportional spacing of CREDBLAN.SPR / CREDBLEU.SPR.  The
 	// byte for 0x20 (13) is never read: a space advances 6 (creditCharAdvance).
 	memset(_creditCharWidths, 0, sizeof(_creditCharWidths));
-	const uint32 kCredWidthsVA = _exeBuild->creditWidthsVA;
-	const uint32 kCredWidthsFileOff =
-	    (kCredWidthsVA - kImageBase - kDgroupVaddr) + kDgroupRawPtr;
-	exe.seek(kCredWidthsFileOff);
+	exe.seek(build.fileOffset(build.creditWidthsVA));
 	exe.read(_creditCharWidths, sizeof(_creditCharWidths));
 	debugC(1, kDebugScript, "loadAtlantisExeTables: credit char-width table loaded");
 }

@@ -59,7 +59,7 @@ public:
 		int checked = 0;
 		for (const CryOmni3D::CryOmni3DGameDescription *g = CryOmni3D::gameDescriptions; g->desc.gameId; g++) {
 			if (strcmp(g->desc.gameId, "atlantis") || (g->desc.flags & ADGF_DEMO) ||
-			        strcmp(g->desc.extra, ""))
+			        strcmp(g->desc.extra, "") || g->desc.filesDescriptions[0].fileSize != 714240)
 				continue;
 			for (const ADGameFileDescription *fd = g->desc.filesDescriptions; fd->fileName; fd++) {
 				Common::FSNode n = findCaseless(AtlantisTest::dataDir(), fd->fileName);
@@ -76,6 +76,37 @@ public:
 			TS_ASSERT_EQUALS(g->desc.platform, Common::kPlatformWindows);
 		}
 		TS_ASSERT_EQUALS(checked, 2);
+	}
+
+	// The English retail CD of May 1997 (atlantis-cd-en-688128): its own
+	// executable with the reference's archives.  `en1997` in
+	// atlantis_test.cfg names a folder with that atlantis.exe and the four
+	// BIGCD*.BIG (atlantis-re binaries/atlantis-cd-en-688128.md).
+	void test_en1997_entry_matches_files() {
+		const Common::String dir = AtlantisTest::configValue("en1997");
+		if (dir.empty()) { TS_WARN("en1997 not configured; skipped"); return; }
+		int entries = 0;
+		for (const CryOmni3D::CryOmni3DGameDescription *g = CryOmni3D::gameDescriptions; g->desc.gameId; g++) {
+			if (strcmp(g->desc.gameId, "atlantis") || g->desc.filesDescriptions[0].fileSize != 688128)
+				continue;
+			for (const ADGameFileDescription *fd = g->desc.filesDescriptions; fd->fileName; fd++) {
+				Common::FSNode n = findCaseless(dir, fd->fileName);
+				TSM_ASSERT(fd->fileName, n.exists());
+				if (!n.exists())
+					continue;
+				int64 size = -1;
+				TSM_ASSERT_EQUALS(fd->fileName, md5Head(n, size), Common::String(fd->md5));
+				TSM_ASSERT_EQUALS(fd->fileName, size, (int64)fd->fileSize);
+			}
+			TS_ASSERT_EQUALS(g->desc.language, Common::EN_ANY);
+			TS_ASSERT_EQUALS(g->desc.platform, Common::kPlatformWindows);
+			entries++;
+		}
+		TS_ASSERT_EQUALS(entries, 1);
+		// The whole executable, as binaries/atlantis-cd-en-688128.md lists it.
+		Common::File f;
+		TS_ASSERT(f.open(findCaseless(dir, "atlantis.exe")));
+		TS_ASSERT_EQUALS(Common::computeStreamMD5AsString(f), Common::String("147a95f74bb75815343f0e57979e342d"));
 	}
 
 	// The GOG.com entries (one per language) against the files of GOG's

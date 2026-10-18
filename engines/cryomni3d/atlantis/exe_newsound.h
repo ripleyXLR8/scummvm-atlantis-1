@@ -31,22 +31,24 @@ namespace Atlantis {
 
 // The newsound APC names of atlantis.exe: the named-resource pointer table at
 // VA 0x004961e0 (file offset 0x773e0) holds 17 WAM names, then the APC names
-// /set(newsound=N) indexes (0-based), up to a "FIN" entry.  The exe is the
-// MD5-checked build (DGROUP at vaddr 0x90000, raw 0x71200).
-inline void readNewSoundNames(Common::SeekableReadStream &exe, Common::Array<Common::String> &names) {
-	const uint32 kImageBase    = 0x400000;
-	const uint32 kDgroupVaddr  = 0x90000;
-	const uint32 kDgroupRawPtr = 0x71200;
-	const uint32 kTableFileOff = 0x773e0;
+// /set(newsound=N) indexes (0-based), up to a "FIN" entry.  The default
+// arguments are the reference build's (DGROUP at 0x00490000, raw 0x71200,
+// string pointers in 0x004b0000..0x004d0000); the English retail build
+// (atlantis-cd-en-688128) has the table at 0x004861d0 and its strings at
+// 0x004ab36c..0x004abb80 (exe_build.h, atlantis-re experiment 2026-10-18-01).
+inline void readNewSoundNames(Common::SeekableReadStream &exe, Common::Array<Common::String> &names,
+                              uint32 tableVA = 0x004961e0, uint32 dgroupVA = 0x00490000,
+                              uint32 dgroupRawPtr = 0x71200, uint32 ptrMin = 0x004b0000,
+                              uint32 ptrMax = 0x004d0000) {
 	const int kSkipWams = 17;
 
 	names.clear();
-	exe.seek(kTableFileOff + kSkipWams * 4);
+	exe.seek(tableVA - dgroupVA + dgroupRawPtr + kSkipWams * 4);
 	for (int i = 0; i < 200 && !exe.eos(); i++) {
 		uint32 va = exe.readUint32LE();
-		if (va < 0x4b0000 || va > 0x4d0000)
+		if (va < ptrMin || va > ptrMax)
 			break;  // off the end of the data
-		uint32 fileOff = (va - kImageBase - kDgroupVaddr) + kDgroupRawPtr;
+		uint32 fileOff = va - dgroupVA + dgroupRawPtr;
 		int64 saved = exe.pos();
 		exe.seek(fileOff);
 		Common::String s;

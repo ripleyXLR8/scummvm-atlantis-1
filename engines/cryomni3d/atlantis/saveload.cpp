@@ -233,7 +233,7 @@ void CryOmni3DEngine_Atlantis::importOriginalSaves() {
 		Common::InSaveFile *orig = _saveFileMan->openForLoading(kOrigPlayersFile);
 		if (!orig)
 			return;
-		const bool ok = readOriginalPlayersLetters(*orig, letters);
+		const bool ok = readOriginalPlayersLetters(*orig, letters, _newPlayerMarker);
 		delete orig;
 		if (!ok)
 			return;
