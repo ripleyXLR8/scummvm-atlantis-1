@@ -437,7 +437,7 @@ void CryOmni3DEngine_Atlantis::drawPlayerText(Graphics::ManagedSurface &dst,
 	const Common::Array<SubjSprite> &glyphs =
 	    (hover && !_fontMin2Sprites.empty()) ? _fontMin2Sprites : _fontMinSprites;
 	Common::Array<FontMinBlit> blits;
-	fontMinBlits(renderer, text, anchorX, anchorY, blits, !_exeBuild->playerListVerbatim);
+	fontMinBlits(renderer, text, anchorX, anchorY, blits, !_exeBuild->playerListVerbatim, _creditCharWidths);
 	for (const FontMinBlit &b : blits) {
 		if (b.idx >= glyphs.size())
 			continue;
@@ -852,7 +852,7 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 		}
 		if (selected >= 0 && (k.keycode == Common::KEYCODE_UP || k.keycode == Common::KEYCODE_DOWN)) {
 			title = saves[selected].name;
-			titleX = (640 - fontMinLoadListWidth(title)) / 2;
+			titleX = (640 - fontMinLoadListWidth(title, _creditCharWidths)) / 2;
 		}
 
 		Common::Point mouse = getMousePos();
@@ -891,7 +891,7 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 				selected = rowHover;
 				chooseRow(selected);
 				title = saves[selected].name;
-				titleX = (640 - fontMinLoadListWidth(title)) / 2;
+				titleX = (640 - fontMinLoadListWidth(title, _creditCharWidths)) / 2;
 				// A double click on a row loads it (FUN_0041cf78: the window
 				// procedure sets 0x00496118 on WM_LBUTTONDBLCLK, the class
 				// has CS_DBLCLKS).  The interval is Windows' own setting;

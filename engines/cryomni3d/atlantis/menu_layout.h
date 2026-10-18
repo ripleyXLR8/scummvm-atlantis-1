@@ -131,9 +131,16 @@ struct MenuLayout {
 	bool loadFromStream(Common::ReadStream &s);
 };
 
-// The FONTMIN pen advance table (atlantis.exe 0x00496697), glyph index
-// c - 0x20 (control characters use index 0x20).
-int fontMinAdvance(uint idx);
+// The FONTMIN pen advance of glyph index c - 0x20 (control characters use
+// index 0x20): the 101-byte table at 0x00496697.  The drawers index it with
+// no bound (FUN_00420d8c, FUN_00420f60, FUN_00420b48; the 1997 builds the
+// same), so an index of 101 or more reads the credits advance table that
+// follows (0x004966fc = 0x00496697 + 101; atlantis-cd-fr-687104 0x004866d5
+// = 0x00486670 + 101) at index - 101: `creditWidths` is the build's table
+// as read from atlantis.exe (the reference's bytes when null).  Bytes 0xa1,
+// 0xa3, 0xa4 thus advance 10, 14, 14 in the reference and 17, 2, 10 in the
+// 1997 builds (atlantis-re experiment 2026-10-18-03, decision 0019 E).
+int fontMinAdvance(uint idx, const byte *creditWidths = nullptr);
 
 // One FONTMIN glyph blit: pen x, baseline y, glyph index.
 struct FontMinBlit {
@@ -151,18 +158,19 @@ struct FontMinBlit {
 //    other glyphs (the space included) are drawn and advance by the table.
 // The 1997 builds' player list (atlantis-cd-en-688128 FUN_0041fff4,
 // atlantis-cd-fr-687104 FUN_0041fd6c) has no '#' rule: hashRule false
-// draws '#' like any glyph.
+// draws '#' like any glyph.  Advances: fontMinAdvance(idx, creditWidths).
 enum FontMinRenderer {
 	kFontMinPlayerList,
 	kFontMinNameField,
 	kFontMinLoadList
 };
 void fontMinBlits(FontMinRenderer r, const Common::String &text, int x, int y,
-                  Common::Array<FontMinBlit> &out, bool hashRule = true);
+                  Common::Array<FontMinBlit> &out, bool hashRule = true,
+                  const byte *creditWidths = nullptr);
 
 // Width FUN_00420b48 records for a load-list row (0x00611e80): the sum of
 // the pen advances of fontMinBlits(kFontMinLoadList), the +6 steps included.
-int fontMinLoadListWidth(const Common::String &text);
+int fontMinLoadListWidth(const Common::String &text, const byte *creditWidths = nullptr);
 
 // atlantis.exe FUN_0041cf78, the LOAD picker's scrollbar (0x0041d1f3..
 // 0x0041d24b at entry, 0x0041d273..0x0041d2e6 each frame).  The knob

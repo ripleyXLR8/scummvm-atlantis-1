@@ -226,6 +226,50 @@ public:
 		TS_ASSERT_EQUALS(ref[rb.fileOffset(0x004960a8)], 0);
 	}
 
+	// The FONTMIN drawers index the 101-byte advance table with byte - 0x20
+	// and no bound, reading on into the credits table (FONTMIN + 101) for
+	// bytes 0x85..0xff, in every build (experiment 2026-10-18-03, decision
+	// 0019 E).  For every executable configured: the port's advance of
+	// every index 0..0xdf, given the build's credits table, is the byte at
+	// FONTMIN + index in that executable.
+	void test_fontmin_advance_past_table_all_builds() {
+		using namespace CryOmni3D::Atlantis;
+		struct Exe { Common::String dir; uint32 fontMinVA; };
+		Common::Array<Exe> exes;
+		if (AtlantisTest::haveData())
+			exes.push_back({ AtlantisTest::dataDir(), 0x00496697 });
+		if (!AtlantisTest::configValue("en1997").empty())
+			exes.push_back({ AtlantisTest::configValue("en1997"), 0x00486670 });
+		if (!AtlantisTest::configValue("fr1997").empty())
+			exes.push_back({ AtlantisTest::configValue("fr1997"), 0x00486670 });
+		const Common::String gog = AtlantisTest::configValue("gog");
+		if (!gog.empty())
+			exes.push_back({ gog + "/fr-FR", 0x0049669b });
+		if (exes.empty()) { TS_WARN("no executable configured; skipped"); return; }
+		int checked = 0;
+		for (uint x = 0; x < exes.size(); x++) {
+			Common::Array<byte> e;
+			if (!readExeIn(exes[x].dir, e) && !readExe(exes[x].dir + "/Atlantis.exe", e)) {
+				TS_FAIL(exes[x].dir.c_str());
+				continue;
+			}
+			const AtlantisExeBuild &b = atlantisExeBuild(e.size());
+			// the credits table follows FONTMIN directly
+			TS_ASSERT_EQUALS(b.creditWidthsVA, exes[x].fontMinVA + 101);
+			const byte *credits = &e[b.fileOffset(b.creditWidthsVA)];
+			const uint32 fm = b.fileOffset(exes[x].fontMinVA);
+			for (uint i = 0; i <= 0xdf; i++)
+				TSM_ASSERT_EQUALS(Common::String::format("%s index %u", b.name, i).c_str(),
+				                  fontMinAdvance(i, credits), (int)e[fm + i]);
+			// the reference's bytes when no table is given
+			if (b.size == 714240)
+				for (uint i = 0; i <= 0xdf; i++)
+					TS_ASSERT_EQUALS(fontMinAdvance(i), (int)e[fm + i]);
+			checked++;
+		}
+		TS_ASSERT_EQUALS(checked, (int)exes.size());
+	}
+
 	// Each GOG language's executable: its build is the GOG one, and the
 	// three tables at the GOG addresses equal the reference's tables; the
 	// player-row strings at 0x00496570 (marker, then label).

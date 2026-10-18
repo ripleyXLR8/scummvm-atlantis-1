@@ -37,6 +37,9 @@ namespace Atlantis {
 
 void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 	_inventoryObjectIds.clear();
+	// The credits advances are also the FONTMIN advances past that table's
+	// end (fontMinAdvance): zero, not garbage, without an executable.
+	memset(_creditCharWidths, 0, sizeof(_creditCharWidths));
 
 	Common::File exe;
 	if (!exe.open("atlantis.exe")) {
@@ -102,7 +105,7 @@ void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 	// Credits-font char-width table at VA 0x004966fc: 256 raw bytes indexed by
 	// char code, for proportional spacing of CREDBLAN.SPR / CREDBLEU.SPR.  The
 	// byte for 0x20 (13) is never read: a space advances 6 (creditCharAdvance).
-	memset(_creditCharWidths, 0, sizeof(_creditCharWidths));
+	// The FONTMIN drawers read it too, past their own table (fontMinAdvance).
 	exe.seek(build.fileOffset(build.creditWidthsVA));
 	exe.read(_creditCharWidths, sizeof(_creditCharWidths));
 	debugC(1, kDebugScript, "loadAtlantisExeTables: credit char-width table loaded");

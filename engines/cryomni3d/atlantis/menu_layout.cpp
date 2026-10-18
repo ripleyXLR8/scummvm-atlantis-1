@@ -214,22 +214,40 @@ bool omniToggleClick(MenuItem &tog) {
 	return tog.selected == 1;
 }
 
-static const uint8 kFontMinAdvance[137] = {
+// FONTMIN advances, 0x00496697 (atlantis-cd-en-688128 and
+// atlantis-cd-fr-687104: 0x00486670), 101 bytes.
+static const uint8 kFontMinAdvance[101] = {
 	15, 8,13, 6,13,20,17, 6,13,20,11, 6, 4,20,15,12,17, 8,16,16,
 	14,13,15,13,16,15, 7, 6, 6, 6, 6,20, 6,17,19,18,19,16,16,19,
 	18,12,12,17,16,24,20,23,17,22,17,15,19,20,17,23,22,18,17, 7,
 	16, 6,10, 6, 7,16,16,15,15,16,12,16,17, 8, 9,16, 7,19,16,17,
 	16,15,13,12,10,17,15,19,17,15,14,16, 6,17,11,16,17,17,15,16,
-	15,16,16,16,15,15,15,11,10,10,18,18,16,17,17,17,17,15,23,19,
-	15,19, 0,21,17,16,10,17,17,10,20,14,14,13, 3, 5, 8
+	15
 };
 
-int fontMinAdvance(uint idx) {
-	return idx < ARRAYSIZE(kFontMinAdvance) ? kFontMinAdvance[idx] : 0;
+// The reference's credits advances 0x004966fc (FONTMIN + 101), bytes
+// 0x00..0x7a: what a FONTMIN index 101..223 reads there.
+static const uint8 kRefCreditAdvance[123] = {
+	16,16,16,15,15,15,11,10,10,18,18,16,17,17,17,17,15,23,19,15,
+	19, 0,21,17,16,10,17,17,10,20,14,14,13, 3, 5, 8, 8,12,10, 3,
+	 5, 5, 6, 7, 4, 5, 3, 6, 8, 5, 7, 8, 8, 7, 7, 7, 8, 7, 3, 3,
+	 8, 7, 8, 7,11, 9, 7,10, 9, 7, 6,12, 8, 4, 7, 8, 5,12, 8,11,
+	 6,11, 7, 7, 7, 8, 9,12, 9, 9, 7, 4, 7, 5, 8, 7, 4, 9, 9, 8,
+	 9, 9, 5, 9, 7, 3, 4, 8, 3,13, 8, 8, 9, 8, 5, 7, 6, 7, 8,12,
+	 8, 8, 7
+};
+
+int fontMinAdvance(uint idx, const byte *creditWidths) {
+	if (idx < ARRAYSIZE(kFontMinAdvance))
+		return kFontMinAdvance[idx];
+	const uint c = idx - ARRAYSIZE(kFontMinAdvance);
+	if (creditWidths)
+		return c < 256 ? creditWidths[c] : 0;
+	return c < ARRAYSIZE(kRefCreditAdvance) ? kRefCreditAdvance[c] : 0;
 }
 
 void fontMinBlits(FontMinRenderer r, const Common::String &text, int x, int y,
-                  Common::Array<FontMinBlit> &out, bool hashRule) {
+                  Common::Array<FontMinBlit> &out, bool hashRule, const byte *creditWidths) {
 	out.clear();
 	int cx = x;
 	for (uint i = 0; i < text.size(); i++) {
@@ -247,18 +265,18 @@ void fontMinBlits(FontMinRenderer r, const Common::String &text, int x, int y,
 		}
 		FontMinBlit b = { cx, y, idx };
 		out.push_back(b);
-		cx += (r == kFontMinNameField && idx == 0x2e) ? 20 : fontMinAdvance(idx);
+		cx += (r == kFontMinNameField && idx == 0x2e) ? 20 : fontMinAdvance(idx, creditWidths);
 	}
 }
 
-int fontMinLoadListWidth(const Common::String &text) {
+int fontMinLoadListWidth(const Common::String &text, const byte *creditWidths) {
 	// FUN_00420b48 @ 0x00420c57..0x00420c7e: width[target] += the advance of
 	// each byte, 6 for glyph 0x20.
 	int w = 0;
 	for (uint i = 0; i < text.size(); i++) {
 		const byte c = (byte)text[i];
 		const uint8 idx = (c < 0x20) ? 0x20 : (uint8)(c - 0x20);
-		w += (idx == 0x20) ? 6 : fontMinAdvance(idx);
+		w += (idx == 0x20) ? 6 : fontMinAdvance(idx, creditWidths);
 	}
 	return w;
 }
