@@ -58,7 +58,8 @@ void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 	// 1997 builds store and draw their single string: `New Player`
 	// (atlantis-cd-en-688128 0x0048654a, FUN_0041e030 / FUN_0041fff4),
 	// `NOUVEAU JOUEUR` (atlantis-cd-fr-687104 0x00486546, FUN_0041d45c /
-	// FUN_0041fd6c); the names array follows.
+	// FUN_0041fd6c; atlantis-cd-fr-688640 0x0048654a, FUN_0041e088 /
+	// FUN_00420064); the names array follows.
 	exe.seek(build.fileOffset(build.playerRowVA));
 	auto readCString = [&exe]() {
 		Common::String str;

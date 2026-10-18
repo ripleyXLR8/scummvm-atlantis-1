@@ -23,6 +23,7 @@
 #define CRYOMNI3D_ATLANTIS_EXE_BUILD_H
 
 #include "common/scummsys.h"
+#include "common/str-enc.h"
 
 namespace CryOmni3D {
 namespace Atlantis {
@@ -31,7 +32,7 @@ namespace Atlantis {
 // tables it reads sit, and the code differences between builds that change
 // behaviour.  Behaviour is established on the reference build
 // (atlantis-cd-en-714240); another build is described by its differences
-// (atlantis-re binaries/, decisions 0017, 0018 and 0019).
+// (atlantis-re binaries/, decisions 0017, 0018, 0019 and 0020).
 struct AtlantisExeBuild {
 	const char *name;        // atlantis-re binaries/ name
 	uint32 size;             // file size of atlantis.exe
@@ -105,6 +106,32 @@ struct AtlantisExeBuild {
 	// 13: frames drawn by the Muria puzzle before its piece-on-slot hook.
 	uint8 muriaPlacedFrames;
 
+	// The French build of May 1997's music differences (atlantis-re
+	// experiment 2026-10-18-04 M1..M3, decision 0020 B; addresses of
+	// atlantis-cd-fr-688640).  false: the rules of the other builds.
+	// M1: LoadMusik (FUN_0041e830) copies nothing when the copy of its
+	// first listed track is there (FUN_0041ee40) or that track is playing
+	// (0x0041e862..0x0041e891), else every listed track, without testing
+	// them (0x0041e926..0x0041e96e); the other builds test each track.
+	bool musicLoadAllOrNothing;
+	// M2: LOADMUSIK runs only when the current music volume 0x00485e71 is
+	// 5 or more (FUN_00429184 @ 0x00429c52..0x00429c78); 0: no such test.
+	uint8 musicLoadMinVolume;
+	// M3: StartMusik of the playing track does nothing (FUN_00429184 @
+	// 0x00429d47..0x00429d51); the other builds re-arm the fade-in
+	// (reference 0x0042ae3f..0x0042ae4d, atlantis-cd-en-688128
+	// 0x00429cce..0x00429cdc).
+	bool musicStartSameTrackNoop;
+	// The code page of the CON texts, for any rendering of them that is not
+	// the FONTS.BIN glyph = byte path (the GDI path of drawSubtitleRows,
+	// logs, tests): Windows-1252 for the builds that pass them to TextOutA
+	// (decision 0019 A1); code page 850 for atlantis-cd-fr-688640, whose
+	// archives hold DOS code page texts drawn by byte with the code page 437
+	// FONTS.BIN (0x82 e acute ... 0x97 u grave, the same letters in 437 and
+	// 850; decision 0020 A1).  atlantis-cd-en-688128 draws only with
+	// FONTS.BIN (its English texts never take another path).
+	Common::CodePage conCodePage;
+
 	uint32 fileOffset(uint32 va) const { return va - dgroupVA + dgroupRawPtr; }
 };
 
@@ -126,6 +153,22 @@ struct AtlantisExeBuild {
 // timing (FUN_0043eb5c), rat pacing (FUN_004356a0) and music copy rules
 // (FUN_00428e64, FUN_0041ebe8), and the 1999 alternative game-over
 // narrations with the voice after the image (FUN_00425430).
+// atlantis-re experiment 2026-10-18-04 (binaries/atlantis-cd-fr-688640.md,
+// decision 0020): the French CD's first pressing (May 1997), en-688128's
+// code five days earlier (every function pairs) built against its older
+// cdecl CRYO.DLL, DGROUP at 0x00480000 / raw 0x6c600, the tables at
+// en-688128's addresses up to the player row and 4 bytes after from the
+// names array on (inventory 0x0048678c, guests 0x00486860, credits
+// 0x004866d9 with E b d g n t one pixel narrower), the player row one
+// string `NOUVEAU JOUEUR` (0x0048654a); every en-688128 difference but the
+// music copies, replaced by M1..M3.  This build's counterparts of the
+// en-688128 functions the flags cite: cursor FUN_004222d4, Rhea camera
+// FUN_00427560, game over FUN_004257c8, SUBTITLES FUN_0041cffc, player list
+// FUN_00420064, name entry FUN_0041d728, players.atl writer FUN_0041e088,
+// LOAD picker FUN_0041ca00, hexagon FUN_0043c730, ogre FUN_0043f07c, rat
+// T0023 FUN_00434df8, Muria FUN_0043bdf8, warp cursor FUN_0041bc30,
+// subtitles FUN_0042eab4 / FUN_0042ec80, DelMusik FUN_0041eee8, CON /set
+// executor FUN_00429184 (atlantis-re binaries/maps/atlantis-cd-fr-688640.csv).
 static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	// name, size, DGROUP VA / raw, inventory, guests, credits, newsound
 	// table and pointer range, player row, label after marker;
@@ -134,27 +177,38 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	// upperCaseNames, gameOverVoiceAtEntry, loadPickerKnobAtBar,
 	// loadPickerClamp, hexaForcesObject402, ogre frames x ticks,
 	// ratFrameDeadline, ratT0023Restart, musicFirstValueRule,
-	// muriaPlacedFrames.
+	// muriaPlacedFrames; musicLoadAllOrNothing, musicLoadMinVolume,
+	// musicStartSameTrackNoop, conCodePage.
 	{ "atlantis-cd-en-714240", 714240, 0x00490000, 0x71200,
 	  0x004967b0, 0x00496884, 0x004966fc, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
 	  true, true, false,
-	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2 },
+	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
+	  false, 0, false, Common::kWindows1252 },
 	{ "atlantis-gog-714752", 714752, 0x00490000, 0x71200,
 	  0x004967b4, 0x00496888, 0x00496700, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
 	  false, false, true,
-	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2 },
+	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
+	  false, 0, false, Common::kWindows1252 },
 	{ "atlantis-cd-en-688128", 688128, 0x00480000, 0x6c400,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
 	  false, false, false,
-	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1 },
+	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1,
+	  false, 0, false, Common::kWindows1252 },
 	{ "atlantis-cd-fr-687104", 687104, 0x00480000, 0x6ba00,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861cc, 0x004a0000, 0x004b0000,
 	  0x00486546, false,
 	  false, false, true,
-	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1 },
+	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1,
+	  false, 0, false, Common::kWindows1252 },
+	{ "atlantis-cd-fr-688640", 688640, 0x00480000, 0x6c600,
+	  0x0048678c, 0x00486860, 0x004866d9, 0x004861d0, 0x004a0000, 0x004b0000,
+	  0x0048654a, false,
+	  false, false, false,
+	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1,
+	  true, 5, true, Common::kDos850 },
 };
 
 // The build of an executable of `size` bytes; the reference when unknown.

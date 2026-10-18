@@ -3,7 +3,10 @@
 // The reference build (atlantis-cd-en-714240), the GOG build (one 1999
 // executable for five languages, atlantis-re experiments 2026-10-17-05 ..
 // -08) and the English retail CD's build of May 1997
-// (atlantis-cd-en-688128, experiment 2026-10-18-01): the port's tables at
+// (atlantis-cd-en-688128, experiment 2026-10-18-01), the French retail
+// CD's builds of August 1997 (atlantis-cd-fr-687104, experiment
+// 2026-10-18-03) and May 1997 (atlantis-cd-fr-688640, experiment
+// 2026-10-18-04): the port's tables at
 // each build's addresses must hold the same bytes; the 1999 build's
 // alternative game-over narrations; the unpacked tree read behind the stub
 // archives.
@@ -11,8 +14,8 @@
 // Port code exercised directly: atlantisExeBuild (exe_build.h),
 // readNewSoundNames (exe_newsound.h), conAltGameOverNarration
 // (con_script.h), BigFileArchive::addLooseRoot (bigfile.cpp).  Real files:
-// `data` (reference), `gog` (one sub-directory per language) and `en1997`
-// in atlantis_test.cfg; skipped when absent.
+// `data` (reference), `gog` (one sub-directory per language), `en1997`,
+// `fr1997` and `frmay1997` in atlantis_test.cfg; skipped when absent.
 
 #include "atlantis_test_helper.h"
 #include "../../../system/null_osystem.h"
@@ -109,6 +112,56 @@ public:
 		TS_ASSERT(!fr.playerLabelAfterMarker);
 		TS_ASSERT_EQUALS(fr.fileOffset(0x004861cc), 0x71bccu);
 		TS_ASSERT_EQUALS(fr.fileOffset(0x00486546), 0x71f46u);
+		TS_ASSERT_EQUALS(fr.conCodePage, Common::kWindows1252);
+		// No build but the French one of May 1997 has its music rules.
+		for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++) {
+			const AtlantisExeBuild &b = kAtlantisExeBuilds[i];
+			if (b.size == 688640)
+				continue;
+			TSM_ASSERT(b.name, !b.musicLoadAllOrNothing && b.musicLoadMinVolume == 0 && !b.musicStartSameTrackNoop);
+			TSM_ASSERT_EQUALS(b.name, b.conCodePage, Common::kWindows1252);
+		}
+	}
+
+	// The French build of May 1997 (experiment 2026-10-18-04, decision
+	// 0020): en-688128's code, so every flag of en-688128 (E), with its own
+	// tables, the music rules M1..M3 (B) and the DOS code page of its texts
+	// (A1).
+	void test_frmay1997_build() {
+		using namespace CryOmni3D::Atlantis;
+		const AtlantisExeBuild &m = atlantisExeBuild(688640);
+		const AtlantisExeBuild &en = atlantisExeBuild(688128);
+		TS_ASSERT_EQUALS(Common::String(m.name), "atlantis-cd-fr-688640");
+		TS_ASSERT_EQUALS(m.dgroupVA, 0x00480000u);
+		TS_ASSERT_EQUALS(m.dgroupRawPtr, 0x6c600u);
+		TS_ASSERT_EQUALS(m.inventoryVA, 0x0048678cu);
+		TS_ASSERT_EQUALS(m.guestVA, 0x00486860u);
+		TS_ASSERT_EQUALS(m.creditWidthsVA, 0x004866d9u);
+		TS_ASSERT_EQUALS(m.newSoundTableVA, 0x004861d0u);
+		TS_ASSERT(m.newSoundPtrMin == 0x004a0000u && m.newSoundPtrMax == 0x004b0000u);
+		TS_ASSERT_EQUALS(m.playerRowVA, 0x0048654au);
+		TS_ASSERT(!m.playerLabelAfterMarker);
+		TS_ASSERT_EQUALS(m.fileOffset(0x00486559), 0x72b59u);   // the names array
+		TS_ASSERT_EQUALS(m.cursorIdRule, en.cursorIdRule);
+		TS_ASSERT_EQUALS(m.rheaCamera2, en.rheaCamera2);
+		TS_ASSERT_EQUALS(m.altGameOverNarration, en.altGameOverNarration);
+		TS_ASSERT_EQUALS(m.bitmapSubtitles, en.bitmapSubtitles);
+		TS_ASSERT_EQUALS(m.subtitleClickCycle, en.subtitleClickCycle);
+		TS_ASSERT_EQUALS(m.playerListVerbatim, en.playerListVerbatim);
+		TS_ASSERT_EQUALS(m.upperCaseNames, en.upperCaseNames);
+		TS_ASSERT_EQUALS(m.gameOverVoiceAtEntry, en.gameOverVoiceAtEntry);
+		TS_ASSERT_EQUALS(m.loadPickerKnobAtBar, en.loadPickerKnobAtBar);
+		TS_ASSERT_EQUALS(m.loadPickerClamp, en.loadPickerClamp);
+		TS_ASSERT_EQUALS(m.hexaForcesObject402, en.hexaForcesObject402);
+		TS_ASSERT_EQUALS(m.ogreRevealFrames, en.ogreRevealFrames);
+		TS_ASSERT_EQUALS(m.ogreRevealTicks, en.ogreRevealTicks);
+		TS_ASSERT_EQUALS(m.ratFrameDeadline, en.ratFrameDeadline);
+		TS_ASSERT_EQUALS(m.ratT0023Restart, en.ratT0023Restart);
+		TS_ASSERT_EQUALS(m.musicFirstValueRule, en.musicFirstValueRule);
+		TS_ASSERT_EQUALS(m.muriaPlacedFrames, en.muriaPlacedFrames);
+		TS_ASSERT(m.bitmapSubtitles && m.upperCaseNames && m.gameOverVoiceAtEntry && m.musicFirstValueRule);
+		TS_ASSERT(m.musicLoadAllOrNothing && m.musicLoadMinVolume == 5 && m.musicStartSameTrackNoop);
+		TS_ASSERT_EQUALS(m.conCodePage, Common::kDos850);
 	}
 
 	// The 1997 executable against the reference: the tables the port reads
@@ -226,6 +279,100 @@ public:
 		TS_ASSERT_EQUALS(ref[rb.fileOffset(0x004960a8)], 0);
 	}
 
+	// The French executable of May 1997 against the reference and
+	// en-688128 (binaries/atlantis-cd-fr-688640.md, "Tables the ports
+	// read"): the reference's bytes at the build's addresses, but the player
+	// row (`NOUVEAU JOUEUR`, marker = label) and the credits advances: E, b,
+	// d, g, n, t one less than in the three other builds, 0x1c, 0x1e, 0x1f
+	// = 17, 2, 10 as the 1997 builds; the newsound names the reference's.
+	void test_frmay1997_tables_equal_reference_tables() {
+		using namespace CryOmni3D::Atlantis;
+		const Common::String dir = AtlantisTest::configValue("frmay1997");
+		if (!AtlantisTest::haveData() || dir.empty()) { TS_WARN("data / frmay1997 not configured; skipped"); return; }
+		Common::Array<byte> ref, e;
+		TS_ASSERT(readExeIn(AtlantisTest::dataDir(), ref));
+		TS_ASSERT(readExeIn(dir, e));
+		if (ref.empty() || e.empty())
+			return;
+		TS_ASSERT_EQUALS(e.size(), 688640u);
+		const AtlantisExeBuild &rb = atlantisExeBuild(ref.size());
+		const AtlantisExeBuild &b = atlantisExeBuild(e.size());
+		TS_ASSERT_EQUALS(Common::String(b.name), "atlantis-cd-fr-688640");
+		// the DGROUP section header (pefile): VA 0x80000 (RVA), raw 0x6c600
+		TS_ASSERT(e.size() > 0x400);
+		bool dgroup = false;
+		const uint32 pe = READ_LE_UINT32(&e[0x3c]);
+		const uint nsec = READ_LE_UINT16(&e[pe + 6]);
+		const uint32 sec0 = pe + 0x18 + READ_LE_UINT16(&e[pe + 0x14]);
+		for (uint i = 0; i < nsec; i++) {
+			const byte *h = &e[sec0 + i * 40];
+			if (!memcmp(h, "DGROUP", 6)) {
+				dgroup = true;
+				TS_ASSERT_EQUALS(READ_LE_UINT32(h + 12) + 0x00400000u, b.dgroupVA);
+				TS_ASSERT_EQUALS(READ_LE_UINT32(h + 20), b.dgroupRawPtr);
+			}
+		}
+		TS_ASSERT(dgroup);
+		TS_ASSERT(!memcmp(&ref[rb.fileOffset(rb.inventoryVA)], &e[b.fileOffset(b.inventoryVA)], 52 * 4));
+		TS_ASSERT_EQUALS(READ_LE_UINT32(&e[b.fileOffset(b.inventoryVA) + 51 * 4]), 0xffffffffu);
+		TS_ASSERT(!memcmp(&ref[rb.fileOffset(rb.guestVA)], &e[b.fileOffset(b.guestVA)], 10 * 4));
+		TS_ASSERT_EQUALS(READ_LE_UINT32(&e[b.fileOffset(b.guestVA) + 9 * 4]), 0xffffffffu);
+		// credits advances
+		const uint32 rc = rb.fileOffset(rb.creditWidthsVA), fc = b.fileOffset(b.creditWidthsVA);
+		static const char kNarrower[] = "Ebdgnt";
+		for (uint c = 0; c < 0xb3; c++) {
+			const bool narrower = c >= 0x20 && strchr(kNarrower, (int)c) != nullptr;
+			int want = ref[rc + c] - (narrower ? 1 : 0);
+			if (c == 0x1c)
+				want = 17;
+			else if (c == 0x1e)
+				want = 2;
+			else if (c == 0x1f)
+				want = 10;
+			TSM_ASSERT_EQUALS(c, (int)e[fc + c], want);
+		}
+		TS_ASSERT_EQUALS(e[fc + 'E'], 6);
+		TS_ASSERT_EQUALS(e[fc + 'b'], 8);
+		TS_ASSERT_EQUALS(e[fc + 'd'], 8);
+		TS_ASSERT_EQUALS(e[fc + 'g'], 8);
+		TS_ASSERT_EQUALS(e[fc + 'n'], 7);
+		TS_ASSERT_EQUALS(e[fc + 't'], 5);
+		// from 0xb3 the inventory table, as en-688128 (+ 4 bytes here)
+		TS_ASSERT_EQUALS(b.creditWidthsVA + 0xb3, b.inventoryVA);
+		// the player row: one string, the marker and the label, then the
+		// names array with its initial text
+		TS_ASSERT_EQUALS(cstr(e, b.fileOffset(b.playerRowVA)), "NOUVEAU JOUEUR");
+		TS_ASSERT_EQUALS(cstr(e, b.fileOffset(0x00486559)), "NOUVEAU JOUEUR");
+		Common::Array<Common::String> refNames, names;
+		Common::MemoryReadStream rs(ref.data(), ref.size()), es(e.data(), e.size());
+		readNewSoundNames(rs, refNames);
+		readNewSoundNames(es, names, b.newSoundTableVA, b.dgroupVA, b.dgroupRawPtr, b.newSoundPtrMin,
+		                  b.newSoundPtrMax);
+		TS_ASSERT_EQUALS(refNames.size(), 137u);
+		TS_ASSERT_EQUALS(names.size(), refNames.size());
+		for (uint i = 0; i < names.size() && i < refNames.size(); i++)
+			TS_ASSERT_EQUALS(names[i], refNames[i]);
+		// Embedded tables: music names, FONTMAX (137) and FONTMIN (101)
+		// advances, dialog camera FOV.
+		static const uint32 kPairs[][3] = {
+			{ 0x00495eec, 0x00485eec, 31 * 13 }, { 0x0049660e, 0x004865eb, 137 },
+			{ 0x00496697, 0x00486674, 101 }, { 0x00496080, 0x00486080, 16 } };
+		for (uint i = 0; i < ARRAYSIZE(kPairs); i++)
+			TSM_ASSERT(i, !memcmp(&ref[rb.fileOffset(kPairs[i][0])], &e[b.fileOffset(kPairs[i][1])], kPairs[i][2]));
+		TS_ASSERT(!memcmp(&e[b.fileOffset(0x004865eb)], kFontMaxMeasureWidths, 137));
+		// SUBTITLES 0x0048609c starts at 0; the current music volume
+		// 0x00485e71 at 0x6e, the music volume 0x00485e72 at 0x6e, as the
+		// reference's 0x00495e71 / 0x00495e72.
+		TS_ASSERT_EQUALS(e[b.fileOffset(0x0048609c)], 0);
+		TS_ASSERT_EQUALS(e[b.fileOffset(0x00485e71)], 0x6e);
+		TS_ASSERT_EQUALS(e[b.fileOffset(0x00485e72)], 0x6e);
+		TS_ASSERT_EQUALS(ref[rb.fileOffset(0x00495e71)], 0x6e);
+		// M2's test: `cmp byte ptr [0x485e71], 5` (80 3d 71 5e 48 00 05) at
+		// 0x00429c5e; the text section starts at VA 0x00410000, raw 0x400.
+		static const byte kCmp[] = { 0x80, 0x3d, 0x71, 0x5e, 0x48, 0x00, 0x05 };
+		TS_ASSERT(!memcmp(&e[0x00429c5e - 0x00410000 + 0x400], kCmp, sizeof(kCmp)));
+	}
+
 	// The FONTMIN drawers index the 101-byte advance table with byte - 0x20
 	// and no bound, reading on into the credits table (FONTMIN + 101) for
 	// bytes 0x85..0xff, in every build (experiment 2026-10-18-03, decision
@@ -242,6 +389,8 @@ public:
 			exes.push_back({ AtlantisTest::configValue("en1997"), 0x00486670 });
 		if (!AtlantisTest::configValue("fr1997").empty())
 			exes.push_back({ AtlantisTest::configValue("fr1997"), 0x00486670 });
+		if (!AtlantisTest::configValue("frmay1997").empty())
+			exes.push_back({ AtlantisTest::configValue("frmay1997"), 0x00486674 });
 		const Common::String gog = AtlantisTest::configValue("gog");
 		if (!gog.empty())
 			exes.push_back({ gog + "/fr-FR", 0x0049669b });

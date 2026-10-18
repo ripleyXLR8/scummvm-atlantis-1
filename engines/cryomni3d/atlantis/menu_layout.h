@@ -136,7 +136,8 @@ struct MenuLayout {
 // no bound (FUN_00420d8c, FUN_00420f60, FUN_00420b48; the 1997 builds the
 // same), so an index of 101 or more reads the credits advance table that
 // follows (0x004966fc = 0x00496697 + 101; atlantis-cd-fr-687104 0x004866d5
-// = 0x00486670 + 101) at index - 101: `creditWidths` is the build's table
+// = 0x00486670 + 101; atlantis-cd-fr-688640 0x004866d9 = 0x00486674 + 101,
+// with E b d g n t one less) at index - 101: `creditWidths` is the build's table
 // as read from atlantis.exe (the reference's bytes when null).  Bytes 0xa1,
 // 0xa3, 0xa4 thus advance 10, 14, 14 in the reference and 17, 2, 10 in the
 // 1997 builds (atlantis-re experiment 2026-10-18-03, decision 0019 E).

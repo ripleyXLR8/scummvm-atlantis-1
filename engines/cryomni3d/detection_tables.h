@@ -675,6 +675,25 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 	},
 
 	// Atlantis: The Lost Tales
+	// French Windows CD, first pressing of May 1997 (its own executable and
+	// the May French BIGCD*.BIG, member names as the reference's; atlantis-re
+	// binaries/atlantis-cd-fr-688640.md)
+	{
+		{
+			"atlantis",
+			"",
+			AD_ENTRY2s("atlantis.exe", "5fe8b80a801d660826c6ae9a04e4c5b4", 688640,
+			           "BIGCD1.BIG",  "24acad3df3d968292ea12ba026d84cd1", 636020222),
+			Common::FR_FRA,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
 	// English Windows, GOG.com (files unpacked, BIGCD*.BIG stubs; one 1999
 	// executable for all languages, atlantis-re binaries/atlantis-gog-fr-714752)
 	{
