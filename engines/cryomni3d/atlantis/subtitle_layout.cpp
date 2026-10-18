@@ -21,6 +21,9 @@
 
 #include "cryomni3d/atlantis/subtitle_layout.h"
 
+#include "common/endian.h"
+#include "common/util.h"
+
 namespace CryOmni3D {
 namespace Atlantis {
 
@@ -59,6 +62,109 @@ void splitSubtitle(const Common::String &text, Common::Array<Common::String> &li
 
 int subtitleLineY(uint i, uint n) {
 	return 0x1ce - (int)(n - i + 1) * 14;
+}
+
+void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::String> &lines) {
+	lines.clear();
+	// The buffer at 0x00603d68 (atlantis-cd-en-688128): the byte after ']'
+	// (a space), the text, then NUL and CR.
+	const Common::String b = " " + text;
+	const int len = (int)b.size();
+	auto at = [&](int i) -> int {
+		if (i < 0)
+			return ' ';
+		if (i < len)
+			return (byte)b[i];
+		return i == len ? 0 : '\r';
+	};
+	// 0x0042e9dd: up to 75 bytes, the whole text (strcpy @ 0x0042eb1f).
+	if (len <= 0x4b) {
+		lines.push_back(b);
+		return;
+	}
+	int remaining = len, start = 0, p = 0x4b;
+	while (remaining > 0) {
+		// 0x0042e9fc: 75 bytes or fewer left, the last row (0x0042eadb).
+		if (remaining <= 0x4b) {
+			lines.push_back(b.substr(start));
+			break;
+		}
+		// 0x0042ea06..0x0042ea21: forward from p to a space; a CR ends the
+		// scan one byte further.
+		int f = 0;
+		while (at(p + f) != ' ') {
+			if (at(p + f++) == '\r')
+				break;
+		}
+		// 0x0042ea23..0x0042ea42: back from p, the same way.
+		int k = 0;
+		while (at(p - k) != ' ') {
+			if (at(p - k++) == '\r')
+				break;
+		}
+		int n;
+		if (f < k || 0x4b - k <= 0) {
+			// 0x0042ea4c: strncpy of 75 + f bytes (it stops at the NUL).
+			// The second test is the port's: with no space after the row's
+			// first byte and none within 75 bytes forward, the original
+			// copies 0 bytes and loops forever; not met by the shipped texts
+			// (atlantis-re experiment 2026-10-18-01, the scan of the 2540
+			// dialog lines).
+			n = 0x4b + f;
+			lines.push_back(b.substr(start, MIN(n, len - start)));
+			start = p + f;
+			p += n;
+		} else {
+			// 0x0042ea90: 75 - b bytes.
+			n = 0x4b - k;
+			lines.push_back(b.substr(start, n));
+			start = p - k;
+			p = start + 0x4b;
+		}
+		remaining -= n;
+	}
+	// The rows are stored 0x55 bytes apart (0x00603ac0 + i * 0x55) with no
+	// bound on their length: a row of 85 bytes or more runs into the next
+	// row's buffer, which the next row then overwrites, so it is drawn (up
+	// to the NUL) as its first 85 bytes followed by the next row.  The
+	// shipped rows are at most 81 bytes long; past 8 rows the buffers would
+	// overwrite the text itself (at most 5 in the data), not reproduced.
+	for (int i = (int)lines.size() - 2; i >= 0; i--)
+		if (lines[i].size() > 0x54)
+			lines[i] = lines[i].substr(0, 0x55) + lines[i + 1];
+}
+
+int subtitleLineYBitmap(uint i, uint n) {
+	return 0x1ce - (int)(n - i + 1) * kSubtitleBitmapRowStep;
+}
+
+void drawSubtitleBitmapRow(byte *pixels, uint bpp, int width, int height, const byte *font, uint32 fontSize,
+                           int x, int y, const Common::String &row, uint32 color) {
+	const int64 total = (int64)width * height;
+	// 0x00410822..0x0041082c: the destination is y * 640 + x pixels.
+	int64 base = (int64)y * width + x;
+	for (uint c = 0; c < row.size(); c++, base += 8) {
+		// 0x00410837: glyph = byte * 64.
+		const uint32 glyph = (uint32)(byte)row[c] << 6;
+		if (glyph + 64 > fontSize)
+			continue;
+		for (int gy = 0; gy < 8; gy++) {
+			for (int gx = 0; gx < 8; gx++) {
+				if (!font[glyph + gy * 8 + gx])
+					continue;
+				const int64 o = base + (int64)gy * width + gx;
+				if (o < 0 || o >= total)
+					continue;
+				byte *d = pixels + o * bpp;
+				if (bpp == 2)
+					WRITE_UINT16(d, (uint16)color);
+				else if (bpp == 4)
+					WRITE_UINT32(d, color);
+				else
+					*d = (byte)color;
+			}
+		}
+	}
 }
 
 } // End of namespace Atlantis

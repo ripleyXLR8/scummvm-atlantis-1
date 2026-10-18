@@ -50,6 +50,7 @@
 #include "cryomni3d/atlantis/engine.h"
 #include "cryomni3d/atlantis/omni3d.h"
 #include "cryomni3d/atlantis/place_loop_vars.h"
+#include "cryomni3d/atlantis/subtitle_layout.h"
 
 #include "graphics/fontman.h"
 #include "graphics/fonts/ttf.h"
@@ -146,6 +147,69 @@ const Graphics::Font *CryOmni3DEngine_Atlantis::subtitleFont() {
 		return _subtitleTTF;
 	const Graphics::Font *f = FontMan.getFontByUsage(Graphics::FontManager::kBigGUIFont);
 	return f ? f : FontMan.getFontByUsage(Graphics::FontManager::kGUIFont);
+}
+
+void CryOmni3DEngine_Atlantis::subtitleRows(const Common::String &text, Common::Array<Common::String> &rows) const {
+	if (_exeBuild->bitmapSubtitles)
+		splitSubtitleBitmap(text, rows);   // atlantis-cd-en-688128 FUN_0042e970
+	else
+		splitSubtitle(text, rows);         // FUN_0042ffe8
+}
+
+int CryOmni3DEngine_Atlantis::subtitleRowY(uint i, uint n) const {
+	return _exeBuild->bitmapSubtitles ? subtitleLineYBitmap(i, n) : subtitleLineY(i, n);
+}
+
+int CryOmni3DEngine_Atlantis::subtitleRowStep() const {
+	return _exeBuild->bitmapSubtitles ? kSubtitleBitmapRowStep : 14;
+}
+
+bool CryOmni3DEngine_Atlantis::subtitleFontReady() {
+	if (!_exeBuild->bitmapSubtitles)
+		return subtitleFont() != nullptr;
+	if (!_subtitleBitmapFontTried) {
+		_subtitleBitmapFontTried = true;
+		Common::ScopedPtr<Common::SeekableReadStream> f(openBigFileStream(kFileTypeDialog, "FONTS.BIN"));
+		if (f && f->size() >= 256 * 64) {
+			_subtitleBitmapFont.resize((uint)f->size());
+			f->read(_subtitleBitmapFont.data(), _subtitleBitmapFont.size());
+		} else {
+			warning("subtitleFontReady: cannot read DIALOG\\FONTS.BIN");
+		}
+	}
+	return !_subtitleBitmapFont.empty();
+}
+
+void CryOmni3DEngine_Atlantis::drawSubtitleRows(Graphics::ManagedSurface &dst,
+        const Common::Array<Common::String> &rows, int offY, int widthBudget) {
+	const Graphics::PixelFormat &fmt = dst.format;
+	const uint32 white = fmt.RGBToColor(255, 255, 255), black = fmt.RGBToColor(0, 0, 0);
+	if (_exeBuild->bitmapSubtitles) {
+		// atlantis-cd-en-688128 FUN_0042eb3c: FUN_00410800 at (6, y + 1) in
+		// black, then at (5, y) in white (0xffff), on the 640-pixel screen;
+		// no clipping (drawSubtitleBitmapRow).
+		if (_subtitleBitmapFont.empty() || dst.pitch != dst.w * (int)fmt.bytesPerPixel)
+			return;
+		for (uint i = 0; i < rows.size(); i++) {
+			const int y = subtitleLineYBitmap(i, rows.size()) + offY;
+			drawSubtitleBitmapRow((byte *)dst.getPixels(), fmt.bytesPerPixel, dst.w, dst.h,
+			                      _subtitleBitmapFont.data(), _subtitleBitmapFont.size(),
+			                      kSubtitleX + 1, y + 1, rows[i], black);
+			drawSubtitleBitmapRow((byte *)dst.getPixels(), fmt.bytesPerPixel, dst.w, dst.h,
+			                      _subtitleBitmapFont.data(), _subtitleBitmapFont.size(),
+			                      kSubtitleX, y, rows[i], white);
+		}
+		return;
+	}
+	// FUN_00430178: GDI text at (5, y), its black shadow at (6, y + 1) first.
+	const Graphics::Font *font = subtitleFont();
+	if (!font)
+		return;
+	for (uint i = 0; i < rows.size(); i++) {
+		const int y = subtitleLineY(i, rows.size()) + offY;
+		font->drawString(&dst, rows[i], kSubtitleX + 1, y + 1, widthBudget, black, Graphics::kTextAlignLeft);
+		font->drawString(&dst, rows[i], kSubtitleX, y, widthBudget, white, Graphics::kTextAlignLeft);
+	}
 }
 
 CryOmni3DEngine_Atlantis::~CryOmni3DEngine_Atlantis() {

@@ -784,6 +784,21 @@ private:
 	Graphics::Font *_subtitleTTF = nullptr;
 	bool _subtitleFontTried = false;
 	const Graphics::Font *subtitleFont();
+	// The 1997 build's subtitle font DIALOG\FONTS.BIN (exe_build.h
+	// bitmapSubtitles; atlantis-cd-en-688128 loads it at start-up,
+	// 0x004191c2..0x004191f9), read at the first subtitle.
+	Common::Array<byte> _subtitleBitmapFont;
+	bool _subtitleBitmapFontTried = false;
+	// The subtitles of this build (subtitle_layout.h): the rows of `text`,
+	// the y of row i of n, whether its font is there, and the rows drawn on
+	// `dst` with their shadow, y moved by offY (the TTF text cut at
+	// widthBudget).
+	void subtitleRows(const Common::String &text, Common::Array<Common::String> &rows) const;
+	int subtitleRowY(uint i, uint n) const;
+	int subtitleRowStep() const;
+	bool subtitleFontReady();
+	void drawSubtitleRows(Graphics::ManagedSurface &dst, const Common::Array<Common::String> &rows, int offY,
+	                      int widthBudget);
 	Common::Array<SubjSprite> _bowSprites;
 	uint _arrowFrame = 0;
 	void drawSprite(Graphics::ManagedSurface &dst, const SubjSprite &spr, int x, int y);

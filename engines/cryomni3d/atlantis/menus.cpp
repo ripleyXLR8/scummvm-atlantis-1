@@ -209,26 +209,17 @@ void CryOmni3DEngine_Atlantis::showGameOver(int sectionId, int n,
 	// dialog lines): split at 100 characters, line i of n at x 5,
 	// y 0x1ce - (n - i + 1) * 14, black shadow at (+1, +1); drawn when the
 	// subtitles are on (the counter 0x00496098 only adds a call of
-	// FUN_00430178 that returns at once, 0x0043019a).
-	if (gameOverSubtitleDrawn(showSubtitles()) && !narratorText.empty()) {
+	// FUN_00430178 that returns at once, 0x0043019a).  The 1997 build
+	// (FUN_004256a4) draws it with its own rows, FUN_0042e970 / FUN_0042eb3c
+	// (subtitleRows, drawSubtitleRows).
+	if (gameOverSubtitleDrawn(showSubtitles()) && !narratorText.empty() && subtitleFontReady()) {
 		const int leftMargin = 5;
 		int widthBudget = img.w - leftMargin - 5;
 		if (widthBudget < 32)
 			widthBudget = 32;
-		const Graphics::Font *guiFont = subtitleFont();
-		if (guiFont) {
-			Common::Array<Common::String> subLines;
-			splitSubtitle(narratorText, subLines);
-			const uint32 subColor  = fmt.RGBToColor(255, 255, 255);
-			const uint32 subShadow = fmt.RGBToColor(0, 0, 0);
-			for (uint i = 0; i < subLines.size(); ++i) {
-				int by = subtitleLineY(i, subLines.size());
-				guiFont->drawString(&img, subLines[i], leftMargin + 1, by + 1,
-				                    widthBudget, subShadow, Graphics::kTextAlignLeft);
-				guiFont->drawString(&img, subLines[i], leftMargin, by,
-				                    widthBudget, subColor, Graphics::kTextAlignLeft);
-			}
-		}
+		Common::Array<Common::String> subLines;
+		subtitleRows(narratorText, subLines);
+		drawSubtitleRows(img, subLines, 0, widthBudget);
 	}
 
 	g_system->copyRectToScreen(img.getPixels(), img.pitch, 0, 0, 640, 480);

@@ -815,16 +815,14 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 	if (subWidthBudget < 32) subWidthBudget = 32;
 
 	// The subtitle font (subtitleFont(): the player's arial.ttf or Liberation
-	// Sans, at the 13 px Windows 98 renders the original's GDI Arial 16 at).
-	const Graphics::Font *guiFont = subtitleFont();
+	// Sans, at the 13 px Windows 98 renders the original's GDI Arial 16 at;
+	// the 1997 build's DIALOG\FONTS.BIN, exe_build.h bitmapSubtitles).
 	Common::Array<Common::String> subLines;
 	int subLineH = 0;
-	if (showSubtitles() && !text.empty() && guiFont) {
-		subLineH = 14;
-		splitSubtitle(text, subLines);
+	if (showSubtitles() && !text.empty() && subtitleFontReady()) {
+		subLineH = subtitleRowStep();
+		subtitleRows(text, subLines);
 	}
-	const uint32 subColor  = fmt.RGBToColor(255, 255, 255);
-	const uint32 subShadow = fmt.RGBToColor(0, 0, 0);
 
 	bool emptyBackbufferCleared = false;
 
@@ -1028,15 +1026,7 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 			// The original draws on the 640x480 screen (FUN_00430178); the
 			// composite is that screen when it is 640x480.
 			const int subOffY = (compose.h - 480) / 2;
-			if (guiFont) {
-				for (uint i = 0; i < subLines.size(); ++i) {
-					int by = subtitleLineY(i, subLines.size()) + subOffY;
-					guiFont->drawString(&compose, subLines[i], subLeftMargin + 1, by + 1,
-					    subWidthBudget, subShadow, Graphics::kTextAlignLeft);
-					guiFont->drawString(&compose, subLines[i], subLeftMargin, by,
-					    subWidthBudget, subColor, Graphics::kTextAlignLeft);
-				}
-			}
+			drawSubtitleRows(compose, subLines, subOffY, subWidthBudget);
 			int blitX = (screenW - compose.w) / 2;
 			int blitY = (screenH - compose.h) / 2;
 			if (blitX < 0) blitX = 0;
@@ -1047,10 +1037,11 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 #endif
 		if (!subLines.empty() && subLineH > 0) {
 			// From the first line's top to below the last line (FUN_00430178).
+			const Graphics::Font *guiFont = _exeBuild->bitmapSubtitles ? nullptr : subtitleFont();
 			const int lastH = MAX(subLineH, guiFont ? guiFont->getFontHeight() + 1 : subLineH);
-			int srcY = subtitleLineY(0, subLines.size());
+			int srcY = subtitleRowY(0, subLines.size());
 			if (srcY < 0) srcY = 0;
-			int subAreaH = subtitleLineY(subLines.size() - 1, subLines.size()) + lastH - srcY;
+			int subAreaH = subtitleRowY(subLines.size() - 1, subLines.size()) + lastH - srcY;
 			Graphics::ManagedSurface overlay(screenW, subAreaH + 4, fmt);
 			if (warpView) {
 				int rowsAvail = warpView->h - srcY;
@@ -1062,15 +1053,7 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 			} else {
 				overlay.fillRect(Common::Rect(overlay.w, overlay.h), 0);
 			}
-			if (guiFont) {
-				for (uint i = 0; i < subLines.size(); ++i) {
-					int by = subtitleLineY(i, subLines.size()) - srcY;
-					guiFont->drawString(&overlay, subLines[i], subLeftMargin + 1, by + 1,
-					    subWidthBudget, subShadow, Graphics::kTextAlignLeft);
-					guiFont->drawString(&overlay, subLines[i], subLeftMargin, by,
-					    subWidthBudget, subColor, Graphics::kTextAlignLeft);
-				}
-			}
+			drawSubtitleRows(overlay, subLines, -srcY, subWidthBudget);
 			g_system->copyRectToScreen(overlay.getPixels(), overlay.pitch,
 			                           0, srcY, overlay.w, overlay.h);
 		}
