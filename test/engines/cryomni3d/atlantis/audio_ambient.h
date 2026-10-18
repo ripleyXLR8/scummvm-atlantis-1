@@ -110,7 +110,10 @@ public:
 class AudioAmbientTestSuite : public CxxTest::TestSuite {
 public:
 	void setUp() override { Common::install_null_g_system(); }
-	void tearDown() override { Common::uninstall_null_g_system(); }
+	void tearDown() override {
+		SearchMan.remove("archive_test_data");
+		Common::uninstall_null_g_system();
+	}
 
 	// FUN_00450ed8 + FUN_00432178's pan / volume against the emulated original
 	// (3006 cases, ear angle 0.65).
