@@ -437,7 +437,7 @@ void CryOmni3DEngine_Atlantis::drawPlayerText(Graphics::ManagedSurface &dst,
 	const Common::Array<SubjSprite> &glyphs =
 	    (hover && !_fontMin2Sprites.empty()) ? _fontMin2Sprites : _fontMinSprites;
 	Common::Array<FontMinBlit> blits;
-	fontMinBlits(renderer, text, anchorX, anchorY, blits, !_exeBuild->upperCaseNames);
+	fontMinBlits(renderer, text, anchorX, anchorY, blits, !_exeBuild->playerListVerbatim);
 	for (const FontMinBlit &b : blits) {
 		if (b.idx >= glyphs.size())
 			continue;
@@ -793,7 +793,7 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 
 	// FUN_0041cf78 step 4: the scrollbar (loadPickerScroll*, menu_layout.h).
 	LoadPickerScroll sb;
-	loadPickerScrollInit((int)saves.size(), sb, _exeBuild->loadPickerKnobClamp);
+	loadPickerScrollInit((int)saves.size(), sb, _exeBuild->loadPickerKnobAtBar);
 	int thumbItem = -1, trackItem = -1;
 	for (uint i = 0; i < layout.items.size(); i++) {
 		if (layout.items[i].kind != MenuItem::kSprite)
@@ -865,7 +865,7 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 		if (!down)
 			trackLatched = false;
 		wasDown = down;
-		loadPickerScrollFrame(sb, trackLatched, down, mouse.y, _exeBuild->loadPickerKnobClamp);
+		loadPickerScrollFrame(sb, trackLatched, down, mouse.y, _exeBuild->loadPickerClamp);
 		const int scroll = sb.offset;
 
 		int rowHover = -1;
@@ -875,7 +875,9 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 			// more a row past the list's end answers a click: the original
 			// then reads the file-name table past the listed entries
 			// (0x00601800 + (row + offset) * 13, 0x0041ce4d), what it holds
-			// there is [UNKNOWN]; such a row is still refused here.
+			// there is [UNKNOWN]; such a row is still refused here.  The
+			// French build of August 1997 has the reference's test
+			// (atlantis-cd-fr-687104 @ 0x0041cb0b..0x0041cb1b, loadPickerClamp).
 			const int g = menuGridHit(45, 108, 400, 22, 1, kVisible, true, mouse.x, mouse.y);
 			if (g >= 0 && g < kVisible && scroll + g < (int)saves.size())
 				rowHover = scroll + g;
@@ -1034,8 +1036,9 @@ void CryOmni3DEngine_Atlantis::displayOptionsMenu(const Graphics::ManagedSurface
 				MenuItem &tog = layout.items[hovered];
 				if (hovered == subIdx) {
 					// FUN_0041d5f4: the SUBTITLES toggle with its click counter;
-					// the 1997 build's is a plain toggle (atlantis-cd-en-688128
-					// FUN_0041cfa4 @ 0x0041d01b..0x0041d037).
+					// the 1997 builds' is a plain toggle (atlantis-cd-en-688128
+					// FUN_0041cfa4 @ 0x0041d01b..0x0041d037, atlantis-cd-fr-687104
+					// FUN_0041cd30).
 					bool on = showSubtitles();
 					if (_exeBuild->subtitleClickCycle)
 						subtitleToggleClick(on, _subtitleToggleCount);

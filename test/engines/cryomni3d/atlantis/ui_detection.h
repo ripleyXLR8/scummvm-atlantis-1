@@ -109,6 +109,48 @@ public:
 		TS_ASSERT_EQUALS(Common::computeStreamMD5AsString(f), Common::String("147a95f74bb75815343f0e57979e342d"));
 	}
 
+	// The French retail CD of August 1997 (atlantis-cd-fr-687104): its own
+	// executable with the French archives.  `fr1997` in atlantis_test.cfg
+	// names a folder with that ATLANTIS.EXE and the four BIGCD*.BIG
+	// (atlantis-re binaries/atlantis-cd-fr-687104.md).
+	void test_fr1997_entry_matches_files() {
+		const Common::String dir = AtlantisTest::configValue("fr1997");
+		if (dir.empty()) { TS_WARN("fr1997 not configured; skipped"); return; }
+		int entries = 0;
+		for (const CryOmni3D::CryOmni3DGameDescription *g = CryOmni3D::gameDescriptions; g->desc.gameId; g++) {
+			if (strcmp(g->desc.gameId, "atlantis") || g->desc.filesDescriptions[0].fileSize != 687104)
+				continue;
+			for (const ADGameFileDescription *fd = g->desc.filesDescriptions; fd->fileName; fd++) {
+				Common::FSNode n = findCaseless(dir, fd->fileName);
+				TSM_ASSERT(fd->fileName, n.exists());
+				if (!n.exists())
+					continue;
+				int64 size = -1;
+				TSM_ASSERT_EQUALS(fd->fileName, md5Head(n, size), Common::String(fd->md5));
+				TSM_ASSERT_EQUALS(fd->fileName, size, (int64)fd->fileSize);
+			}
+			TS_ASSERT_EQUALS(g->desc.language, Common::FR_FRA);
+			TS_ASSERT_EQUALS(g->desc.platform, Common::kPlatformWindows);
+			TS_ASSERT_EQUALS(Common::String(g->desc.extra), "");
+			entries++;
+		}
+		TS_ASSERT_EQUALS(entries, 1);
+		// The whole executable, as binaries/atlantis-cd-fr-687104.md lists
+		// it (the 350..640 MB archives: their sizes, and BIGCD1's head md5
+		// above).
+		Common::File f;
+		TS_ASSERT(f.open(findCaseless(dir, "atlantis.exe")));
+		TS_ASSERT_EQUALS(Common::computeStreamMD5AsString(f), Common::String("099f685e3805ca7ce18376a485d44639"));
+		static const struct { const char *name; int64 size; } kBigs[] = {
+			{ "BIGCD1.BIG", 636020326 }, { "BIGCD2.BIG", 589253694 },
+			{ "BIGCD3.BIG", 637627700 }, { "BIGCD4.BIG", 354358792 } };
+		for (uint i = 0; i < ARRAYSIZE(kBigs); i++) {
+			Common::File big;
+			TSM_ASSERT(kBigs[i].name, big.open(findCaseless(dir, kBigs[i].name)));
+			TSM_ASSERT_EQUALS(kBigs[i].name, (int64)big.size(), kBigs[i].size);
+		}
+	}
+
 	// The GOG.com entries (one per language) against the files of GOG's
 	// installer: `gog` in atlantis_test.cfg names a directory with one
 	// sub-directory per language (en-US, fr-FR, de-DE, es-ES, it-IT), as

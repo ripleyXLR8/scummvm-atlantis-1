@@ -31,7 +31,7 @@ namespace Atlantis {
 // tables it reads sit, and the code differences between builds that change
 // behaviour.  Behaviour is established on the reference build
 // (atlantis-cd-en-714240); another build is described by its differences
-// (atlantis-re binaries/, decisions 0017 and 0018).
+// (atlantis-re binaries/, decisions 0017, 0018 and 0019).
 struct AtlantisExeBuild {
 	const char *name;        // atlantis-re binaries/ name
 	uint32 size;             // file size of atlantis.exe
@@ -66,15 +66,27 @@ struct AtlantisExeBuild {
 	// 5: the SUBTITLES option's three-click cycle (FUN_0041d5f4 @
 	// 0x0041d73b); the 1997 build has a plain toggle.
 	bool subtitleClickCycle;
-	// 6: name entry takes 0x20..0x7a and stores a..z as A..Z; the player
-	// list draws '#' like any glyph (no '#' rule in FUN_0041fff4).
+	// 6: the player list is drawn as stored: '#' like any glyph (no '#'
+	// rule in atlantis-cd-en-688128 FUN_0041fff4, atlantis-cd-fr-687104
+	// FUN_0041fd6c; the reference's FUN_00420d8c skips it).
+	bool playerListVerbatim;
+	// 6: name entry takes 0x20..0x7a and stores a..z as A..Z
+	// (atlantis-cd-en-688128 FUN_0041d6d0); the reference and
+	// atlantis-cd-fr-687104 (FUN_0041d45c @ 0x0041d847) take 0x20..0xa7 as
+	// typed.
 	bool upperCaseNames;
 	// 4: the game-over voice is started at the screen's entry, before the
 	// image (FUN_004256a4 @ 0x004256ee..0x0042587b).
 	bool gameOverVoiceAtEntry;
-	// 7: the LOAD picker's knob starts at y 0x7b and is clamped there; a
-	// row click tests row + offset < count (FUN_0041cf78).
-	bool loadPickerKnobClamp;
+	// 7: the LOAD picker's knob starts at y 0x7b (FUN_0041cf78; 0 in
+	// atlantis-cd-en-688128 @ 0x0041cc23 and atlantis-cd-fr-687104 @
+	// 0x0041c98a).
+	bool loadPickerKnobAtBar;
+	// 7: a drag above the bar puts the knob back at 0x7b, offset 0, and a
+	// row click tests row + offset < count (FUN_0041cf78; also
+	// atlantis-cd-fr-687104 FUN_0041c708 @ 0x0041ca60..0x0041ca76,
+	// 0x0041cb0b..0x0041cb1b; atlantis-cd-en-688128 has neither).
+	bool loadPickerClamp;
 	// 8: the hexagon puzzle's entry forces OBJETENMAIN to 402 (FUN_004406fc
 	// @ 0x0044076e), so its pieces are always there.
 	bool hexaForcesObject402;
@@ -105,22 +117,44 @@ struct AtlantisExeBuild {
 // tables at new addresses with the same bytes but the player row; it lacks
 // the 2001 cursor and camera rules and the alternative narrations, and has
 // the differences of its list.
+// atlantis-re experiment 2026-10-18-03 (binaries/atlantis-cd-fr-687104.md,
+// decision 0019): the French retail CD's executable (August 1997), DGROUP
+// at 0x00480000 / raw 0x6ba00, the tables at en-688128's addresses but the
+// newsound table and the player row (4 bytes lower; one string `NOUVEAU
+// JOUEUR`, 0x00486546); the 1997 code of en-688128 with the reference's GDI
+// subtitles (FUN_0042e84c, FUN_0042e9cc), name entry, LOAD clamp, ogre
+// timing (FUN_0043eb5c), rat pacing (FUN_004356a0) and music copy rules
+// (FUN_00428e64, FUN_0041ebe8), and the 1999 alternative game-over
+// narrations with the voice after the image (FUN_00425430).
 static const AtlantisExeBuild kAtlantisExeBuilds[] = {
+	// name, size, DGROUP VA / raw, inventory, guests, credits, newsound
+	// table and pointer range, player row, label after marker;
+	// cursorIdRule, rheaCamera2, altGameOverNarration;
+	// bitmapSubtitles, subtitleClickCycle, playerListVerbatim,
+	// upperCaseNames, gameOverVoiceAtEntry, loadPickerKnobAtBar,
+	// loadPickerClamp, hexaForcesObject402, ogre frames x ticks,
+	// ratFrameDeadline, ratT0023Restart, musicFirstValueRule,
+	// muriaPlacedFrames.
 	{ "atlantis-cd-en-714240", 714240, 0x00490000, 0x71200,
 	  0x004967b0, 0x00496884, 0x004966fc, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
 	  true, true, false,
-	  false, true, false, false, true, true, 3, 200, false, true, false, 2 },
+	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2 },
 	{ "atlantis-gog-714752", 714752, 0x00490000, 0x71200,
 	  0x004967b4, 0x00496888, 0x00496700, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
 	  false, false, true,
-	  false, true, false, false, true, true, 3, 200, false, true, false, 2 },
+	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2 },
 	{ "atlantis-cd-en-688128", 688128, 0x00480000, 0x6c400,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
 	  false, false, false,
-	  true, false, true, true, false, false, 5, 75, true, false, true, 1 },
+	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1 },
+	{ "atlantis-cd-fr-687104", 687104, 0x00480000, 0x6ba00,
+	  0x00486788, 0x0048685c, 0x004866d5, 0x004861cc, 0x004a0000, 0x004b0000,
+	  0x00486546, false,
+	  false, false, true,
+	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1 },
 };
 
 // The build of an executable of `size` bytes; the reference when unknown.

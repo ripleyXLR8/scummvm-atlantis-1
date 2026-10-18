@@ -263,9 +263,9 @@ int fontMinLoadListWidth(const Common::String &text) {
 	return w;
 }
 
-void loadPickerScrollInit(int count, LoadPickerScroll &s, bool knobClamp) {
+void loadPickerScrollInit(int count, LoadPickerScroll &s, bool knobAtBar) {
 	s.offset = 0;
-	s.knobY = knobClamp ? 0x7b : 0;
+	s.knobY = knobAtBar ? 0x7b : 0;
 	s.knobX = 0;
 	if (count <= 11) {
 		s.knobX = (int16)0xffce;
@@ -278,14 +278,14 @@ void loadPickerScrollInit(int count, LoadPickerScroll &s, bool knobClamp) {
 }
 
 void loadPickerScrollFrame(LoadPickerScroll &s, bool trackLatched, bool buttonDown, int mouseY,
-                           bool knobClamp) {
+                           bool clamp) {
 	if (!trackLatched || !buttonDown || !s.dragOn)
 		return;
 	if (mouseY <= 0x7b || mouseY >= 0x152)
 		return;
 	s.knobY = (uint16)(mouseY - 10);
 	s.offset = (uint8)((s.knobY - 0x7b) / s.step);
-	if (knobClamp && mouseY - 10 < 0x7b) {
+	if (clamp && mouseY - 10 < 0x7b) {
 		s.knobY = 0x7b;
 		s.offset = 0;
 	}

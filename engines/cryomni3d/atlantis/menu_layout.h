@@ -149,8 +149,9 @@ struct FontMinBlit {
 //    glyphs are drawn and advance by the table, glyph 0x2e by 20;
 //  - load list (FUN_00420b48): glyph 0x20 is not drawn and advances 6;
 //    other glyphs (the space included) are drawn and advance by the table.
-// The 1997 build's player list (atlantis-cd-en-688128 FUN_0041fff4) has
-// no '#' rule: hashRule false draws '#' like any glyph.
+// The 1997 builds' player list (atlantis-cd-en-688128 FUN_0041fff4,
+// atlantis-cd-fr-687104 FUN_0041fd6c) has no '#' rule: hashRule false
+// draws '#' like any glyph.
 enum FontMinRenderer {
 	kFontMinPlayerList,
 	kFontMinNameField,
@@ -172,12 +173,16 @@ int fontMinLoadListWidth(const Common::String &text);
 // 0x7b < mouse y < 0x152: knob y = mouse y - 10, offset = (knob y - 0x7b) /
 // step as a byte, and knob y 0x7b, offset 0 when mouse y - 10 < 0x7b.  The
 // offset is not clamped to count - 11.
-// The 1997 build (atlantis-cd-en-688128 FUN_0041c9a8, knobClamp false):
-// the knob starts at y 0 (0x0041cc23) and has no clamp at 0x7b, so mouse y
-// 0x7c..0x84 leaves the knob above the bar and the offset (knob y - 0x7b) /
-// step truncated toward zero, as a byte (0x0041ccd6..0x0041ccf4).
+// knobAtBar false: the knob starts at y 0 (atlantis-cd-en-688128
+// FUN_0041c9a8 @ 0x0041cc23, atlantis-cd-fr-687104 FUN_0041c708 @
+// 0x0041c98a).  clamp false (atlantis-cd-en-688128 only): no clamp at 0x7b,
+// so mouse y 0x7c..0x84 leaves the knob above the bar and the offset (knob
+// y - 0x7b) / step truncated toward zero, as a byte (0x0041ccd6..
+// 0x0041ccf4); atlantis-cd-fr-687104 clamps as the reference
+// (0x0041ca60..0x0041ca76).
 // See atlantis-re: functions/ui-FUN_0041cf78.md step 4,
-// experiments/2026-10-16-04-load-picker.md, 2026-10-18-01 item 7.
+// experiments/2026-10-16-04-load-picker.md, 2026-10-18-01 item 7,
+// 2026-10-18-03 item 7.
 struct LoadPickerScroll {
 	bool dragOn = false;   // EBP-0x14
 	int step = 1;          // EBP-0x28
@@ -185,9 +190,9 @@ struct LoadPickerScroll {
 	int knobY = 0x7b;      // record 4 y, 0x00612774
 	uint8 offset = 0;      // 0x00496605
 };
-void loadPickerScrollInit(int count, LoadPickerScroll &s, bool knobClamp = true);
+void loadPickerScrollInit(int count, LoadPickerScroll &s, bool knobAtBar = true);
 void loadPickerScrollFrame(LoadPickerScroll &s, bool trackLatched, bool buttonDown, int mouseY,
-                           bool knobClamp = true);
+                           bool clamp = true);
 
 // atlantis.exe FUN_004211f0: the cell under (mx, my) of a cols x rows grid
 // at (x0, y0) with cells cellW x cellH, bounds INCLUSIVE on both sides (so
@@ -249,7 +254,8 @@ uint nameKeyCode(uint16 unicode);
 
 // The byte a typed code adds to a new player's name, -1 when refused (the
 // leading-space rule is the caller's): FUN_0041dea4 @ 0x0041e283 takes
-// 0x20..0xa7 (the FONTMIN glyphs) as typed; the 1997 build
+// 0x20..0xa7 (the FONTMIN glyphs) as typed, as does atlantis-cd-fr-687104
+// (FUN_0041d45c @ 0x0041d847); the English build of 1997
 // (atlantis-cd-en-688128 FUN_0041d6d0 @ 0x0041dab1..0x0041daf8, upperCase)
 // takes 0x20..0x7a and stores a..z as A..Z.
 int nameEntryChar(uint code, bool upperCase);
