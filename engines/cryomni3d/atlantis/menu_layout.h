@@ -284,8 +284,13 @@ uint nameKeyCode(uint16 unicode);
 // 0x20..0xa7 (the FONTMIN glyphs) as typed, as does atlantis-cd-fr-687104
 // (FUN_0041d45c @ 0x0041d847); the English build of 1997
 // (atlantis-cd-en-688128 FUN_0041d6d0 @ 0x0041dab1..0x0041daf8, upperCase)
-// takes 0x20..0x7a and stores a..z as A..Z.
-int nameEntryChar(uint code, bool upperCase);
+// takes 0x20..0x7a and stores a..z as A..Z.  swedishLetters: the Swedish
+// build (atlantis-cd-sv-688128 FUN_0041d704 @ 0x0041dae5..0x0041dbe9,
+// exe_build.h nameSwedishLetters, decision 0023 C1) also takes the codes
+// 0xc4 0xc5 0xd6 0xe4 0xe5 0xf6 (Windows-1252 `Ä Å Ö ä å ö`, what
+// nameKeyCode gives for those Unicode letters) and stores them as the DOS
+// code page bytes 0x8e 0x8f 0x99 0x84 0x86 0x94, the FONTMIN glyphs.
+int nameEntryChar(uint code, bool upperCase, bool swedishLetters = false);
 
 } // namespace Atlantis
 } // namespace CryOmni3D

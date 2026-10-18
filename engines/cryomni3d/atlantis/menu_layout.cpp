@@ -597,7 +597,20 @@ uint nameKeyCode(uint16 unicode) {
 	return (byte)enc[0];
 }
 
-int nameEntryChar(uint code, bool upperCase) {
+int nameEntryChar(uint code, bool upperCase, bool swedishLetters) {
+	if (swedishLetters) {
+		// atlantis-cd-sv-688128 FUN_0041d704 @ 0x0041dafa..0x0041db44
+		// (accepted) and 0x0041db4a..0x0041dbe9 (stored as)
+		switch (code) {
+		case 0xc4: return 0x8e;   // A diaeresis   @ 0x0041dbb2
+		case 0xc5: return 0x8f;   // A ring        @ 0x0041dbbd
+		case 0xd6: return 0x99;   // O diaeresis   @ 0x0041dbc8
+		case 0xe4: return 0x84;   // a diaeresis   @ 0x0041dbd3
+		case 0xe5: return 0x86;   // a ring        @ 0x0041dbde
+		case 0xf6: return 0x94;   // o diaeresis   @ 0x0041dbe9
+		default: break;
+		}
+	}
 	if (!upperCase)
 		return (code >= 0x20 && code <= 0xa7) ? (int)code : -1;
 	if (code < 0x20 || code > 0x7a)

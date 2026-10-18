@@ -573,13 +573,16 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 				} else if (k.keycode == Common::KEYCODE_BACKSPACE) {
 					if (!editBuf.empty())
 						editBuf.deleteLastChar();
-				} else if (nameEntryChar(nameKeyCode(k.ascii), _exeBuild->upperCaseNames) >= 0
+				} else if (nameEntryChar(nameKeyCode(k.ascii), _exeBuild->upperCaseNames,
+				                         _exeBuild->nameSwedishLetters) >= 0
 				        && editBuf.size() < kPlayerNameLen) {
 					// FUN_0041dea4 @ 0x0041e283: characters 0x20..0xa7 (the
 					// FONTMIN glyphs); a leading space is refused, a leading
 					// '.' is typed (the commit still refuses it).  The 1997
-					// build takes 0x20..0x7a, a..z as A..Z (nameEntryChar).
-					const int c = nameEntryChar(nameKeyCode(k.ascii), _exeBuild->upperCaseNames);
+					// build takes 0x20..0x7a, a..z as A..Z; the Swedish one
+					// adds six letters (nameEntryChar).
+					const int c = nameEntryChar(nameKeyCode(k.ascii), _exeBuild->upperCaseNames,
+					                            _exeBuild->nameSwedishLetters);
 					if (!(editBuf.empty() && c == ' '))
 						editBuf += (char)c;
 				}

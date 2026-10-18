@@ -50,6 +50,11 @@ namespace UiNl1997 {
 
 using namespace CryOmni3D::Atlantis;
 
+// The priority of the folder the BigFileArchive tests mount their archives
+// from: above the data folders other suites leave in SearchMan (the
+// reference's BIGCD*.BIG, same names).
+static const int kOwnArchivesFirst = 100;
+
 static const uint32 kNlTimestamp = 0x3396af27;
 static const uint32 kEnTimestamp = 0x33886fd1;
 
@@ -160,7 +165,8 @@ public:
 		for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++) {
 			const Common::String n = kAtlantisExeBuilds[i].name;
 			TSM_ASSERT(n.c_str(), kAtlantisExeBuilds[i].creditsPerRun ==
-			           (n == "atlantis-cd-en-688128" || n == "atlantis-cd-fr-688640" || n == "atlantis-cd-nl-688128"));
+			           (n == "atlantis-cd-en-688128" || n == "atlantis-cd-fr-688640" || n == "atlantis-cd-nl-688128" ||
+			            n == "atlantis-cd-sv-688128"));
 		}
 		// size + timestamp name one build each
 		for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++)
@@ -312,7 +318,7 @@ public:
 		using namespace UiNl1997;
 		const Common::String dir = AtlantisTest::configValue("nl1997");
 		if (dir.empty()) { TS_WARN("nl1997 not configured; skipped"); return; }
-		SearchMan.addDirectory("ui_nl_data", Common::FSNode(Common::Path(dir, '/')));
+		SearchMan.addDirectory("ui_nl_data", Common::FSNode(Common::Path(dir, '/')), kOwnArchivesFirst);
 		BigFileArchive big;
 		bool opened = true;
 		for (uint disc = 1; disc <= 4; disc++)
@@ -379,7 +385,7 @@ public:
 		using namespace UiNl1997;
 		const Common::String dir = AtlantisTest::configValue("nl1997");
 		if (dir.empty()) { TS_WARN("nl1997 not configured; skipped"); return; }
-		SearchMan.addDirectory("ui_nl_data", Common::FSNode(Common::Path(dir, '/')));
+		SearchMan.addDirectory("ui_nl_data", Common::FSNode(Common::Path(dir, '/')), kOwnArchivesFirst);
 		BigFileArchive seq, gap;
 		bool opened = seq.open(Common::Path("BIGCD1.BIG")) && seq.open(Common::Path("BIGCD2.BIG"));
 		opened &= gap.open(Common::Path("BIGCD1.BIG"), 1) && gap.open(Common::Path("BIGCD4.BIG"), 4);

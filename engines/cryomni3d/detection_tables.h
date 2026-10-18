@@ -715,6 +715,26 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 	},
 
 	// Atlantis: The Lost Tales
+	// Swedish Windows CD, "Atlantis: Det Forsvunna Riket" (IQ Media Nordic,
+	// June 1997; its own executable, en-688128's code with Swedish strings,
+	// and the Swedish BIGCD*.BIG; atlantis-re binaries/atlantis-cd-sv-688128.md,
+	// decision 0023 B1)
+	{
+		{
+			"atlantis",
+			"",
+			AD_ENTRY2s("atlantis.exe", "c58de3c1a09f6732a819eaada7d6ccd4", 688128,
+			           "BIGCD1.BIG",  "50c6868f8b959323e4cddb36641fb7dc", 635706318),
+			Common::SV_SWE,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
 	// French Windows CD, first pressing of May 1997 (its own executable and
 	// the May French BIGCD*.BIG, member names as the reference's; atlantis-re
 	// binaries/atlantis-cd-fr-688640.md)
@@ -823,6 +843,25 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
 			           "BIGCD1.BIG",  "88bb8611b5bcb0f3cc7087ce6347a274", 633096108),
 			Common::NL_NLD,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
+	// Swedish Windows CD (atlantis-cd-sv-688128's BIGCD*.BIG; this build
+	// passes their DOS code page CON texts to TextOutA as Windows-1252, its
+	// name entry has no Swedish letters; decision 0023 B2)
+	{
+		{
+			"atlantis",
+			"AT1CDINT patch",
+			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
+			           "BIGCD1.BIG",  "50c6868f8b959323e4cddb36641fb7dc", 635706318),
+			Common::SV_SWE,
 			Common::kPlatformWindows,
 			ADGF_UNSTABLE,
 			GUI_OPTIONS_ATLANTIS

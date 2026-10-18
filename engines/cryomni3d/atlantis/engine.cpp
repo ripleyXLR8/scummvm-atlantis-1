@@ -151,7 +151,9 @@ const Graphics::Font *CryOmni3DEngine_Atlantis::subtitleFont() {
 
 void CryOmni3DEngine_Atlantis::subtitleRows(const Common::String &text, Common::Array<Common::String> &rows) const {
 	if (_exeBuild->bitmapSubtitles)
-		splitSubtitleBitmap(text, rows);   // atlantis-cd-en-688128 FUN_0042e970
+		// atlantis-cd-en-688128 FUN_0042e970; atlantis-cd-sv-688128
+		// FUN_0042ea7c (backward cuts only)
+		splitSubtitleBitmap(text, rows, _exeBuild->subtitleBreakBackOnly);
 	else
 		splitSubtitle(text, rows);         // FUN_0042ffe8
 }
@@ -309,7 +311,10 @@ Common::SeekableReadStream *CryOmni3DEngine_Atlantis::openBigFileStream(FileType
 // the Dutch CD's disc 2 (an older text revision) holds other copies of
 // these (atlantis-re experiment 2026-10-18-08, decision 0022 F): its
 // FONTMIN / FONTMIN2 (the reference's files) and its CREDITS.TXT (one line
-// less); its older menus, EPI.TXT and PREINTRO.TGA never show.
+// less); its older menus, EPI.TXT and PREINTRO.TGA never show.  The
+// Swedish CD's discs differ only in members loaded at start-up (EPI.TXT,
+// SELEMENU.TXT, CD1..4MENU.TXT; atlantis-re experiment 2026-10-18-09,
+// decision 0023 E): their FONTMIN, FONTMIN2 and CREDITS.TXT are one copy.
 // kEnhMinorBugFixes: the newest revision whatever the disc, disc 1's.
 Common::SeekableReadStream *CryOmni3DEngine_Atlantis::openCurrentDiscStream(FileType fileType,
         const Common::String &baseName) const {

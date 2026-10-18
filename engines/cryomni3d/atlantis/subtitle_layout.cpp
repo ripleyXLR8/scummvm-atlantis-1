@@ -64,7 +64,7 @@ int subtitleLineY(uint i, uint n) {
 	return 0x1ce - (int)(n - i + 1) * 14;
 }
 
-void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::String> &lines) {
+void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::String> &lines, bool backOnly) {
 	lines.clear();
 	// The buffer at 0x00603d68 (atlantis-cd-en-688128; atlantis-cd-fr-688640
 	// FUN_0042eab4, the same code, 0x00603ac0, emulated equal on its 2540
@@ -104,7 +104,30 @@ void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::Strin
 				break;
 		}
 		int n;
-		if (f < k || 0x4b - k <= 0) {
+		if (backOnly) {
+			// atlantis-cd-sv-688128 FUN_0042ea7c @ 0x0042eb50: always the
+			// backward cut, strncpy of 75 - b bytes and a NUL @ 0x0042eb78;
+			// the next row starts at the space (0x0042eb86..0x0042eb95).
+			n = 0x4b - k;
+			if (n <= 0) {
+				// No space after the row's first byte within the window:
+				// the original copies 0 bytes, keeps the remaining length
+				// and loops, writing NULs 0x55 bytes apart until it
+				// faults (emulated: atlantis-re
+				// evidence/golden/video_subtitles_sv688128.txt); what a
+				// real machine does is [UNKNOWN].  Not met by the shipped
+				// texts (the 2539 Swedish dialog lines).  The port cuts
+				// the run at the window end (decision 0023 D2).
+				n = 0x4b;
+				lines.push_back(b.substr(start, n));
+				start = p;
+				p = start + 0x4b;
+			} else {
+				lines.push_back(b.substr(start, n));
+				start = p - k;
+				p = start + 0x4b;
+			}
+		} else if (f < k || 0x4b - k <= 0) {
 			// 0x0042ea4c: strncpy of 75 + f bytes (it stops at the NUL).
 			// The second test is the port's: with no space after the row's
 			// first byte and none within 75 bytes forward, the original

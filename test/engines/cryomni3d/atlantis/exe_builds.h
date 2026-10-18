@@ -10,7 +10,9 @@
 // (atlantis-patch-fr-714240, experiment 2026-10-18-06), the German CD's
 // build (atlantis-cd-de-687104, experiment 2026-10-18-07; its own tests in
 // ui_de1997.h), the Dutch CD's build (atlantis-cd-nl-688128, experiment
-// 2026-10-18-08; its own tests in ui_nl1997.h): the port's tables at
+// 2026-10-18-08; its own tests in ui_nl1997.h), the Swedish CD's build
+// (atlantis-cd-sv-688128, experiment 2026-10-18-09; its own tests in
+// ui_sv1997.h): the port's tables at
 // each build's addresses must hold the same bytes; the 1999 build's
 // alternative game-over narrations; the unpacked tree read behind the stub
 // archives.
@@ -19,7 +21,8 @@
 // readNewSoundNames (exe_newsound.h), conAltGameOverNarration
 // (con_script.h), BigFileArchive::addLooseRoot (bigfile.cpp).  Real files:
 // `data` (reference), `gog` (one sub-directory per language), `en1997`,
-// `fr1997`, `frmay1997`, `patch101`, `de1997` and `nl1997` in atlantis_test.cfg;
+// `fr1997`, `frmay1997`, `patch101`, `de1997`, `nl1997` and `sv1997` in
+// atlantis_test.cfg;
 // skipped when absent.
 
 #include "atlantis_test_helper.h"
@@ -125,15 +128,17 @@ public:
 		TS_ASSERT_EQUALS(fr.fileOffset(0x004861cc), 0x71bccu);
 		TS_ASSERT_EQUALS(fr.fileOffset(0x00486546), 0x71f46u);
 		TS_ASSERT_EQUALS(fr.conCodePage, Common::kWindows1252);
-		// No build but the French one of May 1997 has its music rules; it
-		// and the Dutch build (decision 0022 D) have DOS code page texts.
+		// No build but the French one of May 1997 has its music rules; it,
+		// the Dutch build (decision 0022 D) and the Swedish one (decision
+		// 0023 E) have DOS code page texts.
 		for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++) {
 			const AtlantisExeBuild &b = kAtlantisExeBuilds[i];
 			if (b.size == 688640)
 				continue;
 			TSM_ASSERT(b.name, !b.musicLoadAllOrNothing && b.musicLoadMinVolume == 0 && !b.musicStartSameTrackNoop);
 			TSM_ASSERT_EQUALS(b.name, b.conCodePage,
-			                  !strcmp(b.name, "atlantis-cd-nl-688128") ? Common::kDos850 : Common::kWindows1252);
+			                  (!strcmp(b.name, "atlantis-cd-nl-688128") || !strcmp(b.name, "atlantis-cd-sv-688128")) ?
+			                  Common::kDos850 : Common::kWindows1252);
 		}
 	}
 
@@ -409,6 +414,8 @@ public:
 			exes.push_back({ AtlantisTest::configValue("de1997"), 0x0048666f });
 		if (!AtlantisTest::configValue("nl1997").empty())
 			exes.push_back({ AtlantisTest::configValue("nl1997"), 0x00486673 });
+		if (!AtlantisTest::configValue("sv1997").empty())
+			exes.push_back({ AtlantisTest::configValue("sv1997"), 0x00486670 });
 		if (!AtlantisTest::configValue("patch101").empty())
 			exes.push_back({ AtlantisTest::configValue("patch101"), 0x0049669b });
 		const Common::String gog = AtlantisTest::configValue("gog");

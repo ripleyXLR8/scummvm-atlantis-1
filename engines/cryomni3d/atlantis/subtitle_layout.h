@@ -54,7 +54,13 @@ int subtitleLineY(uint i, uint n);
 // tools/emu/video_subtitles_en688128.py), which ends the forward scan at
 // the text's end.  Rows of 85 bytes or more overrun their buffer (see the
 // code).
-void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::String> &lines);
+// backOnly: the Swedish build's FUN_0042ea7c (atlantis-cd-sv-688128,
+// exe_build.h subtitleBreakBackOnly, decision 0023 D): every row ends at
+// the last space at or before the window end (75 - b bytes), so no row is
+// longer than 75 bytes; a window without a space after the row's first
+// byte (the original faults there) is cut at 75 bytes (decision 0023 D2).
+void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::String> &lines,
+                         bool backOnly = false);
 
 // FUN_0042eb3c: row i of n at y = 0x1ce - (n - i + 1) * 10, drawn with
 // FUN_00410800 at (6, y + 1) in black, then at (5, y) in white.
