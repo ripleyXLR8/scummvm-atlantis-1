@@ -675,6 +675,26 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 	},
 
 	// Atlantis: The Lost Tales
+	// German Windows CD, "Atlantis - Das sagenhafte Abenteuer", August 1997
+	// (its own executable, fr-687104's code with German strings, and the
+	// German BIGCD*.BIG; atlantis-re binaries/atlantis-cd-de-687104.md,
+	// decision 0021 B)
+	{
+		{
+			"atlantis",
+			"",
+			AD_ENTRY2s("atlantis.exe", "98c9676a2903a3f5f57ee4f85622fcc0", 687104,
+			           "BIGCD1.BIG",  "08214298a01ac06c7dc23b9f93d2dd1b", 638118150),
+			Common::DE_DEU,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
 	// French Windows CD, first pressing of May 1997 (its own executable and
 	// the May French BIGCD*.BIG, member names as the reference's; atlantis-re
 	// binaries/atlantis-cd-fr-688640.md)
@@ -699,8 +719,7 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 	// binaries/atlantis-patch-fr-714240.md): atlantis.exe 714240 bytes,
 	// md5 e6a49004ea6160566fb01ed2ab6ab034, the reference's size but not its
 	// first 5000 bytes (exe_build.h tells the two apart by PE timestamp).
-	// One entry per CD whose BIGCD1.BIG is known, in the archives' language;
-	// the German CD's archives are not known (no entry).
+	// One entry per CD whose BIGCD1.BIG is known, in the archives' language.
 
 	// Atlantis: The Lost Tales
 	// English Windows CD (the BIGCD*.BIG of the reference entries above)
@@ -747,6 +766,24 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
 			           "BIGCD1.BIG",  "24acad3df3d968292ea12ba026d84cd1", 636020222),
 			Common::FR_FRA,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
+	// German Windows CD (atlantis-cd-de-687104's BIGCD*.BIG; their CON texts
+	// are Windows-1252, as this build draws them; decision 0021 B)
+	{
+		{
+			"atlantis",
+			"AT1CDINT patch",
+			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
+			           "BIGCD1.BIG",  "08214298a01ac06c7dc23b9f93d2dd1b", 638118150),
+			Common::DE_DEU,
 			Common::kPlatformWindows,
 			ADGF_UNSTABLE,
 			GUI_OPTIONS_ATLANTIS

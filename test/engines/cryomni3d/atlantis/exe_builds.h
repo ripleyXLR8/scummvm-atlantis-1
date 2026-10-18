@@ -7,7 +7,9 @@
 // CD's builds of August 1997 (atlantis-cd-fr-687104, experiment
 // 2026-10-18-03) and May 1997 (atlantis-cd-fr-688640, experiment
 // 2026-10-18-04), the executable of Cryo's patch AT1CDINT
-// (atlantis-patch-fr-714240, experiment 2026-10-18-06): the port's tables at
+// (atlantis-patch-fr-714240, experiment 2026-10-18-06), the German CD's
+// build (atlantis-cd-de-687104, experiment 2026-10-18-07; its own tests in
+// ui_de1997.h): the port's tables at
 // each build's addresses must hold the same bytes; the 1999 build's
 // alternative game-over narrations; the unpacked tree read behind the stub
 // archives.
@@ -16,8 +18,8 @@
 // readNewSoundNames (exe_newsound.h), conAltGameOverNarration
 // (con_script.h), BigFileArchive::addLooseRoot (bigfile.cpp).  Real files:
 // `data` (reference), `gog` (one sub-directory per language), `en1997`,
-// `fr1997`, `frmay1997` and `patch101` in atlantis_test.cfg; skipped when
-// absent.
+// `fr1997`, `frmay1997`, `patch101` and `de1997` in atlantis_test.cfg;
+// skipped when absent.
 
 #include "atlantis_test_helper.h"
 #include "../../../system/null_osystem.h"
@@ -400,6 +402,8 @@ public:
 			exes.push_back({ AtlantisTest::configValue("fr1997"), 0x00486670 });
 		if (!AtlantisTest::configValue("frmay1997").empty())
 			exes.push_back({ AtlantisTest::configValue("frmay1997"), 0x00486674 });
+		if (!AtlantisTest::configValue("de1997").empty())
+			exes.push_back({ AtlantisTest::configValue("de1997"), 0x0048666f });
 		if (!AtlantisTest::configValue("patch101").empty())
 			exes.push_back({ AtlantisTest::configValue("patch101"), 0x0049669b });
 		const Common::String gog = AtlantisTest::configValue("gog");

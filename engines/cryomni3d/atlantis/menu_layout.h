@@ -136,7 +136,8 @@ struct MenuLayout {
 // no bound (FUN_00420d8c, FUN_00420f60, FUN_00420b48; the 1997 builds the
 // same), so an index of 101 or more reads the credits advance table that
 // follows (0x004966fc = 0x00496697 + 101; atlantis-cd-fr-687104 0x004866d5
-// = 0x00486670 + 101; atlantis-cd-fr-688640 0x004866d9 = 0x00486674 + 101,
+// = 0x00486670 + 101; atlantis-cd-de-687104 0x004866d4 = 0x0048666f + 101;
+// atlantis-cd-fr-688640 0x004866d9 = 0x00486674 + 101,
 // with E b d g n t one less) at index - 101: `creditWidths` is the build's table
 // as read from atlantis.exe (the reference's bytes when null).  Bytes 0xa1,
 // 0xa3, 0xa4 thus advance 10, 14, 14 in the reference and 17, 2, 10 in the
@@ -165,13 +166,30 @@ enum FontMinRenderer {
 	kFontMinNameField,
 	kFontMinLoadList
 };
+//
+// The German CD's EPI.TXT (atlantis-cd-de-687104) writes `ß` as the DOS
+// code page byte 0xe1: glyph 193, past FONTMIN's 137 sprites, so the
+// original draws nothing (the glyph-count test of FUN_00410430) and moves
+// the pen by credits byte 0x5c (7 px; atlantis-re experiment
+// 2026-10-18-07 item 4).  The port does the same by default (the overflow
+// rule above, the drawer skipping a glyph it does not have).
+// sharpSAsSs (kEnhMinorBugFixes, decision 0021 C3): byte 0xe1 is drawn and
+// advanced as two 's' glyphs of the same font instead, in every FONTMIN
+// renderer and in the load-list width, so a centred title stays centred.
 void fontMinBlits(FontMinRenderer r, const Common::String &text, int x, int y,
                   Common::Array<FontMinBlit> &out, bool hashRule = true,
-                  const byte *creditWidths = nullptr);
+                  const byte *creditWidths = nullptr, bool sharpSAsSs = false);
 
 // Width FUN_00420b48 records for a load-list row (0x00611e80): the sum of
 // the pen advances of fontMinBlits(kFontMinLoadList), the +6 steps included.
-int fontMinLoadListWidth(const Common::String &text, const byte *creditWidths = nullptr);
+int fontMinLoadListWidth(const Common::String &text, const byte *creditWidths = nullptr,
+                         bool sharpSAsSs = false);
+
+// The DOS code page byte of `ß` in the SPRLIST texts (EPI.TXT of
+// atlantis-cd-de-687104) and the text with each one replaced by "ss": the
+// sharpSAsSs rendering above.
+enum { kSprTextSharpS = 0xe1 };
+Common::String sprTextSharpSAsSs(const Common::String &text);
 
 // atlantis.exe FUN_0041cf78, the LOAD picker's scrollbar (0x0041d1f3..
 // 0x0041d24b at entry, 0x0041d273..0x0041d2e6 each frame).  The knob

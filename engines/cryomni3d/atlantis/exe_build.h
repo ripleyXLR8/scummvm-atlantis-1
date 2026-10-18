@@ -33,7 +33,7 @@ namespace Atlantis {
 // tables it reads sit, and the code differences between builds that change
 // behaviour.  Behaviour is established on the reference build
 // (atlantis-cd-en-714240); another build is described by its differences
-// (atlantis-re binaries/, decisions 0017, 0018, 0019 and 0020).
+// (atlantis-re binaries/, decisions 0017 to 0021).
 struct AtlantisExeBuild {
 	const char *name;        // atlantis-re binaries/ name
 	uint32 size;             // file size of atlantis.exe
@@ -214,6 +214,26 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false, false,
 	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1,
 	  true, 5, true, Common::kDos850 },
+	// atlantis-re experiment 2026-10-18-07 (binaries/atlantis-cd-de-687104.md,
+	// decision 0021 A1): the German CD's executable (1997-08-18), the same
+	// size as atlantis-cd-fr-687104, told apart by its PE timestamp.  Its
+	// code is fr-687104's byte for byte (relocated dwords aside), hence
+	// fr-687104's flags; DGROUP differs by the player row `NEUER SPIELER`
+	// (0x00486546, one string, marker = label; the names array at
+	// 0x00486554) and two error texts, the shorter row moving the credits
+	// widths one byte down (0x004866d4, FONTMIN 0x0048666f, FONTMAX
+	// 0x004865e6); the inventory (0x00486788), guests (0x0048685c), music
+	// names (0x00485eec) and the newsound table (0x004861cc) are where
+	// fr-687104 has them (evidence/compare/de_687104_vs_fr_687104_dgroup.txt).
+	// Without this entry the size alone picks fr-687104's, whose credits
+	// address reads every credits and FONTMIN-overflow advance one glyph
+	// late.
+	{ "atlantis-cd-de-687104", 687104, 0x33f83e81, 0x00480000, 0x6ba00,
+	  0x00486788, 0x0048685c, 0x004866d4, 0x004861cc, 0x004a0000, 0x004b0000,
+	  0x00486546, false,
+	  false, false, true,
+	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1,
+	  false, 0, false, Common::kWindows1252 },
 	// atlantis-re experiment 2026-10-18-06 (binaries/atlantis-patch-fr-714240.md):
 	// the executable of Cryo's patch AT1CDINT.EXE ("1.01", 1999-12-17), the
 	// same size as the reference, told apart by its PE timestamp (GOG's).

@@ -246,8 +246,21 @@ int fontMinAdvance(uint idx, const byte *creditWidths) {
 	return c < ARRAYSIZE(kRefCreditAdvance) ? kRefCreditAdvance[c] : 0;
 }
 
-void fontMinBlits(FontMinRenderer r, const Common::String &text, int x, int y,
-                  Common::Array<FontMinBlit> &out, bool hashRule, const byte *creditWidths) {
+Common::String sprTextSharpSAsSs(const Common::String &text) {
+	Common::String out;
+	for (uint i = 0; i < text.size(); i++) {
+		if ((byte)text[i] == kSprTextSharpS)
+			out += "ss";
+		else
+			out += text[i];
+	}
+	return out;
+}
+
+void fontMinBlits(FontMinRenderer r, const Common::String &textIn, int x, int y,
+                  Common::Array<FontMinBlit> &out, bool hashRule, const byte *creditWidths,
+                  bool sharpSAsSs) {
+	const Common::String text = sharpSAsSs ? sprTextSharpSAsSs(textIn) : textIn;
 	out.clear();
 	int cx = x;
 	for (uint i = 0; i < text.size(); i++) {
@@ -269,7 +282,8 @@ void fontMinBlits(FontMinRenderer r, const Common::String &text, int x, int y,
 	}
 }
 
-int fontMinLoadListWidth(const Common::String &text, const byte *creditWidths) {
+int fontMinLoadListWidth(const Common::String &textIn, const byte *creditWidths, bool sharpSAsSs) {
+	const Common::String text = sharpSAsSs ? sprTextSharpSAsSs(textIn) : textIn;
 	// FUN_00420b48 @ 0x00420c57..0x00420c7e: width[target] += the advance of
 	// each byte, 6 for glyph 0x20.
 	int w = 0;
