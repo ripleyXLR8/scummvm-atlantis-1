@@ -35,7 +35,9 @@ namespace Atlantis {
 // functions/audio-FUN_00432ea8.md; emulated by tools/emu/audio_music_fade.py.
 struct AtlantisMusicFade {
 	Common::Mutex mutex;
-	uint8 cur;          // 0x00495e71: the music sample's volume
+	uint8 cur;          // 0x00495e71: the music sample's volume (initial 0x6e in the
+	                    // data, also atlantis-cd-fr-688640 0x00485e71; every track
+	                    // start sets it to 0, the checkpoint loader to vol)
 	uint8 mode;         // 0x00495eac: 2 fade down, 1 fade up, 0 idle
 	int32 downTarget;   // 0x00495e6c: -1 until the fade down starts
 	int32 upTarget;     // 0x006ce124
@@ -52,7 +54,7 @@ struct AtlantisMusicFade {
 	bool sfxChanged;    // set by tick: apply sfxVol
 	bool sfxStop;       // set by tick: stop the sample
 
-	AtlantisMusicFade() : cur(0), mode(0), downTarget(-1), upTarget(0), percent(80), vol(127),
+	AtlantisMusicFade() : cur(0x6e), mode(0), downTarget(-1), upTarget(0), percent(80), vol(127),
 		ticks(0), lastStep(0), sfxMode(0), sfxVol(0), sfxVol0(127), sfxLast(0), sfxChanged(false),
 		sfxStop(false) {}
 

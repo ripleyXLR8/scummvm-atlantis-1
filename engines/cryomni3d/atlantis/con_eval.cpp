@@ -288,13 +288,26 @@ Common::Array<uint8> conMusicList(const Common::Array<char> &text, uint32 pos) {
 }
 
 void conMusicApply(bool load, const Common::Array<uint8> &list, int current, uint32 &onDisk,
-                   Common::Array<uint8> &copies, bool firstValueRule) {
+                   Common::Array<uint8> &copies, bool firstValueRule, bool allOrNothing) {
 	if (list.empty() || (load && list[0] >= 0x20))
 		return;
 	// The first value is the index + 1 (the call passes value - 1, as a
 	// byte, 0x00429b1e).
 	if (firstValueRule && (int)list[0] + 1 == current)
 		return;
+	if (load && allOrNothing) {
+		// atlantis-cd-fr-688640 FUN_0041e830: the first track decides
+		// (0x0041e869..0x0041e891), then every listed track is copied.
+		if ((onDisk & (1u << list[0])) || (int)list[0] + 1 == current)
+			return;
+		for (uint i = 0; i < list.size(); i++) {
+			if (list[i] >= 32)
+				continue;
+			copies.push_back(list[i]);
+			onDisk |= 1u << list[i];
+		}
+		return;
+	}
 	for (uint i = 0; i < list.size(); i++) {
 		const uint idx = list[i];
 		// LoadMusik's copy FUN_0041f1d0 skips the playing track in every

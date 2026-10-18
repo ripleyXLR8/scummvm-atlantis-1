@@ -120,8 +120,24 @@ Common::Array<uint8> conMusicList(const Common::Array<char> &text, uint32 pos);
 // absent).  What a player hears from a deleted playing track is [UNKNOWN]
 // (atlantis-re experiment 2026-10-18-01 item 12); the port only drops it
 // from the set.
+// The French build of May 1997 (allOrNothing; atlantis-cd-fr-688640
+// LoadMusik FUN_0041e830, experiment 2026-10-18-04 M1): LoadMusik copies
+// nothing when the first listed track is there (FUN_0041ee40 @ 0x0041e86e)
+// or playing (0x0041e878..0x0041e891), else every listed track below 32,
+// present or playing, without a test (copy FUN_0041e9d0 @ 0x0041e93c in
+// the loop 0x0041e926..0x0041e96e).  DelMusik is unchanged.
 void conMusicApply(bool load, const Common::Array<uint8> &list, int current, uint32 &onDisk,
-                   Common::Array<uint8> &copies, bool firstValueRule = false);
+                   Common::Array<uint8> &copies, bool firstValueRule = false,
+                   bool allOrNothing = false);
+
+// The French build of May 1997's LOADMUSIK condition (atlantis-cd-fr-688640
+// FUN_00429184 @ 0x00429c52..0x00429c78, `cmp byte ptr [0x485e71], 5; jae`;
+// experiment 2026-10-18-04 M2): LoadMusik runs only when the current music
+// volume 0x00485e71 is at least minVolume (exe_build.h musicLoadMinVolume, 5
+// there, 0 in the other builds: always).
+inline bool conLoadMusikVolumeOk(uint8 currentVolume, uint8 minVolume) {
+	return currentVolume >= minVolume;
+}
 
 // FUN_0042a100, AngleWarpX= / AngleWarpY=: the view angle in radians,
 // value * pi / 180 computed on the x87 and stored as a float (pi is the

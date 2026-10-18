@@ -255,6 +255,11 @@ void CryOmni3DEngine_Atlantis::musicSwitchTrack(int trackId) {
 
 void CryOmni3DEngine_Atlantis::musicStartCommand(int trackId) {
 	if (trackId == _musicTrackId && _musicCurrentFile) {
+		// The French build of May 1997 does nothing here (atlantis-cd-fr-688640
+		// FUN_00429184 @ 0x00429d47..0x00429d51, musicStartSameTrackNoop;
+		// experiment 2026-10-18-04 M3); the others re-arm the fade-in.
+		if (_exeBuild->musicStartSameTrackNoop)
+			return;
 		Common::StackLock lock(_musicFade.mutex);
 		_musicFade.mode = 1;
 		_musicFade.upTarget = _musicFade.vol;
@@ -385,11 +390,36 @@ void CryOmni3DEngine_Atlantis::musicCopyThroughScreenBuffer(uint idx) {
 
 // FUN_0041f1d0 (load) / FUN_0041faa0 (del), without the WAIT menu a copy
 // shows (decisions/0014-music-copy-model.md).
+//
+// The French build of May 1997 (atlantis-cd-fr-688640, exe_build.h; atlantis-re
+// experiment 2026-10-18-04 M1, M2, decision 0020 B): LoadMusik copies all or
+// nothing on its first track (FUN_0041e830, conMusicApply allOrNothing), and
+// the CON executor FUN_00429184 calls it only when the current music volume
+// 0x00485e71 (_musicFade.cur) is 5 or more (0x00429c52..0x00429c78: `cmp
+// byte ptr [0x485e71], 5; jae`), so with the music volume option below 5, or
+// within 125 ms of a StartMusik, nothing is copied.  The original then plays
+// no music for a later StartMusik of a track never copied; the port plays
+// every track from the archive (decision 0014), so these rules change only
+// the set of tracks on disk and the IX buffer the next video starts on.
+// With kEnhMinorBugFixes the port copies per track as the other builds do:
+// M1 gives way to the per-track test of FUN_0041f1d0 (each listed track not
+// on disk and not playing is copied) and M2's volume test is dropped; the
+// first-value rule of the executor (musicFirstValueRule), DelMusik and M3
+// stay this build's.
 void CryOmni3DEngine_Atlantis::execMusicList(bool load, const Common::Array<char> &text, uint32 pos) {
+	const bool fixed = enhancementEnabled(kEnhMinorBugFixes);
+	if (load && !fixed) {
+		Common::StackLock lock(_musicFade.mutex);
+		if (!conLoadMusikVolumeOk(_musicFade.cur, _exeBuild->musicLoadMinVolume)) {
+			debugC(1, kDebugMusic, "loadmusik: current music volume %u below %u, nothing copied",
+			       _musicFade.cur, _exeBuild->musicLoadMinVolume);
+			return;
+		}
+	}
 	uint32 onDisk = musicOnDisk();
 	Common::Array<uint8> copies;
 	conMusicApply(load, conMusicList(text, pos), _musicTrackId, onDisk, copies,
-	              _exeBuild->musicFirstValueRule);
+	              _exeBuild->musicFirstValueRule, _exeBuild->musicLoadAllOrNothing && !fixed);
 	for (uint i = 0; i < copies.size(); i++)
 		musicCopyThroughScreenBuffer(copies[i]);
 	setMusicOnDisk(onDisk);
