@@ -695,6 +695,26 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 	},
 
 	// Atlantis: The Lost Tales
+	// Dutch Windows CD, "Atlantis: De Verloren Legende" (R&P Electronic Media,
+	// June 1997; its own executable, en-688128's code with Dutch strings,
+	// and the Dutch BIGCD*.BIG; atlantis-re binaries/atlantis-cd-nl-688128.md,
+	// decision 0022 B1)
+	{
+		{
+			"atlantis",
+			"",
+			AD_ENTRY2s("atlantis.exe", "deea7a04539bd7b7cbe006725824ccbb", 688128,
+			           "BIGCD1.BIG",  "88bb8611b5bcb0f3cc7087ce6347a274", 633096108),
+			Common::NL_NLD,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
 	// French Windows CD, first pressing of May 1997 (its own executable and
 	// the May French BIGCD*.BIG, member names as the reference's; atlantis-re
 	// binaries/atlantis-cd-fr-688640.md)
@@ -784,6 +804,25 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
 			           "BIGCD1.BIG",  "08214298a01ac06c7dc23b9f93d2dd1b", 638118150),
 			Common::DE_DEU,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
+	// Dutch Windows CD (atlantis-cd-nl-688128's BIGCD*.BIG; this build passes
+	// their DOS code page CON texts to TextOutA as Windows-1252; decision
+	// 0022 B2)
+	{
+		{
+			"atlantis",
+			"AT1CDINT patch",
+			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
+			           "BIGCD1.BIG",  "88bb8611b5bcb0f3cc7087ce6347a274", 633096108),
+			Common::NL_NLD,
 			Common::kPlatformWindows,
 			ADGF_UNSTABLE,
 			GUI_OPTIONS_ATLANTIS

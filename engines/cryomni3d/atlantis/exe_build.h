@@ -33,7 +33,7 @@ namespace Atlantis {
 // tables it reads sit, and the code differences between builds that change
 // behaviour.  Behaviour is established on the reference build
 // (atlantis-cd-en-714240); another build is described by its differences
-// (atlantis-re binaries/, decisions 0017 to 0021).
+// (atlantis-re binaries/, decisions 0017 to 0022).
 struct AtlantisExeBuild {
 	const char *name;        // atlantis-re binaries/ name
 	uint32 size;             // file size of atlantis.exe
@@ -133,9 +133,28 @@ struct AtlantisExeBuild {
 	// (decision 0019 A1); code page 850 for atlantis-cd-fr-688640, whose
 	// archives hold DOS code page texts drawn by byte with the code page 437
 	// FONTS.BIN (0x82 e acute ... 0x97 u grave, the same letters in 437 and
-	// 850; decision 0020 A1).  atlantis-cd-en-688128 draws only with
+	// 850; decision 0020 A1); code page 850 too for atlantis-cd-nl-688128,
+	// whose Dutch CON texts are DOS code page bytes (decision 0022 D).  atlantis-cd-en-688128 draws only with
 	// FONTS.BIN (its English texts never take another path).
 	Common::CodePage conCodePage;
+	// atlantis-cd-nl-688128 (decision 0022 C1): WinMain plays
+	// UBB_VUE\LOGORP.HNM (the R&P Electronic Media logo) after LOGO15N and
+	// its 200-tick wait, before PREINTRO: the path built in 0x0073cdf4 @
+	// 0x00419560..0x0041958c (`ubb_vue\` 0x004abc1c + `logorp.hnm`
+	// 0x00486925), the start-up video player FUN_00423444 called @
+	// 0x0041958d with no NEWSOUND store (LOGO15N's 18 at 0x00419535 and
+	// PREINTRO's 19 at 0x004195d1 frame it), the cinema flag 0x0048617c
+	// cleared only after PREINTRO (0x004195e0), so at 13 ticks per frame.
+	bool rpLogoVideo;
+	// The credits load SPRLIST\CREDITS.TXT themselves on each run, from the
+	// archive open then (the current disc's): atlantis-cd-en-688128
+	// FUN_0041a5f8 (`credits.txt` pushed @ 0x0041a716), atlantis-cd-fr-688640
+	// FUN_0041a638 (@ 0x0041a756), atlantis-cd-nl-688128 FUN_0041a630 (@
+	// 0x0041a74e).  false: it is loaded once at start-up with the menus
+	// (reference FUN_00426f20 @ 0x0042710b, atlantis-cd-fr-687104 and
+	// atlantis-cd-de-687104 @ 0x00425eff, the 1999 builds likewise), from
+	// the start-up disc.
+	bool creditsPerRun;
 
 	uint32 fileOffset(uint32 va) const { return va - dgroupVA + dgroupRawPtr; }
 };
@@ -183,37 +202,42 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	// loadPickerClamp, hexaForcesObject402, ogre frames x ticks,
 	// ratFrameDeadline, ratT0023Restart, musicFirstValueRule,
 	// muriaPlacedFrames; musicLoadAllOrNothing, musicLoadMinVolume,
-	// musicStartSameTrackNoop, conCodePage.
+	// musicStartSameTrackNoop, conCodePage; rpLogoVideo, creditsPerRun.
 	{ "atlantis-cd-en-714240", 714240, 0x3b8275d6, 0x00490000, 0x71200,
 	  0x004967b0, 0x00496884, 0x004966fc, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
 	  true, true, false,
 	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
-	  false, 0, false, Common::kWindows1252 },
+	  false, 0, false, Common::kWindows1252,
+	  false, false },
 	{ "atlantis-gog-714752", 714752, 0x385a4dc6, 0x00490000, 0x71200,
 	  0x004967b4, 0x00496888, 0x00496700, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
 	  false, false, true,
 	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
-	  false, 0, false, Common::kWindows1252 },
+	  false, 0, false, Common::kWindows1252,
+	  false, false },
 	{ "atlantis-cd-en-688128", 688128, 0x33886fd1, 0x00480000, 0x6c400,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
 	  false, false, false,
 	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1,
-	  false, 0, false, Common::kWindows1252 },
+	  false, 0, false, Common::kWindows1252,
+	  false, true },
 	{ "atlantis-cd-fr-687104", 687104, 0x33ef1516, 0x00480000, 0x6ba00,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861cc, 0x004a0000, 0x004b0000,
 	  0x00486546, false,
 	  false, false, true,
 	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1,
-	  false, 0, false, Common::kWindows1252 },
+	  false, 0, false, Common::kWindows1252,
+	  false, false },
 	{ "atlantis-cd-fr-688640", 688640, 0x33818054, 0x00480000, 0x6c600,
 	  0x0048678c, 0x00486860, 0x004866d9, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
 	  false, false, false,
 	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1,
-	  true, 5, true, Common::kDos850 },
+	  true, 5, true, Common::kDos850,
+	  false, true },
 	// atlantis-re experiment 2026-10-18-07 (binaries/atlantis-cd-de-687104.md,
 	// decision 0021 A1): the German CD's executable (1997-08-18), the same
 	// size as atlantis-cd-fr-687104, told apart by its PE timestamp.  Its
@@ -233,7 +257,34 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  0x00486546, false,
 	  false, false, true,
 	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1,
-	  false, 0, false, Common::kWindows1252 },
+	  false, 0, false, Common::kWindows1252,
+	  false, false },
+	// atlantis-re experiment 2026-10-18-08 (binaries/atlantis-cd-nl-688128.md,
+	// decision 0022 A1): the Dutch CD's executable (1997-06-05), the same
+	// size as atlantis-cd-en-688128, told apart by its PE timestamp.  821 of
+	// its 829 functions are en-688128's code, hence en-688128's flags but
+	// the name entry: FUN_0041d70c takes 0x20..0xa7 and keeps the case
+	// (`cmp 0xa7` @ 0x0041daf7, no a..z -> A..Z; en-688128 FUN_0041d6d0),
+	// the reference's rule.  The player list is en-688128's (no '#' rule).
+	// DGROUP: en-688128's tables up to the player row `Nieuwe speler`
+	// (0x0048654a, one string, marker = label; the names array at
+	// 0x00486558), then 3 bytes later for FONTMAX 0x004865ea, FONTMIN
+	// 0x00486673 and the credits widths 0x004866d8, 4 for the inventory
+	// 0x0048678c and the guests 0x00486860; the newsound table 0x004861d0
+	// (pointers into 0x004ab37c..0x004abb90) and the music names 0x00485eec
+	// where en-688128 has them (evidence/compare/nl_688128_vs_en_688128_dgroup.txt).
+	// Without this entry the size alone picks en-688128's, which reads the
+	// inventory and guest tables 4 bytes early and the credits 3.  The CON
+	// texts are DOS code page bytes drawn by byte with the code page 437
+	// FONTS.BIN; any other rendering decodes them as code page 850
+	// (decision 0022 D).  It plays the R&P logo at start-up (rpLogoVideo).
+	{ "atlantis-cd-nl-688128", 688128, 0x3396af27, 0x00480000, 0x6c400,
+	  0x0048678c, 0x00486860, 0x004866d8, 0x004861d0, 0x004a0000, 0x004b0000,
+	  0x0048654a, false,
+	  false, false, false,
+	  true, false, true, false, true, false, false, false, 5, 75, true, false, true, 1,
+	  false, 0, false, Common::kDos850,
+	  true, true },
 	// atlantis-re experiment 2026-10-18-06 (binaries/atlantis-patch-fr-714240.md):
 	// the executable of Cryo's patch AT1CDINT.EXE ("1.01", 1999-12-17), the
 	// same size as the reference, told apart by its PE timestamp (GOG's).
@@ -252,7 +303,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  0x00496570, true,
 	  false, false, true,
 	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
-	  false, 0, false, Common::kWindows1252 },
+	  false, 0, false, Common::kWindows1252,
+	  false, false },
 };
 
 // The build of an executable of `size` bytes and PE timestamp

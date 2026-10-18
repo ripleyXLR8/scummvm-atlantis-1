@@ -478,6 +478,8 @@ void CryOmni3DEngine_Atlantis::drawPlayerText(Graphics::ManagedSurface &dst,
 // id, or -1 if quit.
 int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 	Graphics::PixelFormat fmt = g_system->getScreenFormat();
+	// FUN_0041dea4 step 1: FONTMIN / FONTMIN2 loaded from the current disc.
+	loadFontMinSprites();
 
 	// Backdrop: the PREINTRO.TGA menu artwork (the "Atlantis" title scene),
 	// with the SELEMENU.TXT ornaments and labels composited on top — the same
@@ -714,6 +716,8 @@ static void dimMenuBackdrop(Graphics::ManagedSurface &surf) {
 uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &outSaveName) {
 	(void)saveMode;
 	(void)outSaveName;
+	// FUN_0041cf78 step 1: FONTMIN / FONTMIN2 loaded from the current disc.
+	loadFontMinSprites();
 
 	// FUN_00420b48: rows at x 55 (0x37), baseline 130 (0x82) + 22 i; the hit
 	// grid is FUN_004211f0 with FUN_0041cf78's arguments (0x0041d362): cell

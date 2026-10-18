@@ -234,6 +234,14 @@ public:
 	// Returns nullptr if not found.
 	Common::SeekableReadStream *openBigFileStream(FileType fileType,
 	                                               const Common::String &baseName) const;
+	// The same, for a member the original reads after boot from the one
+	// archive it has open, the current disc's (_currentDisc), where the
+	// copies differ between discs: FONTMIN.SPR / FONTMIN2.SPR and, in the
+	// builds whose credits load it on each run, CREDITS.TXT (decision 0022
+	// F; see engine.cpp).  Under
+	// kEnhMinorBugFixes the first disc's copy, the newest revision.
+	Common::SeekableReadStream *openCurrentDiscStream(FileType fileType,
+	                                                  const Common::String &baseName) const;
 
 	// CryOmni3DEngine interface.
 	void setupPalette(const byte *colors, uint start, uint num) override;
@@ -475,9 +483,13 @@ private:
 
 	// --- FONTMAX gold menu font (sprite_renderer.cpp / menus.cpp) ---------
 	// Decode one SPR glyph atlas (sprite_index = char_code - 0x20) into `out`.
-	void loadFontSpriteSet(const char *spr, Common::Array<SubjSprite> &out);
+	// currentDisc: read with openCurrentDiscStream.
+	void loadFontSpriteSet(const char *spr, Common::Array<SubjSprite> &out, bool currentDisc = false);
 	// Load FONTMAX.SPR (+ FONTMAX2.SPR hover) — the gold menu font.
 	void loadFontMaxSprites();
+	// FONTMIN.SPR / FONTMIN2.SPR from the current disc, as the player
+	// screen and the LOAD picker load them on entry.
+	void loadFontMinSprites();
 	// Shared glyph-sprite blitter: layoutGlyphs drive the pen advance, drawGlyphs
 	// supply the pixels (so a hover swap recolours without reflowing).
 	void drawSprFontText(Graphics::ManagedSurface &dst, const Common::String &text,

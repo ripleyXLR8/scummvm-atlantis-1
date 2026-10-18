@@ -36,7 +36,7 @@ BigFileArchive::~BigFileArchive() {
 	close();
 }
 
-bool BigFileArchive::open(const Common::Path &path) {
+bool BigFileArchive::open(const Common::Path &path, uint discNumber) {
 	Common::File *file = new Common::File();
 	if (!file->open(path)) {
 		delete file;
@@ -59,6 +59,7 @@ bool BigFileArchive::open(const Common::Path &path) {
 	file->skip(16);
 
 	const uint disc = _files.size();
+	Common::HashMap<Common::String, Entry> own;
 
 	// Directory entries, eight uint32 fields then the name, until an entry
 	// whose "next" field is 0.  The data starts after the directory, whose
@@ -97,17 +98,20 @@ bool BigFileArchive::open(const Common::Path &path) {
 
 		if (flags & 0x1000)
 			warning("BigFileArchive: '%s' is LZW-packed, which is not supported", name.c_str());
-		if (!_entries.contains(name)) {
-			Entry e;
-			e.adr  = adr;
-			e.size = size;
-			e.disc = disc;
+		Entry e;
+		e.adr  = adr;
+		e.size = size;
+		e.disc = disc;
+		if (!_entries.contains(name))
 			_entries[name] = e;
-		}
+		if (!own.contains(name))
+			own[name] = e;
 	} while (next != 0);
 
 	_files.push_back(file);
 	_dataBases.push_back(headerLen);
+	_discNumbers.push_back(discNumber ? discNumber : disc + 1);
+	_discEntries.push_back(own);
 	return true;
 }
 
@@ -119,6 +123,8 @@ void BigFileArchive::close() {
 	_files.clear();
 	_dataBases.clear();
 	_entries.clear();
+	_discNumbers.clear();
+	_discEntries.clear();
 	delete _loose;
 	_loose = nullptr;
 }
@@ -169,7 +175,23 @@ Common::SeekableReadStream *BigFileArchive::createReadStreamForMember(const Comm
 	if (it == _entries.end())
 		return _loose ? _loose->createReadStreamForMember(Common::Path(name, '\\')) : nullptr;
 
-	const Entry &e = it->_value;
+	return readEntry(it->_value);
+}
+
+Common::SeekableReadStream *BigFileArchive::createReadStreamForMemberOnDisc(const Common::String &name,
+        uint discNumber) const {
+	for (uint i = 0; i < _discNumbers.size(); i++) {
+		if (_discNumbers[i] != discNumber)
+			continue;
+		Common::HashMap<Common::String, Entry>::const_iterator it = _discEntries[i].find(name);
+		if (it != _discEntries[i].end())
+			return readEntry(it->_value);
+		break;
+	}
+	return createReadStreamForMember(name);
+}
+
+Common::SeekableReadStream *BigFileArchive::readEntry(const Entry &e) const {
 	if (e.disc >= _files.size())
 		return nullptr;
 

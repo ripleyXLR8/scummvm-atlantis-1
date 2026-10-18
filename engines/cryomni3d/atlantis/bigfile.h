@@ -41,8 +41,12 @@ namespace Atlantis {
 //
 // The full game spans four discs (BIGCD1-4.BIG); open() is additive, so all
 // four can be mounted into one merged index.  When a file appears on several
-// discs (shared menus, fonts, common scripts) the first-mounted copy wins —
-// duplicates across discs are byte-identical.
+// discs (shared menus, fonts, common scripts) the first-mounted copy wins.
+// Such copies are byte-identical but a few SPRLIST texts, images and fonts
+// (atlantis-re formats/archive-bigfile.md: CD1MENU..CD4MENU.TXT of the
+// reference; experiment 2026-10-18-08: disc 2 of atlantis-cd-nl-688128):
+// the original has one archive open, the current disc's, so
+// createReadStreamForMemberOnDisc() reads one disc's copy.
 // Implements Common::Archive so it can be registered with SearchMan.
 //
 // The GOG release ships its files unpacked in sub-directories (CYCLO\,
@@ -57,7 +61,9 @@ public:
 	// Mount one BigFile archive, merging its directory into the index.
 	// Call repeatedly to mount additional discs.  Already-mounted discs are
 	// left intact if a later call fails.
-	bool open(const Common::Path &path);
+	// `discNumber` (1..4) names the disc for createReadStreamForMemberOnDisc;
+	// 0: the number of archives mounted before, plus one.
+	bool open(const Common::Path &path, uint discNumber = 0);
 	void close();
 	// Unpacked files under `root` (the game directory of the GOG release),
 	// used for names the archives do not hold.
@@ -74,6 +80,11 @@ public:
 	// Low-level lookup using the exact archive key ("SUBDIR\FILE.EXT").
 	Common::SeekableReadStream *createReadStreamForMember(const Common::String &name) const;
 	bool hasFile(const Common::String &name) const;
+	// The copy of `name` in the archive of disc `discNumber` (the first in
+	// that archive, as _GL_OpenFileBigFile); when that disc is not mounted
+	// or lacks the member, the merged lookup above.
+	Common::SeekableReadStream *createReadStreamForMemberOnDisc(const Common::String &name,
+	                                                            uint discNumber) const;
 
 	// Number of distinct files across all mounted discs.
 	uint numFiles() const { return _entries.size(); }
@@ -91,7 +102,12 @@ private:
 	Common::Array<Common::File *> _files;     // one handle per mounted .BIG
 	Common::Array<uint32>         _dataBases; // data-section base, per disc
 	Common::HashMap<Common::String, Entry> _entries;
+	// Per mounted archive: its disc number and its own index.
+	Common::Array<uint> _discNumbers;
+	Common::Array<Common::HashMap<Common::String, Entry> > _discEntries;
 	Common::FSDirectory *_loose;
+
+	Common::SeekableReadStream *readEntry(const Entry &e) const;
 };
 
 } // namespace Atlantis

@@ -291,6 +291,42 @@ Common::SeekableReadStream *CryOmni3DEngine_Atlantis::openBigFileStream(FileType
 	return s;
 }
 
+// The original has one archive open: the first bigcdN.big WinMain finds at
+// boot (atlantis-cd-en-714240 @ 0x00418fb0..0x0041907d; with every archive
+// at hand, as here, disc 1), then the one the disc prompt reopens
+// (FUN_0041eda8; atlantis-cd-nl-688128 FUN_0041e46c).  The port merges the
+// four with disc 1's copy first, which is the start-up disc's for what the
+// original loads once at start-up and never again (the disc prompt
+// switches the archive and reloads nothing): the 15 menus and EPI.TXT
+// (FUN_00426f20, called @ 0x00419439; atlantis-cd-nl-688128 FUN_00425f70,
+// called @ 0x0041931b, the menus @ 0x0042607c / 0x004260ae, EPI.TXT @
+// 0x00426108), FONTMAX / FONTMAX2, PREINTRO.TGA (WinMain after the
+// start-up videos; atlantis-cd-nl-688128 `preintro.tga` 0x004abc3c @
+// 0x00419608, loaded by FUN_0041b300 @ 0x0041961c) and, but in the
+// en-688128 code family, CREDITS.TXT.  What it loads later comes from the
+// current disc: FONTMIN / FONTMIN2 (loadFontMinSprites) and, where
+// creditsPerRun (exe_build.h), CREDITS.TXT.  Of the shipped archives only
+// the Dutch CD's disc 2 (an older text revision) holds other copies of
+// these (atlantis-re experiment 2026-10-18-08, decision 0022 F): its
+// FONTMIN / FONTMIN2 (the reference's files) and its CREDITS.TXT (one line
+// less); its older menus, EPI.TXT and PREINTRO.TGA never show.
+// kEnhMinorBugFixes: the newest revision whatever the disc, disc 1's.
+Common::SeekableReadStream *CryOmni3DEngine_Atlantis::openCurrentDiscStream(FileType fileType,
+        const Common::String &baseName) const {
+	if (enhancementEnabled(kEnhMinorBugFixes))
+		return openBigFileStream(fileType, baseName);
+	uint typeIdx = (uint)fileType;
+	if (typeIdx >= ARRAYSIZE(kBigFileSubdirs))
+		return nullptr;
+	Common::String fullName = kBigFileSubdirs[typeIdx];
+	fullName += baseName;
+	fullName.toUppercase();
+	Common::SeekableReadStream *s = _bigFile.createReadStreamForMemberOnDisc(fullName, _currentDisc);
+	debugC(1, kDebugFile, "openCurrentDiscStream: %s (disc %u)%s", fullName.c_str(), _currentDisc,
+	       s ? "" : " (missing)");
+	return s;
+}
+
 void CryOmni3DEngine_Atlantis::setupPalette(const byte *colors, uint start, uint num) {
 	// Atlantis runs in 16bpp true colour; the base palette helpers are
 	// no-ops in that mode (see CryOmni3DEngine::setPalette).
@@ -511,14 +547,14 @@ Common::Error CryOmni3DEngine_Atlantis::run() {
 	if (unpacked)
 		_bigFile.addLooseRoot(gameDir);
 	Common::Path bigFilePath("BIGCD1.BIG");
-	if (!_bigFile.open(bigFilePath)) {
+	if (!_bigFile.open(bigFilePath, 1)) {
 		bigFilePath = Common::Path("bigcd1.big");
-		if (!_bigFile.open(bigFilePath) && !unpacked)
+		if (!_bigFile.open(bigFilePath, 1) && !unpacked)
 			return Common::Error(Common::kPathDoesNotExist, "Cannot open BIGCD1.BIG");
 	}
 	for (int disc = 2; disc <= 4; disc++) {
-		if (!_bigFile.open(Common::Path(Common::String::format("BIGCD%d.BIG", disc)))
-		        && !_bigFile.open(Common::Path(Common::String::format("bigcd%d.big", disc))))
+		if (!_bigFile.open(Common::Path(Common::String::format("BIGCD%d.BIG", disc)), disc)
+		        && !_bigFile.open(Common::Path(Common::String::format("bigcd%d.big", disc)), disc))
 			warning("Atlantis: BIGCD%d.BIG not found - its chapters will be unavailable", disc);
 	}
 	debugC(1, kDebugScript, "Atlantis: data archives mounted, %u files total", _bigFile.numFiles());
@@ -632,6 +668,15 @@ Common::Error CryOmni3DEngine_Atlantis::run() {
 			}
 			g_system->delayMillis(10);
 		}
+		// atlantis-cd-nl-688128 only (decision 0022 C1): UBB_VUE\LOGORP.HNM
+		// (the R&P logo, 60 frames) after the wait, by the same start-up
+		// player FUN_00423444 (@ 0x0041958d) and at the cinema pace (the
+		// cinema flag 0x0048617c stays set until after PREINTRO,
+		// 0x004195e0); no NEWSOUND store and no LOGORP.APC in the archives,
+		// so no sound is opened for it.  Skipped like the other start-up
+		// videos.
+		if (_exeBuild->rpLogoVideo)
+			playTransitionVideo("LOGORP.HNM", uint(-1), uint(-1), kCinemaFrameMs);
 		playTransitionVideo("PREINTRO.HNM", uint(-1), uint(-1), kCinemaFrameMs);
 	}
 	if (bootSlot >= 0) {
@@ -977,7 +1022,8 @@ void CryOmni3DEngine_Atlantis::playQuitOutro() {
 	Common::Array<byte> txt;
 	{
 		Common::ScopedPtr<Common::SeekableReadStream> f(
-		    openBigFileStream(kFileTypeSprite, "CREDITS.TXT"));
+		    _exeBuild->creditsPerRun ? openCurrentDiscStream(kFileTypeSprite, "CREDITS.TXT")
+		                             : openBigFileStream(kFileTypeSprite, "CREDITS.TXT"));
 		if (f) {
 			txt.resize((uint)f->size());
 			f->read(txt.data(), txt.size());

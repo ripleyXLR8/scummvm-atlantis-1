@@ -87,10 +87,10 @@ void CryOmni3DEngine_Atlantis::loadSubjectSprites() {
 }
 
 void CryOmni3DEngine_Atlantis::loadFontSpriteSet(const char *sprName,
-        Common::Array<SubjSprite> &out) {
+        Common::Array<SubjSprite> &out, bool currentDisc) {
 	out.clear();
-	Common::ScopedPtr<Common::SeekableReadStream> stream(
-	    openBigFileStream(kFileTypeSprite2D, sprName));
+	Common::ScopedPtr<Common::SeekableReadStream> stream(currentDisc ?
+	    openCurrentDiscStream(kFileTypeSprite2D, sprName) : openBigFileStream(kFileTypeSprite2D, sprName));
 	if (!stream) {
 		warning("loadFontSpriteSet: cannot open SPRITE\\2D\\%s", sprName);
 		return;
@@ -104,10 +104,21 @@ void CryOmni3DEngine_Atlantis::loadFontMaxSprites() {
 	// red player-name font (FONTMIN2 = hover).
 	loadFontSpriteSet("FONTMAX.SPR",  _fontMaxSprites);
 	loadFontSpriteSet("FONTMAX2.SPR", _fontMaxHoverSprites);
-	loadFontSpriteSet("FONTMIN.SPR",  _fontMinSprites);
-	loadFontSpriteSet("FONTMIN2.SPR", _fontMin2Sprites);
+	loadFontMinSprites();
 	debugC(1, kDebugScript, "loadFontMaxSprites: %u FONTMAX + %u FONTMIN glyphs",
 	      _fontMaxSprites.size(), _fontMinSprites.size());
+}
+
+// The player screen (FUN_0041dea4 step 1; atlantis-cd-nl-688128
+// FUN_0041d70c @ 0x0041d75b / 0x0041d7c3) and the LOAD picker (FUN_0041cf78
+// step 1; atlantis-cd-nl-688128 FUN_0041c9e0 @ 0x0041ca2a / 0x0041ca92) load
+// `sprite\2d\fontmin.spr` and `fontmin2.spr` on each entry, from the
+// archive open then: the current disc's.  Disc 2 of the Dutch CD holds the
+// reference's files, discs 1, 3, 4 fr-687104's (the `j` / `'` hotspots
+// differ; atlantis-re evidence/compare/nl_688128_archives.txt).
+void CryOmni3DEngine_Atlantis::loadFontMinSprites() {
+	loadFontSpriteSet("FONTMIN.SPR",  _fontMinSprites, true);
+	loadFontSpriteSet("FONTMIN2.SPR", _fontMin2Sprites, true);
 }
 
 void CryOmni3DEngine_Atlantis::loadCreditFontSprites() {
