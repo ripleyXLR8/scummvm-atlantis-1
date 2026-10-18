@@ -200,7 +200,7 @@ bool sections(const Common::Array<byte> &f, Common::Array<uint32> &out) {
 
 } // End of anonymous namespace
 
-DialogHead::DialogHead() : _frames(0), _frame(0), _idx(1), _next(0), _prev(0), _blend(0),
+DialogHead::DialogHead() : _frames(0), _frame(0), _restKeyFix(false), _idx(1), _next(0), _prev(0), _blend(0),
 	_fx(0), _fy(0), _cx(320), _cy(240), _near(0x80), _far(65000), _kx(0), _ky(0), _drawnNode(-1),
 	_entryUsed(0) {
 	memset(_phon, 0, sizeof(_phon));
@@ -528,7 +528,9 @@ void DialogHead::morph(int mesh, int shape, int w) {
 void DialogHead::headAnim() {
 	if (_frame >= _frames)
 		return;
-	const double f = (double)(float)((double)((256 - 255) * _frame + _frame * 255) * (double)(1.0f / 256.0f));
+	// setRestKeyFix: frame 0 drawn with frame 1's pose
+	const int fr = _restKeyFix && _frame == 0 && _frames > 1 ? 1 : _frame;
+	const double f = (double)(float)((double)((256 - 255) * fr + fr * 255) * (double)(1.0f / 256.0f));
 	for (uint ni = 0; ni < _nodes.size() && ni < _tracks.size(); ni++) {
 		Node &n = _nodes[ni];
 		for (int kind = 0; kind < 2; kind++) {

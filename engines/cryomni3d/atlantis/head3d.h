@@ -60,6 +60,16 @@ public:
 
 	// FUN_0044dd10: the UBB frame index drives the head animation.
 	void setFrame(int frame) { _frame = frame; }
+	// Enhancement (kEnhMinorBugFixes, decision 0016).  The original
+	// evaluates the head animation at the UBB frame index, so frame 0 (the
+	// first frame of a line and of every loop of its video) uses the first
+	// key of each track.  In some *A.3DA files that key is a rest pose that
+	// is not part of the loop (Meljanz, Actyon, Servage, the Queen,
+	// Gimbas...): the 3D lower face is drawn up to 35 pixels away from the
+	// video's face for that one frame.  With the fix, frame 0 is drawn with
+	// frame 1's pose, which every loop's last frame also matches in those
+	// files.
+	void setRestKeyFix(bool on) { _restKeyFix = on; }
 	// FUN_0044e860: the mouth at t ms; 0, or -1 once the track has ended.
 	int lipsync(int32 t);
 	// FUN_0044e2e0: the neutral mouth.
@@ -190,6 +200,7 @@ private:
 	Common::HashMap<Common::String, Common::String> _textures;   // material -> .3DM name
 
 	int _frames, _frame;
+	bool _restKeyFix;
 	int _idx, _next, _prev, _blend;
 	int32 _rootW[9], _rootP[3];
 	int32 _fx, _fy, _cx, _cy, _near, _far, _kx, _ky;

@@ -860,6 +860,10 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 				// here: playConSection plays them voice-only).
 				debugC(1, kDebugScript, "playSingleConLine: no head for row %d (%s)", dialRow, syc.c_str());
 				head.reset();
+			} else {
+				// The rest pose of some head animations at frame 0 (an
+				// original bug, decision 0016)
+				head->setRestKeyFix(enhancementEnabled(kEnhMinorBugFixes));
 			}
 		}
 	}
