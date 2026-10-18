@@ -735,6 +735,46 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 	},
 
 	// Atlantis: The Lost Tales
+	// Spanish Windows CD, "Atlantis: Los cuentos perdidos" (Friendware,
+	// August 1997; its own executable, fr-687104's code with Spanish strings,
+	// and the Spanish BIGCD*.BIG; atlantis-re binaries/atlantis-cd-es-687104.md,
+	// decision 0024 B1)
+	{
+		{
+			"atlantis",
+			"",
+			AD_ENTRY2s("atlantis.exe", "85abd55005d403d055df87edc9da64c8", 687104,
+			           "BIGCD1.BIG",  "b1d656c87c4264adc22791379702aff2", 635035910),
+			Common::ES_ESP,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
+	// Italian Windows CD, "Atlantis: Segreti di un mondo perduto" (CTO, July
+	// 1997; its own executable, fr-687104's code with Italian strings, and
+	// the Italian BIGCD*.BIG; atlantis-re binaries/atlantis-cd-it-687104.md,
+	// decision 0024 B1)
+	{
+		{
+			"atlantis",
+			"",
+			AD_ENTRY2s("atlantis.exe", "8d057c0b5f7e21853c916794c0d419be", 687104,
+			           "BIGCD1.BIG",  "5206edf3e6049ece07428045d39294ee", 636651573),
+			Common::IT_ITA,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
 	// French Windows CD, first pressing of May 1997 (its own executable and
 	// the May French BIGCD*.BIG, member names as the reference's; atlantis-re
 	// binaries/atlantis-cd-fr-688640.md)
@@ -862,6 +902,42 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
 			           "BIGCD1.BIG",  "50c6868f8b959323e4cddb36641fb7dc", 635706318),
 			Common::SV_SWE,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
+	// Spanish Windows CD (atlantis-cd-es-687104's BIGCD*.BIG; their CON texts
+	// are Windows-1252, as this build draws them; decision 0024 B2)
+	{
+		{
+			"atlantis",
+			"AT1CDINT patch",
+			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
+			           "BIGCD1.BIG",  "b1d656c87c4264adc22791379702aff2", 635035910),
+			Common::ES_ESP,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
+	// Italian Windows CD (atlantis-cd-it-687104's BIGCD*.BIG; their CON texts
+	// are Windows-1252, as this build draws them; decision 0024 B2)
+	{
+		{
+			"atlantis",
+			"AT1CDINT patch",
+			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
+			           "BIGCD1.BIG",  "5206edf3e6049ece07428045d39294ee", 636651573),
+			Common::IT_ITA,
 			Common::kPlatformWindows,
 			ADGF_UNSTABLE,
 			GUI_OPTIONS_ATLANTIS

@@ -317,6 +317,14 @@ void CryOmni3DEngine_Atlantis::showGameOver(int sectionId, int n,
 	clearKeys();
 }
 
+int CryOmni3DEngine_Atlantis::menuPosItemByteWidth() const {
+	// atlantis-cd-it-687104's 16 px per byte (FUN_0041ecb4 @ 0x0041f068)
+	// leaves the right end of a positioned item's drawn text outside its
+	// zone (`OK` 11 px, `Annulla` 18 px; decision 0024 C2): with the minor
+	// bug fixes, every other build's 22.
+	return menuPosItemZoneByteWidth(*_exeBuild, enhancementEnabled(kEnhMinorBugFixes));
+}
+
 // Render a parsed menu: SPRMENU sprites first, then FONTMAX labels / toggle
 // values on top (the hovered item in the bright FONTMAX2 glyphs — that is how
 // the original tints the highlight).  Each text/toggle item's click rect is
@@ -336,7 +344,7 @@ void CryOmni3DEngine_Atlantis::renderMenuLayout(Graphics::ManagedSurface &dst,
 			if (layout.items[i].kind == MenuItem::kToggle)
 				flags[nt++] = layout.items[i].selected == 0 ? 1 : 0;
 		walkMenuText(layout.raw.data(), layout.raw.size(), layout.menu, hoveredTextIdx,
-		             flags[0], flags[1], layout.walk);
+		             flags[0], flags[1], layout.walk, menuPosItemByteWidth());
 		for (const MenuWalkOp &op : layout.walk.ops) {
 			if (!op.sprite)
 				drawFontMaxText(dst, Common::String((char)(op.index + 0x20)), op.x, op.y, op.hoverFont);
@@ -380,7 +388,7 @@ void CryOmni3DEngine_Atlantis::renderMenuLayout(Graphics::ManagedSurface &dst,
 		// glyph-sprite advances (atlantis.exe FUN_004206c8: (640 - w) / 2).
 		int x = menuTextDrawX(it, label);
 		drawFontMaxText(dst, label, x, it.anchorY, (int)i == hoveredTextIdx);
-		hitRectsOut[i] = menuTextHitRect(it, x);
+		hitRectsOut[i] = menuTextHitRect(it, x, menuPosItemByteWidth());
 	}
 }
 
@@ -1160,7 +1168,7 @@ void CryOmni3DEngine_Atlantis::displaySoundMenu(const Graphics::ManagedSurface &
 				rh = it.h;
 			} else {
 				int x = menuTextDrawX(it, it.text);
-				Common::Rect r = menuTextHitRect(it, x);
+				Common::Rect r = menuTextHitRect(it, x, menuPosItemByteWidth());
 				if (r.contains(m))
 					return (int)i;
 				continue;

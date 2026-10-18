@@ -60,7 +60,8 @@ struct MenuItem {
 	// Character count after '>' up to end of line, BEFORE any trimming or
 	// toggle splitting (for "//A&&B" toggles this counts the whole spec).
 	// The original sizes a positioned text item's hit rect as 22 px per raw
-	// character (atlantis.exe FUN_0041fb6c: W = chars_to_CR * 0x16).
+	// character (atlantis.exe FUN_0041fb6c: W = chars_to_CR * 0x16; 16 in
+	// atlantis-cd-it-687104, FUN_0041ecb4 @ 0x0041f068).
 	int  rawLen;
 
 	// Sprite item fields.  w/h come from the /spr size hint.
@@ -105,8 +106,11 @@ struct MenuWalk {
 	Common::Array<MenuWalkOp> ops;
 };
 // hoverLine: DAT_006cd850; toggleA / toggleB: DAT_004960a8 / DAT_004960ac.
+// posItemByteWidth: a positioned item's record width per byte to the CR,
+// 0x16 (FUN_0041fb6c @ 0x0041fe42..) but 16 in atlantis-cd-it-687104
+// (FUN_0041ecb4 @ 0x0041f068; AtlantisExeBuild::menuPosItemByteWidth).
 void walkMenuText(const byte *text, uint32 size, int menu, int hoverLine,
-                  int toggleA, int toggleB, MenuWalk &walk);
+                  int toggleA, int toggleB, MenuWalk &walk, int posItemByteWidth = 22);
 // atlantis.exe FUN_004210c0: the first record strictly containing the
 // mouse, coordinates read as u16 (a negative x / y is never hit), sprite
 // records included; -1 for none (the original's 0xff).
@@ -256,9 +260,10 @@ int fontMaxMeasureWidth(const Common::String &text);
 int menuTextDrawX(const MenuItem &it, const Common::String &label);
 
 // Hit box of a text record (FUN_0041fb6c): x - 11, y - 28, height 28; width
-// is the measured string when centred, 22 per raw spec character otherwise.
-// The original tests strict inside, hence the left/top + 1.
-Common::Rect menuTextHitRect(const MenuItem &it, int drawX);
+// is the measured string when centred, posItemByteWidth (22; 16 in
+// atlantis-cd-it-687104, FUN_0041ecb4 @ 0x0041f068) per raw spec character
+// otherwise.  The original tests strict inside, hence the left/top + 1.
+Common::Rect menuTextHitRect(const MenuItem &it, int drawX, int posItemByteWidth = 22);
 
 // Pen of a glyph-sprite font (FONTMAX, FONTMIN): a space advances
 // spaceAdvance and draws nothing; glyph c - 0x20 (below glyphWidths.size())

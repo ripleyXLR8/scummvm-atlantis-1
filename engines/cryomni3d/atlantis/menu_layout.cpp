@@ -356,15 +356,16 @@ int fontMaxMeasureWidth(const Common::String &text) {
 
 // Exe-exact menu text hit rect (FUN_0041fb6c).  A text record's clickable box
 // is X-11 / Y-28, height 28; width is the measured string for centred items
-// but 22 px per raw spec character for positioned ones.  The original tests
+// but 22 px per raw spec character for positioned ones (16 in
+// atlantis-cd-it-687104: `shl ebx,4` @ 0x0041f068).  The original tests
 // strict inside (left < x < left+W), which a Common::Rect reproduces with its
 // bounds shrunk by one on the left/top.
-Common::Rect menuTextHitRect(const MenuItem &it, int drawX) {
+Common::Rect menuTextHitRect(const MenuItem &it, int drawX, int posItemByteWidth) {
 	int w;
 	if (it.centerX)
 		w = fontMaxMeasureWidth(it.text);
 	else
-		w = it.rawLen * 22;
+		w = it.rawLen * posItemByteWidth;
 	int left = drawX - 11;
 	int top  = it.anchorY - 28;
 	return Common::Rect(left + 1, top + 1, left + w, top + 28);
@@ -463,7 +464,7 @@ int menuNumber(const char *fileName) {
 }
 
 void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
-                  int toggleA, int toggleB, MenuWalk &walk) {
+                  int toggleA, int toggleB, MenuWalk &walk, int posItemByteWidth) {
 	walk.ops.clear();
 	uint count = 0;               // 0x006126b0 + 0xa1 * menu = 0
 	uint32 p = 0;
@@ -506,7 +507,9 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 			MenuWalkRecord &r = walkSlot(walk, count);
 			r.x = (int16)(x - 11);
 			r.y = (int16)(y - 28);
-			r.w = (int16)(0x16 * (int)(toCr(p) - p));
+			// bytes to the CR x 0x16 (atlantis-cd-it-687104 FUN_0041ecb4:
+			// x 16, `shl ebx,4` @ 0x0041f068, stored @ 0x0041f098)
+			r.w = (int16)(posItemByteWidth * (int)(toCr(p) - p));
 			r.h = 28;
 			count++;
 		}

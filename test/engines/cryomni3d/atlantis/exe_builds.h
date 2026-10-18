@@ -12,7 +12,9 @@
 // ui_de1997.h), the Dutch CD's build (atlantis-cd-nl-688128, experiment
 // 2026-10-18-08; its own tests in ui_nl1997.h), the Swedish CD's build
 // (atlantis-cd-sv-688128, experiment 2026-10-18-09; its own tests in
-// ui_sv1997.h): the port's tables at
+// ui_sv1997.h), the Spanish and Italian CDs' builds (atlantis-cd-es-687104,
+// atlantis-cd-it-687104, experiment 2026-10-18-10; their own tests in
+// ui_es1997.h, ui_it1997.h): the port's tables at
 // each build's addresses must hold the same bytes; the 1999 build's
 // alternative game-over narrations; the unpacked tree read behind the stub
 // archives.
@@ -21,8 +23,8 @@
 // readNewSoundNames (exe_newsound.h), conAltGameOverNarration
 // (con_script.h), BigFileArchive::addLooseRoot (bigfile.cpp).  Real files:
 // `data` (reference), `gog` (one sub-directory per language), `en1997`,
-// `fr1997`, `frmay1997`, `patch101`, `de1997`, `nl1997` and `sv1997` in
-// atlantis_test.cfg;
+// `fr1997`, `frmay1997`, `patch101`, `de1997`, `nl1997`, `sv1997`, `es1997`
+// and `it1997` in atlantis_test.cfg;
 // skipped when absent.
 
 #include "atlantis_test_helper.h"
@@ -416,6 +418,10 @@ public:
 			exes.push_back({ AtlantisTest::configValue("nl1997"), 0x00486673 });
 		if (!AtlantisTest::configValue("sv1997").empty())
 			exes.push_back({ AtlantisTest::configValue("sv1997"), 0x00486670 });
+		if (!AtlantisTest::configValue("es1997").empty())
+			exes.push_back({ AtlantisTest::configValue("es1997"), 0x0048666f });
+		if (!AtlantisTest::configValue("it1997").empty())
+			exes.push_back({ AtlantisTest::configValue("it1997"), 0x00486671 });
 		if (!AtlantisTest::configValue("patch101").empty())
 			exes.push_back({ AtlantisTest::configValue("patch101"), 0x0049669b });
 		const Common::String gog = AtlantisTest::configValue("gog");

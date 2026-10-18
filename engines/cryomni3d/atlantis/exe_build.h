@@ -33,7 +33,7 @@ namespace Atlantis {
 // tables it reads sit, and the code differences between builds that change
 // behaviour.  Behaviour is established on the reference build
 // (atlantis-cd-en-714240); another build is described by its differences
-// (atlantis-re binaries/, decisions 0017 to 0023).
+// (atlantis-re binaries/, decisions 0017 to 0024).
 struct AtlantisExeBuild {
 	const char *name;        // atlantis-re binaries/ name
 	uint32 size;             // file size of atlantis.exe
@@ -171,6 +171,13 @@ struct AtlantisExeBuild {
 	// bytes 0x8e 0x8f 0x99 0x84 0x86 0x94 that FONTMIN draws
 	// (0x0041dae5..0x0041dbe9; nameEntryChar).
 	bool nameSwedishLetters;
+	// The width per byte of a positioned (`<x,y>`) menu item's click / hover
+	// zone, the menu parser's record width = bytes to the CR x this value:
+	// 22 in every build (reference FUN_0041fb6c `imul ebx,[ebp-0x28],0x16`,
+	// atlantis-cd-fr-687104 FUN_0041ecb4 likewise), 16 in
+	// atlantis-cd-it-687104 (its FUN_0041ecb4 `mov ebx,[ebp-0x28]; shl
+	// ebx,4` @ 0x0041f068, stored @ 0x0041f098; decision 0024 C2).
+	uint8 menuPosItemByteWidth;
 
 	uint32 fileOffset(uint32 va) const { return va - dgroupVA + dgroupRawPtr; }
 };
@@ -219,7 +226,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	// ratFrameDeadline, ratT0023Restart, musicFirstValueRule,
 	// muriaPlacedFrames; musicLoadAllOrNothing, musicLoadMinVolume,
 	// musicStartSameTrackNoop, conCodePage; rpLogoVideo, creditsPerRun;
-	// subtitleBreakBackOnly, nameSwedishLetters.
+	// subtitleBreakBackOnly, nameSwedishLetters; menuPosItemByteWidth.
 	{ "atlantis-cd-en-714240", 714240, 0x3b8275d6, 0x00490000, 0x71200,
 	  0x004967b0, 0x00496884, 0x004966fc, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
@@ -227,7 +234,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
-	  false, false },
+	  false, false,
+	  22 },
 	{ "atlantis-gog-714752", 714752, 0x385a4dc6, 0x00490000, 0x71200,
 	  0x004967b4, 0x00496888, 0x00496700, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
@@ -235,7 +243,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
-	  false, false },
+	  false, false,
+	  22 },
 	{ "atlantis-cd-en-688128", 688128, 0x33886fd1, 0x00480000, 0x6c400,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
@@ -243,7 +252,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1,
 	  false, 0, false, Common::kWindows1252,
 	  false, true,
-	  false, false },
+	  false, false,
+	  22 },
 	{ "atlantis-cd-fr-687104", 687104, 0x33ef1516, 0x00480000, 0x6ba00,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861cc, 0x004a0000, 0x004b0000,
 	  0x00486546, false,
@@ -251,7 +261,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1,
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
-	  false, false },
+	  false, false,
+	  22 },
 	{ "atlantis-cd-fr-688640", 688640, 0x33818054, 0x00480000, 0x6c600,
 	  0x0048678c, 0x00486860, 0x004866d9, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
@@ -259,7 +270,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1,
 	  true, 5, true, Common::kDos850,
 	  false, true,
-	  false, false },
+	  false, false,
+	  22 },
 	// atlantis-re experiment 2026-10-18-07 (binaries/atlantis-cd-de-687104.md,
 	// decision 0021 A1): the German CD's executable (1997-08-18), the same
 	// size as atlantis-cd-fr-687104, told apart by its PE timestamp.  Its
@@ -281,7 +293,60 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1,
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
-	  false, false },
+	  false, false,
+	  22 },
+	// atlantis-re experiment 2026-10-18-10 (binaries/atlantis-cd-es-687104.md,
+	// decision 0024 A1): the Spanish CD's executable (1997-08-28), the same
+	// size as atlantis-cd-fr-687104 and atlantis-cd-de-687104, told apart by
+	// its PE timestamp.  Its code is fr-687104's but one function: the rat
+	// puzzle's T0023 search FUN_004348fc restarts at point 0 (`mov word
+	// [0x00762b54],0` @ 0x00434933, the reference's line at FUN_00437b38 @
+	// 0x00437b6f), hence fr-687104's flags with ratT0023Restart set.  DGROUP:
+	// de-687104's addresses (evidence/compare/es_687104_vs_fr_687104_dgroup.txt):
+	// the player row `Jugador nuevo` (0x00486546, one string, marker =
+	// label; the names array at 0x00486554), FONTMAX 0x004865e6, FONTMIN
+	// 0x0048666f, the credits widths 0x004866d4 holding the reference's 256
+	// bytes (0x1c / 0x1e / 0x1f = 10 / 14 / 14, fr-687104 17 / 2 / 10); the
+	// inventory, guests, music names, newsound table, dialog FOV and
+	// SUBTITLES where fr-687104 has them.  Without this entry the size alone
+	// picks fr-687104's: the credits read one byte late, no search restart.
+	// CON texts Windows-1252 (decision 0024 D).
+	{ "atlantis-cd-es-687104", 687104, 0x340551c4, 0x00480000, 0x6ba00,
+	  0x00486788, 0x0048685c, 0x004866d4, 0x004861cc, 0x004a0000, 0x004b0000,
+	  0x00486546, false,
+	  false, false, true,
+	  false, false, true, false, false, false, true, false, 3, 200, false, true, false, 1,
+	  false, 0, false, Common::kWindows1252,
+	  false, false,
+	  false, false,
+	  22 },
+	// atlantis-re experiment 2026-10-18-10 (binaries/atlantis-cd-it-687104.md,
+	// decision 0024 A1, C2): the Italian CD's executable (1997-07-31, eleven
+	// days before fr-687104), the same size, told apart by its PE timestamp.
+	// Its code is fr-687104's but the menu parser FUN_0041ecb4: a positioned
+	// (`<x,y>`) item's zone is 16 px per byte (`shl ebx,4` @ 0x0041f068;
+	// menuPosItemByteWidth) and a FONTMAX byte above 0xa8 is drawn as a space
+	// (`cmp [ebp-0x28],0xa8` @ 0x0041f235, as atlantis-cd-en-688128
+	// FUN_0041ef34 @ 0x0041f4b3), which no shipped menu reaches (no byte
+	// above 0x97 in the Italian menus), so the port does not model it.
+	// DGROUP (evidence/compare/it_687104_vs_fr_687104_dgroup.txt): the player
+	// row `Nuovo Giocatore` (0x00486546, one string, marker = label; the
+	// names array at 0x00486556) one byte longer than fr-687104's, so
+	// FONTMAX 0x004865e8, FONTMIN 0x00486671 and the credits widths
+	// 0x004866d6 (fr-687104's bytes up to 0xb1) one byte higher; the
+	// inventory, guests, music names, newsound table, dialog FOV and
+	// SUBTITLES where fr-687104 has them.  Without this entry the size alone
+	// picks fr-687104's: the credits read one byte early, 22-px zones.  CON
+	// texts Windows-1252 (decision 0024 D).
+	{ "atlantis-cd-it-687104", 687104, 0x33e08f0f, 0x00480000, 0x6ba00,
+	  0x00486788, 0x0048685c, 0x004866d6, 0x004861cc, 0x004a0000, 0x004b0000,
+	  0x00486546, false,
+	  false, false, true,
+	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1,
+	  false, 0, false, Common::kWindows1252,
+	  false, false,
+	  false, false,
+	  16 },
 	// atlantis-re experiment 2026-10-18-08 (binaries/atlantis-cd-nl-688128.md,
 	// decision 0022 A1): the Dutch CD's executable (1997-06-05), the same
 	// size as atlantis-cd-en-688128, told apart by its PE timestamp.  821 of
@@ -308,7 +373,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  true, false, true, false, true, false, false, false, 5, 75, true, false, true, 1,
 	  false, 0, false, Common::kDos850,
 	  true, true,
-	  false, false },
+	  false, false,
+	  22 },
 	// atlantis-re experiment 2026-10-18-09 (binaries/atlantis-cd-sv-688128.md,
 	// decision 0023 A1): the Swedish CD's executable (1997-06-11), the same
 	// size as atlantis-cd-en-688128 and atlantis-cd-nl-688128, told apart by
@@ -341,7 +407,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  true, false, true, false, true, false, true, false, 5, 75, true, false, true, 1,
 	  false, 0, false, Common::kDos850,
 	  false, true,
-	  true, true },
+	  true, true,
+	  22 },
 	// atlantis-re experiment 2026-10-18-06 (binaries/atlantis-patch-fr-714240.md):
 	// the executable of Cryo's patch AT1CDINT.EXE ("1.01", 1999-12-17), the
 	// same size as the reference, told apart by its PE timestamp (GOG's).
@@ -362,7 +429,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
-	  false, false },
+	  false, false,
+	  22 },
 };
 
 // The build of an executable of `size` bytes and PE timestamp
@@ -385,6 +453,15 @@ inline const AtlantisExeBuild &atlantisExeBuild(uint32 size) {
 		if (kAtlantisExeBuilds[i].size == size)
 			return kAtlantisExeBuilds[i];
 	return kAtlantisExeBuilds[0];
+}
+
+// The zone width per byte of a positioned menu item the port uses: the
+// build's (16 for atlantis-cd-it-687104, FUN_0041ecb4 @ 0x0041f068; 22 for
+// the others); 22 with the minor bug fixes enhancement, so the whole drawn
+// text answers (decision 0024 C2: the Italian `OK` zone stops 11 px, the
+// `Annulla` zone 18 px, before the end of the word).
+inline int menuPosItemZoneByteWidth(const AtlantisExeBuild &b, bool minorBugFixes) {
+	return minorBugFixes ? 22 : b.menuPosItemByteWidth;
 }
 
 // The PE TimeDateStamp of an executable: e_lfanew at 0x3c, then

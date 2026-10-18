@@ -556,6 +556,9 @@ private:
 	// return each text/toggle item's click rect in `hitRectsOut`.
 	void renderMenuLayout(Graphics::ManagedSurface &dst, const MenuLayout &layout,
 	                      int hoveredTextIdx, Common::Array<Common::Rect> &hitRectsOut) const;
+	// A positioned menu item's zone width per byte: the build's
+	// (AtlantisExeBuild::menuPosItemByteWidth), 22 under kEnhMinorBugFixes.
+	int menuPosItemByteWidth() const;
 	// Dim the screen to black (menu/chapter transitions).
 	void fadeScreenToBlack();
 	// In-game (Escape) menu over the panorama; returns 0 = resume, 28 = load
