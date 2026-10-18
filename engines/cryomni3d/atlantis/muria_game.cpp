@@ -38,7 +38,7 @@ static const MuriaGame::Slot kSlots[MuriaGame::kNumSlots] = {
 };
 
 MuriaGame::MuriaGame()
-	: hand(0), cursorMode(0), cursorFrame(0), cursorStep(0), result(0), click(false), flagTemp3(0), _mx(0), _my(0) {
+	: hand(0), cursorMode(0), cursorFrame(0), cursorStep(0), result(0), click(false), flagTemp3(0), placedFrames(2), _mx(0), _my(0) {
 	memcpy(pieces, kPieces, sizeof(pieces));
 	memcpy(slots, kSlots, sizeof(slots));
 }
@@ -93,8 +93,10 @@ void MuriaGame::refuse() {
 }
 
 void MuriaGame::placed(int n) {
-	// Two passes drawn, then FLAGTEMP3 = n and the chapter's /sel scan.
-	for (int k = 0; k < 2; k++) {
+	// Two passes drawn, then FLAGTEMP3 = n and the chapter's /sel scan.  The
+	// 1997 build draws one (atlantis-cd-en-688128 FUN_0043bc38,
+	// placedFrames 1; no visible effect established).
+	for (int k = 0; k < placedFrames; k++) {
 		draw();
 		cursor();
 		drawBackground();

@@ -39,7 +39,7 @@ static const int16 kDropDy[17] = { 0, 0, 1, -1, 0, 1, -1, 1, -1, 0, 0, 2, -2, 2,
 
 HexaGame::HexaGame()
 	: grabX(0), grabY(0), repeat(0), unkF4(0), held(0), cursorMode(0), cursorFrame(0), cursorStep(0),
-	  objectInHand(0), flagTemp6(0), result(0), _mx(0), _my(0), _click(false), _right(false) {
+	  objectInHand(0), flagTemp6(0), forceObject402(true), result(0), _mx(0), _my(0), _click(false), _right(false) {
 	memcpy(pieces, kHexaPieces, sizeof(pieces));
 }
 
@@ -138,9 +138,13 @@ bool HexaGame::won() const {
 
 void HexaGame::setUp() {
 	// The entry sets OBJETENMAIN to 0x192 and then tests it, so the pieces
-	// are always there and FlagTemp6 is always 1.
+	// are always there and FlagTemp6 is always 1.  Without that store (the
+	// 1997 build, forceObject402 false) the pieces are there when 402 is in
+	// hand (FlagTemp6 becomes 1) or FlagTemp6 is 2; otherwise every piece
+	// is class -1 and FlagTemp6 is left as it is.
 	int count = 0;
-	objectInHand = 0x192;
+	if (forceObject402)
+		objectInHand = 0x192;
 	if (objectInHand == 0x192) {
 		count++;
 		flagTemp6 = 1;

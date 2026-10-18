@@ -229,7 +229,7 @@ int fontMinAdvance(uint idx) {
 }
 
 void fontMinBlits(FontMinRenderer r, const Common::String &text, int x, int y,
-                  Common::Array<FontMinBlit> &out) {
+                  Common::Array<FontMinBlit> &out, bool hashRule) {
 	out.clear();
 	int cx = x;
 	for (uint i = 0; i < text.size(); i++) {
@@ -238,7 +238,7 @@ void fontMinBlits(FontMinRenderer r, const Common::String &text, int x, int y,
 			cx += 20;
 			continue;
 		}
-		if (r == kFontMinPlayerList && c == '#')
+		if (r == kFontMinPlayerList && hashRule && c == '#')
 			continue;
 		const uint8 idx = (c < 0x20) ? 0x20 : (uint8)(c - 0x20);
 		if (r == kFontMinLoadList && idx == 0x20) {
@@ -263,9 +263,9 @@ int fontMinLoadListWidth(const Common::String &text) {
 	return w;
 }
 
-void loadPickerScrollInit(int count, LoadPickerScroll &s) {
+void loadPickerScrollInit(int count, LoadPickerScroll &s, bool knobClamp) {
 	s.offset = 0;
-	s.knobY = 0x7b;
+	s.knobY = knobClamp ? 0x7b : 0;
 	s.knobX = 0;
 	if (count <= 11) {
 		s.knobX = (int16)0xffce;
@@ -277,14 +277,15 @@ void loadPickerScrollInit(int count, LoadPickerScroll &s) {
 	}
 }
 
-void loadPickerScrollFrame(LoadPickerScroll &s, bool trackLatched, bool buttonDown, int mouseY) {
+void loadPickerScrollFrame(LoadPickerScroll &s, bool trackLatched, bool buttonDown, int mouseY,
+                           bool knobClamp) {
 	if (!trackLatched || !buttonDown || !s.dragOn)
 		return;
 	if (mouseY <= 0x7b || mouseY >= 0x152)
 		return;
 	s.knobY = (uint16)(mouseY - 10);
 	s.offset = (uint8)((s.knobY - 0x7b) / s.step);
-	if (mouseY - 10 < 0x7b) {
+	if (knobClamp && mouseY - 10 < 0x7b) {
 		s.knobY = 0x7b;
 		s.offset = 0;
 	}
@@ -562,6 +563,14 @@ uint nameKeyCode(uint16 unicode) {
 	if (enc.size() != 1 || (byte)enc[0] < 0x80)
 		return 0;   // not in the code page ('?')
 	return (byte)enc[0];
+}
+
+int nameEntryChar(uint code, bool upperCase) {
+	if (!upperCase)
+		return (code >= 0x20 && code <= 0xa7) ? (int)code : -1;
+	if (code < 0x20 || code > 0x7a)
+		return -1;
+	return (code >= 'a' && code <= 'z') ? (int)(code - 0x20) : (int)code;
 }
 
 } // namespace Atlantis

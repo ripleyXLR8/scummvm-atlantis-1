@@ -220,6 +220,9 @@ public:
 	const Object *heldObject() const { return _inventory.selectedObject(); }
 	uint currentPlaceId() const { return _currentPlaceId; }
 	void setGameVar(const char *name, int value) { _gameVars[name] = value; }
+	int gameVar(const char *name) const { return _gameVars.getValOrDefault(name, 0); }
+	// The build of atlantis.exe (exe_build.h).
+	const AtlantisExeBuild &exeBuild() const { return *_exeBuild; }
 	// FUN_004277c8: the first /sel entry whose condition holds runs (the
 	// puzzle hooks call it too).
 	void runSelScan();

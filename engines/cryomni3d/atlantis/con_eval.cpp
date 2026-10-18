@@ -288,12 +288,18 @@ Common::Array<uint8> conMusicList(const Common::Array<char> &text, uint32 pos) {
 }
 
 void conMusicApply(bool load, const Common::Array<uint8> &list, int current, uint32 &onDisk,
-                   Common::Array<uint8> &copies) {
+                   Common::Array<uint8> &copies, bool firstValueRule) {
 	if (list.empty() || (load && list[0] >= 0x20))
+		return;
+	// The first value is the index + 1 (the call passes value - 1, as a
+	// byte, 0x00429b1e).
+	if (firstValueRule && (int)list[0] + 1 == current)
 		return;
 	for (uint i = 0; i < list.size(); i++) {
 		const uint idx = list[i];
-		if ((int)idx + 1 == current || idx >= 32)
+		// LoadMusik's copy FUN_0041f1d0 skips the playing track in every
+		// build; DelMusik only in the 2001 and 1999 ones.
+		if (((int)idx + 1 == current && (load || !firstValueRule)) || idx >= 32)
 			continue;
 		const uint32 bit = 1u << idx;
 		if (load) {

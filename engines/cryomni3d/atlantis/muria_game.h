@@ -54,6 +54,9 @@ public:
 	int32 result;        // 0x004974c0
 	bool click;          // 0x0049611c
 	int32 flagTemp3;     // the CON variable FLAGTEMP3
+	// Passes drawn by FUN_0043faf0 before its hook: 2, 1 in the 1997 build
+	// (exe_build.h muriaPlacedFrames).
+	int placedFrames;
 
 	MuriaGame();
 	virtual ~MuriaGame() {}

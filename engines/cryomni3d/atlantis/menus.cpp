@@ -188,6 +188,28 @@ void CryOmni3DEngine_Atlantis::drawCreditText(Graphics::ManagedSurface &dst,
 void CryOmni3DEngine_Atlantis::showGameOver(int sectionId, int n,
         const Common::String &narratorText, char narratorTrack) {
 	stopAmbient();   // FUN_00426590 @ 0x004265d5
+	// Narrator voice: WAV\ATA<section4d><track>.APC (step 3).  The 1997
+	// build loads and starts it here, before the image (atlantis-cd-en-688128
+	// FUN_004256a4 @ 0x004256ee..0x0042587b, exe_build.h); it starts it with
+	// or without a narrator line and leaves it playing when there is none
+	// (0x004258c1, 0x00425a2b), which the 144 game overs of the data never
+	// meet: here it is started only with the line, as in the reference.
+	Common::String apcName = gameOverVoiceName(sectionId, narratorTrack);
+	Common::SeekableReadStream *apcFile = nullptr;
+	Audio::AudioStream *apc = nullptr;
+	Audio::SoundHandle handle;
+	bool voiceStarted = false;
+	auto openVoice = [&]() {
+		apcFile = narratorText.empty() ? nullptr : openBigFileStream(kFileTypeSound, apcName);
+		apc = apcFile ? makeAtlantisAPCStream(*apcFile) : nullptr;
+	};
+	if (_exeBuild->gameOverVoiceAtEntry) {
+		openVoice();
+		if (apc) {
+			_mixer->playStream(Audio::Mixer::kSpeechSoundType, &handle, apc);
+			voiceStarted = true;
+		}
+	}
 	// @ 0x00426616..0x00426647: NEWSOUND set, the NewSound sample fades out.
 	if (gameOverFadesNewSound(_gameVars.getValOrDefault("newsound", 0)))
 		fadeOutNewSound();
@@ -195,6 +217,9 @@ void CryOmni3DEngine_Atlantis::showGameOver(int sectionId, int n,
 	Graphics::Surface *raw = loadTGA(kFileTypeImages, name.c_str());
 	if (!raw) {
 		warning("showGameOver: cannot load IMAGES\\%s", name.c_str());
+		if (voiceStarted)
+			_mixer->stopHandle(handle);
+		delete apcFile;
 		return;
 	}
 
@@ -236,10 +261,8 @@ void CryOmni3DEngine_Atlantis::showGameOver(int sectionId, int n,
 
 	// Narrator voice: WAV\ATA<section4d><track>.APC — wait for it, or hold
 	// the image 5 s when there is no narrator audio (gameOverWaitEnds).
-	Common::String apcName = gameOverVoiceName(sectionId, narratorTrack);
-	Common::SeekableReadStream *apcFile =
-	    narratorText.empty() ? nullptr : openBigFileStream(kFileTypeSound, apcName);
-	Audio::AudioStream *apc = apcFile ? makeAtlantisAPCStream(*apcFile) : nullptr;
+	if (!_exeBuild->gameOverVoiceAtEntry)
+		openVoice();
 
 	// The input poll FUN_0041a298 with the flags of the moment (0x00496188,
 	// the talking head, is 0 here: cleared after every line, 0x00428b63).
@@ -259,8 +282,8 @@ void CryOmni3DEngine_Atlantis::showGameOver(int sectionId, int n,
 		return gameOverWaitEnds(poll, withVoice, voiceDone, elapsed, left, right, escape);
 	};
 	if (apc) {
-		Audio::SoundHandle handle;
-		_mixer->playStream(Audio::Mixer::kSpeechSoundType, &handle, apc);
+		if (!voiceStarted)
+			_mixer->playStream(Audio::Mixer::kSpeechSoundType, &handle, apc);
 		debugC(1, kDebugScript, "showGameOver: GOVER%02d.TGA + %s", n, apcName.c_str());
 		// FUN_00426590 @ 0x00426b0c: until the sample ends, a left press or
 		// Escape (when it would open the menu).
@@ -414,7 +437,7 @@ void CryOmni3DEngine_Atlantis::drawPlayerText(Graphics::ManagedSurface &dst,
 	const Common::Array<SubjSprite> &glyphs =
 	    (hover && !_fontMin2Sprites.empty()) ? _fontMin2Sprites : _fontMinSprites;
 	Common::Array<FontMinBlit> blits;
-	fontMinBlits(renderer, text, anchorX, anchorY, blits);
+	fontMinBlits(renderer, text, anchorX, anchorY, blits, !_exeBuild->upperCaseNames);
 	for (const FontMinBlit &b : blits) {
 		if (b.idx >= glyphs.size())
 			continue;
@@ -545,12 +568,13 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 				} else if (k.keycode == Common::KEYCODE_BACKSPACE) {
 					if (!editBuf.empty())
 						editBuf.deleteLastChar();
-				} else if (nameKeyCode(k.ascii) >= 0x20 && nameKeyCode(k.ascii) <= 0xa7
+				} else if (nameEntryChar(nameKeyCode(k.ascii), _exeBuild->upperCaseNames) >= 0
 				        && editBuf.size() < kPlayerNameLen) {
 					// FUN_0041dea4 @ 0x0041e283: characters 0x20..0xa7 (the
 					// FONTMIN glyphs); a leading space is refused, a leading
-					// '.' is typed (the commit still refuses it).
-					const uint c = nameKeyCode(k.ascii);
+					// '.' is typed (the commit still refuses it).  The 1997
+					// build takes 0x20..0x7a, a..z as A..Z (nameEntryChar).
+					const int c = nameEntryChar(nameKeyCode(k.ascii), _exeBuild->upperCaseNames);
 					if (!(editBuf.empty() && c == ' '))
 						editBuf += (char)c;
 				}
@@ -769,7 +793,7 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 
 	// FUN_0041cf78 step 4: the scrollbar (loadPickerScroll*, menu_layout.h).
 	LoadPickerScroll sb;
-	loadPickerScrollInit((int)saves.size(), sb);
+	loadPickerScrollInit((int)saves.size(), sb, _exeBuild->loadPickerKnobClamp);
 	int thumbItem = -1, trackItem = -1;
 	for (uint i = 0; i < layout.items.size(); i++) {
 		if (layout.items[i].kind != MenuItem::kSprite)
@@ -841,11 +865,17 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 		if (!down)
 			trackLatched = false;
 		wasDown = down;
-		loadPickerScrollFrame(sb, trackLatched, down, mouse.y);
+		loadPickerScrollFrame(sb, trackLatched, down, mouse.y, _exeBuild->loadPickerKnobClamp);
 		const int scroll = sb.offset;
 
 		int rowHover = -1;
 		{
+			// 0x0041d37b: row + offset < count.  The 1997 build tests row <
+			// count (atlantis-cd-en-688128 @ 0x0041cd87), so with 12 files or
+			// more a row past the list's end answers a click: the original
+			// then reads the file-name table past the listed entries
+			// (0x00601800 + (row + offset) * 13, 0x0041ce4d), what it holds
+			// there is [UNKNOWN]; such a row is still refused here.
 			const int g = menuGridHit(45, 108, 400, 22, 1, kVisible, true, mouse.x, mouse.y);
 			if (g >= 0 && g < kVisible && scroll + g < (int)saves.size())
 				rowHover = scroll + g;
@@ -1003,9 +1033,14 @@ void CryOmni3DEngine_Atlantis::displayOptionsMenu(const Graphics::ManagedSurface
 			} else {
 				MenuItem &tog = layout.items[hovered];
 				if (hovered == subIdx) {
-					// FUN_0041d5f4: the SUBTITLES toggle with its click counter.
+					// FUN_0041d5f4: the SUBTITLES toggle with its click counter;
+					// the 1997 build's is a plain toggle (atlantis-cd-en-688128
+					// FUN_0041cfa4 @ 0x0041d01b..0x0041d037).
 					bool on = showSubtitles();
-					subtitleToggleClick(on, _subtitleToggleCount);
+					if (_exeBuild->subtitleClickCycle)
+						subtitleToggleClick(on, _subtitleToggleCount);
+					else
+						on = !on;
 					ConfMan.setBool("subtitles", on);
 					tog.selected = on ? 0 : 1;
 				} else {

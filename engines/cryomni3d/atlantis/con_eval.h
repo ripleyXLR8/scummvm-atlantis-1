@@ -113,8 +113,15 @@ Common::Array<uint8> conMusicList(const Common::Array<char> &text, uint32 pos);
 // skips the playing track (current = index + 1, 0x00772915) and copies a
 // track that is not there (its index goes to `copies`); DelMusik removes
 // every listed track but the playing one.
+// The 1997 build (firstValueRule; atlantis-cd-en-688128 FUN_00429044 @
+// 0x00429b12, 0x00429b85): neither command does anything when its first
+// value is the playing track, and DelMusik (FUN_0041ee78) removes every
+// listed track, the playing one too (the reference's test @ 0x0041fb08 is
+// absent).  What a player hears from a deleted playing track is [UNKNOWN]
+// (atlantis-re experiment 2026-10-18-01 item 12); the port only drops it
+// from the set.
 void conMusicApply(bool load, const Common::Array<uint8> &list, int current, uint32 &onDisk,
-                   Common::Array<uint8> &copies);
+                   Common::Array<uint8> &copies, bool firstValueRule = false);
 
 // FUN_0042a100, AngleWarpX= / AngleWarpY=: the view angle in radians,
 // value * pi / 180 computed on the x87 and stored as a float (pi is the

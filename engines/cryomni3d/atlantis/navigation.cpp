@@ -365,8 +365,12 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 		} else {
 			if (curHeldObj)
 				curHeldObj = nullptr;
-			// [UNKNOWN] the original steps once per warp-loop frame; the
-			// port keeps one step per 80 ms.
+			// The port shows one step per 80 ms (a pace, atlantis-re
+			// decision 0013).  The 2001 build advances the animation two
+			// steps per warp frame, the second drawn where it is never shown
+			// (FUN_0041bfa0 @ 0x0041c48e..0x0041c535); the 1997 build draws
+			// it once per frame, one step (atlantis-cd-en-688128
+			// FUN_0041bbd8): every step shown, as here, in every build.
 			const uint32 now = g_system->getMillis();
 			if (_warpCursorShown == kWarpCursorUnset || now >= _warpCursorNextMs) {
 				_warpCursorNextMs = now + 80;

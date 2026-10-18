@@ -385,6 +385,11 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 				execConSetCommand(item.setCmd, item.offset);
 				pendingGameOver = atoi(item.setCmd.c_str() + 9);
 				if (conGameOverNarrator(sec.items, itemIdx, gameOverText)) {
+					// The 1997 build takes the letter the executor left
+					// (atlantis-cd-en-688128 0x00486198, FUN_004256a4); for
+					// the game overs of the data it is this count of the
+					// section's lines [INFERRED] (atlantis-re experiment
+					// 2026-10-18-01 item 4).
 					gameOverTrack = conTrackLetter(lineIdx);
 					// The 1999 build (GOG): the second death in a section
 					// plays the next narrator line (exe_build.h).

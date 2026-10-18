@@ -50,6 +50,11 @@ public:
 	int16 cursorMode, cursorFrame, cursorStep;
 	int32 objectInHand;   // OBJETENMAIN
 	int32 flagTemp6;      // FLAGTEMP6
+	// FUN_004406fc @ 0x0044076e sets OBJETENMAIN to 402 before testing it.
+	// The 1997 build has no such store (atlantis-cd-en-688128 FUN_0043c570
+	// @ 0x0043c5d0..0x0043c5ec): the pieces are there only when the player
+	// enters holding 402 or with FLAGTEMP6 2.  false: the 1997 rule.
+	bool forceObject402;
 	int32 result;
 	Common::Array<byte> map;
 	Common::Array<MetaGame::Coverage> coverage;
@@ -76,12 +81,13 @@ protected:
 	virtual void playSound(int slot) = 0;   // hexa1..hexa5
 	virtual bool aborted() const { return false; }
 
+	void setUp();             // FUN_004406fc
+
 private:
 	int _mx, _my;
 	bool _click, _right;
 
 	void readBoundary();
-	void setUp();             // FUN_004406fc
 	void rightButton();       // FUN_00440bfc
 	void leftClick();         // FUN_00441390
 	bool drop(int i, int x, int y);   // FUN_00441184

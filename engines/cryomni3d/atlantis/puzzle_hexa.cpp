@@ -67,6 +67,15 @@ int HexaPuzzle::play() {
 	_engine->showMouse(false);   // FUN_00440cb8 draws the cursor into the frame
 	_prevButton = (_engine->getCurrentMouseButton() != 0);
 	_prevRight = false;
+	// FUN_004406fc reads OBJETENMAIN (the held object) and FLAGTEMP6.  The
+	// 1997 build does not force 402 into the hand first (exe_build.h); with
+	// kEnhMinorBugFixes the port forces it in every build, so the pieces are
+	// always there (atlantis-re experiment 2026-10-18-01 item 8: whether a
+	// player can reach the puzzle holding 402 is not established).
+	const Object *inHand = _engine->heldObject();
+	objectInHand = (inHand && inHand->idOBJ() != uint(-1)) ? (int32)inHand->idOBJ() : 0;
+	flagTemp6 = _engine->gameVar("flagtemp6");
+	forceObject402 = _engine->exeBuild().hexaForcesObject402 || _engine->enhancementEnabled(kEnhMinorBugFixes);
 	// the shared cursor animation (engine.h PuzzleCursorState)
 	cursorMode = _engine->_puzzleCursor.mode;
 	cursorFrame = _engine->_puzzleCursor.frame;
@@ -75,7 +84,8 @@ int HexaPuzzle::play() {
 	_engine->_puzzleCursor.mode = cursorMode;
 	_engine->_puzzleCursor.frame = cursorFrame;
 	_engine->_puzzleCursor.step = cursorStep;
-	// FUN_004406fc set OBJETENMAIN to 0 and FlagTemp6 to 1.
+	// FUN_004406fc set OBJETENMAIN to 0 and FlagTemp6 to 1 (left as it was
+	// when the 1997 build places no piece).
 	_engine->clearHeldObject();
 	_engine->setGameVar("flagtemp6", flagTemp6);
 	_engine->showMouse(true);

@@ -50,7 +50,8 @@ static uint32 rec(int r, int off) { return RatRules::rec(r, off); }
 // FUN_00451d6e then FISTP: truncation toward zero.
 static int chop(double v) { return (int)v; }
 
-RatGame::RatGame() : wheelY(0), _mx(0), _my(0), _click(false), _held(false) {
+RatGame::RatGame() : wheelY(0), frameDeadline(false), t0023Restart(true), nextFrameTick(0),
+	_mx(0), _my(0), _click(false), _held(false) {
 }
 
 bool RatGame::loadSlot(int k, const byte *d, uint32 size) {
@@ -130,8 +131,14 @@ void RatGame::updateAndDraw() {
 	drawRec(29);
 	if (r.b(kRats) != 0)
 		drawRatsLeft();
-	// Each frame lasts at least 5 ticks (0x0077375c).
-	waitUntil(ticks() + 5);
+	// Each frame lasts at least 5 ticks (0x0077375c).  The 1997 build waits
+	// for the deadline the previous frame set (frameDeadline).
+	if (frameDeadline) {
+		waitUntil(nextFrameTick);
+		nextFrameTick = ticks() + 5;
+	} else {
+		waitUntil(ticks() + 5);
+	}
 	if (ticks() > (uint32)r.i(kAmbientAt)) {
 		if (randomValue() % 3 == 0 && r.b(kStarted) == 1 && r.i(kLossAnim) == 0)
 			playSound(16 + (ticks() & 3));
@@ -189,6 +196,8 @@ int RatGame::run() {
 	r.setF(0x00496cb4, 98.0f);
 	r.setB(kRats, 5);
 	r.reset();
+	if (frameDeadline)
+		nextFrameTick = ticks() + 5;   // atlantis-cd-en-688128 @ 0x004353aa
 	r.setS(0x00496abd, r.s(0x00496ab9));
 	r.setB(kEnded, 0);
 	firstRat();
@@ -203,6 +212,8 @@ int RatGame::run() {
 		r.setI(0x00496cb0, 0);
 		r.setF(0x00496cb4, 98.0f);
 		r.reset();
+		if (frameDeadline)
+			nextFrameTick = ticks() + 5;
 		r.setS(0x00496abd, r.s(0x00496ab9));
 		r.setB(kStarted, 0);
 		nextRat();
@@ -678,14 +689,33 @@ void RatGame::t0021() {
 }
 
 // T0023 starts at the first point whose x is not above the rat's.
+// The 1997 build (t0023Restart false, atlantis-cd-en-688128 FUN_00434c6c @
+// 0x00434c99..0x00434cd0) does not set the position to 0: it tests point
+// 0's x, then steps on from the position the slot was left at, which
+// nothing else resets (the loader FUN_00433290 writes the count, not the
+// position, and only the trajectory step, the reference's FUN_0043504c at
+// 0x00433761..0x004337b6, and this search write slot 22's).  The position is kept across runs by the caller
+// (puzzle_rat.cpp).  A position at or past the end reads past the points
+// in the original, [UNKNOWN]; the port takes the last point.
 void RatGame::t0023() {
 	RatRules &r = rules;
 	r.setB(rec(26, kAbove), 1);
 	r.setB(rec(23, kAbove), 1);
 	Slot &s = slots[0x16];
-	s.pos = 0;
-	while (s.x[s.pos] > r.f(kRatX))
-		s.pos++;
+	const int n = (int)s.x.size();
+	if (t0023Restart) {
+		s.pos = 0;
+		while (s.x[s.pos] > r.f(kRatX))
+			s.pos++;
+	} else {
+		float v = n ? s.x[0] : 0.0f;
+		while (v > r.f(kRatX) && s.pos < n - 1) {
+			s.pos++;
+			v = s.x[s.pos];
+		}
+		if (s.pos >= n)
+			s.pos = (int16)(n - 1);
+	}
 	r.setF(kRatX, s.x[s.pos]);
 	r.setF(kRatY, s.y[s.pos]);
 	bool more = true, jump = false;

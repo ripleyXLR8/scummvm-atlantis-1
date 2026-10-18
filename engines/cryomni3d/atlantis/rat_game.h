@@ -49,6 +49,16 @@ public:
 	RatRules rules;
 	Slot slots[kNumSlots];
 	int32 wheelY;         // 0x00772d94, set by FUN_00435d24
+	// The 1997 build (atlantis-cd-en-688128, exe_build.h; atlantis-re
+	// experiment 2026-10-18-01 item 10).  frameDeadline: FUN_00435a0c waits
+	// until the 200 Hz tick reaches the deadline 0x007e2d4c, then sets it 5
+	// ticks ahead (0x00435df9..0x00435e0e); the reset before each rat
+	// FUN_004352d8 sets it 5 ticks ahead too (0x004353aa).  The reference
+	// waits 5 ticks after each frame.  t0023Restart false: T0023's search
+	// (FUN_00434c6c) does not restart at point 0 (see t0023()).
+	bool frameDeadline;
+	bool t0023Restart;
+	uint32 nextFrameTick;   // 0x007e2d4c
 
 	RatGame();
 	virtual ~RatGame() {}
@@ -78,7 +88,8 @@ protected:
 	virtual void waitUntil(uint32 t) = 0;
 	virtual bool aborted() const { return false; }
 
-private:
+	// The frame block and the trajectory functions (protected for the
+	// tests' stubs).
 	int _mx, _my;
 	bool _click, _held;
 

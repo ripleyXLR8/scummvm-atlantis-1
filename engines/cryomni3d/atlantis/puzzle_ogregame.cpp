@@ -281,7 +281,8 @@ int OgreGamePuzzle::run() {
 				_holding = false;
 				if (_moveCounter == 4) {
 					OgreDraw::Events ev;
-					OgreDraw::reveal(ev, _rules);
+					OgreDraw::reveal(ev, _rules, _engine->exeBuild().ogreRevealFrames,
+					                 _engine->exeBuild().ogreRevealTicks);
 					play(working, ev);
 					_moveCounter = 0;
 				}

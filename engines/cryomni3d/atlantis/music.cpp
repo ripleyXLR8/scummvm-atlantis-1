@@ -388,7 +388,8 @@ void CryOmni3DEngine_Atlantis::musicCopyThroughScreenBuffer(uint idx) {
 void CryOmni3DEngine_Atlantis::execMusicList(bool load, const Common::Array<char> &text, uint32 pos) {
 	uint32 onDisk = musicOnDisk();
 	Common::Array<uint8> copies;
-	conMusicApply(load, conMusicList(text, pos), _musicTrackId, onDisk, copies);
+	conMusicApply(load, conMusicList(text, pos), _musicTrackId, onDisk, copies,
+	              _exeBuild->musicFirstValueRule);
 	for (uint i = 0; i < copies.size(); i++)
 		musicCopyThroughScreenBuffer(copies[i]);
 	setMusicOnDisk(onDisk);

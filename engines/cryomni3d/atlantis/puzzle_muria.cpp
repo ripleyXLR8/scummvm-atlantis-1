@@ -49,6 +49,7 @@ int MuriaPuzzle::play() {
 	_engine->showMouse(false);   // FUN_0043f4d4 draws the cursor into the frame
 	_prevButton = (_engine->getCurrentMouseButton() != 0);
 	// the shared cursor animation (engine.h PuzzleCursorState)
+	placedFrames = _engine->exeBuild().muriaPlacedFrames;
 	cursorMode = _engine->_puzzleCursor.mode;
 	cursorFrame = _engine->_puzzleCursor.frame;
 	cursorStep = _engine->_puzzleCursor.step;

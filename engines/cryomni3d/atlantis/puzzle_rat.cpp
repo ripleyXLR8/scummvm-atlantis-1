@@ -33,6 +33,10 @@ namespace Atlantis {
 static const int kScreenW = 640;
 static const int kScreenH = 480;
 
+// The 1997 build's T0023 position (rat_game.cpp t0023), a global of the
+// original (0x007e2264) that lasts as long as the program.
+static int16 g_ratT0023Pos = 0;
+
 RatPuzzle::RatPuzzle(CryOmni3DEngine_Atlantis *engine)
 	: _engine(engine), _loaded(false), _prevButton(false),
 	  _mouseX(0), _mouseY(0) {
@@ -61,7 +65,14 @@ int RatPuzzle::play() {
 	g_system->lockMouse(false);
 	_engine->showMouse(false);   // FUN_00438ee4 draws the cursor into the frame
 	_prevButton = (_engine->getCurrentMouseButton() != 0);
+	// The 1997 build's frame deadline and T0023 search (exe_build.h).
+	frameDeadline = _engine->exeBuild().ratFrameDeadline;
+	t0023Restart = _engine->exeBuild().ratT0023Restart;
+	if (!t0023Restart)
+		slots[0x16].pos = g_ratT0023Pos;
 	int result = run();
+	if (!t0023Restart)
+		g_ratT0023Pos = slots[0x16].pos;
 	_engine->showMouse(true);
 	_working.free();
 	if (_engine->shouldAbort() || (result != 255 && result != 2))
