@@ -20,9 +20,10 @@ struct BigEntry {
 
 class Big {
 public:
-	Big() {
+	// The archives of `dir` (the reference's, `data`, by default).
+	explicit Big(const Common::String &dir = AtlantisTest::dataDir()) : _dir(dir) {
 		for (int cd = 1; cd <= 4; cd++) {
-			Common::FSNode node(Common::Path(AtlantisTest::dataDir(), '/')
+			Common::FSNode node(Common::Path(_dir, '/')
 			                    .appendComponent(Common::String::format("BIGCD%d.BIG", cd)));
 			Common::File f;
 			if (!f.open(node))
@@ -69,7 +70,7 @@ public:
 		if (!_entries.contains(name))
 			return nullptr;
 		const BigEntry &e = _entries[name];
-		Common::FSNode node(Common::Path(AtlantisTest::dataDir(), '/')
+		Common::FSNode node(Common::Path(_dir, '/')
 		                    .appendComponent(Common::String::format("BIGCD%d.BIG", e.cd)));
 		Common::File f;
 		if (!f.open(node))
@@ -82,6 +83,7 @@ public:
 	}
 
 private:
+	Common::String _dir;
 	Common::HashMap<Common::String, BigEntry> _entries;
 	Common::Array<Common::String> _names;
 };

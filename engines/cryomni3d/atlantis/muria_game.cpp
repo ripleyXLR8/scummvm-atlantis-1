@@ -94,8 +94,8 @@ void MuriaGame::refuse() {
 
 void MuriaGame::placed(int n) {
 	// Two passes drawn, then FLAGTEMP3 = n and the chapter's /sel scan.  The
-	// 1997 build draws one (atlantis-cd-en-688128 FUN_0043bc38,
-	// placedFrames 1; no visible effect established).
+	// 1997 builds draw one (atlantis-cd-en-688128 FUN_0043bc38,
+	// atlantis-cd-fr-687104 FUN_0043b8d8, placedFrames 1; no visible effect established).
 	for (int k = 0; k < placedFrames; k++) {
 		draw();
 		cursor();

@@ -51,8 +51,8 @@ public:
 	int32 objectInHand;   // OBJETENMAIN
 	int32 flagTemp6;      // FLAGTEMP6
 	// FUN_004406fc @ 0x0044076e sets OBJETENMAIN to 402 before testing it.
-	// The 1997 build has no such store (atlantis-cd-en-688128 FUN_0043c570
-	// @ 0x0043c5d0..0x0043c5ec): the pieces are there only when the player
+	// The 1997 builds have no such store (atlantis-cd-en-688128 FUN_0043c570
+	// @ 0x0043c5d0..0x0043c5ec, atlantis-cd-fr-687104 FUN_0043c210): the pieces are there only when the player
 	// enters holding 402 or with FLAGTEMP6 2.  false: the 1997 rule.
 	bool forceObject402;
 	int32 result;

@@ -32,6 +32,9 @@ static const uint32 kOrigPlayersSize = 97;     // 2001 build: 6 chapter, 6 lette
 static const uint32 kOrigPlayersSizeFr = 95;   // 1997 builds: 5 and 5 (the English retail
                                                // reader atlantis-cd-en-688128 @ 0x00419116..0x00419166,
                                                // writers FUN_0041d6d0 / FUN_0041e030 / FUN_0042c164;
+                                               // the French reader atlantis-cd-fr-687104 WinMain
+                                               // @ 0x00418d29..0x00418d86, writers FUN_0041d45c /
+                                               // FUN_0041dda0 / FUN_0042bf74;
                                                // atlantis-re formats/ui-players-atl.md)
 
 Common::String epiEpisodeName(const byte *text, uint32 size, uint chapter) {

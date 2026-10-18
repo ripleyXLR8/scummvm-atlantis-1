@@ -137,7 +137,8 @@ public:
 
 	// FUN_004436f4: nothing when the queen shares an ogre's cell; else cyclo4,
 	// then 3 frames: the board, her cell plain / lit / plain, the queen,
-	// present, 200 ticks.  The 1997 build (atlantis-cd-en-688128
+	// present, 200 ticks (also atlantis-cd-fr-687104 FUN_0043eb5c @
+	// 0x0043ecce..0x0043ece6).  The English build of 1997 (atlantis-cd-en-688128
 	// FUN_0043eebc @ 0x0043f02e, 0x0043f044) draws 5 frames of 75 ticks,
 	// her cell plain / lit / plain / lit / plain (exe_build.h).
 	static void reveal(Events &ev, OgreRules &r, int frames = 3, int ticks = 0xc8) {

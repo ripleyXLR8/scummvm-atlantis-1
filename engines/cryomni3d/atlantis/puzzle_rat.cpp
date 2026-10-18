@@ -33,7 +33,7 @@ namespace Atlantis {
 static const int kScreenW = 640;
 static const int kScreenH = 480;
 
-// The 1997 build's T0023 position (rat_game.cpp t0023), a global of the
+// The 1997 builds' T0023 position (rat_game.cpp t0023), a global of the
 // original (0x007e2264) that lasts as long as the program.
 static int16 g_ratT0023Pos = 0;
 

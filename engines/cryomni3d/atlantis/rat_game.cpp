@@ -131,8 +131,9 @@ void RatGame::updateAndDraw() {
 	drawRec(29);
 	if (r.b(kRats) != 0)
 		drawRatsLeft();
-	// Each frame lasts at least 5 ticks (0x0077375c).  The 1997 build waits
-	// for the deadline the previous frame set (frameDeadline).
+	// Each frame lasts at least 5 ticks (0x0077375c; atlantis-cd-fr-687104
+	// FUN_004356a0 @ 0x00435a92..0x00435aa5).  The English build of 1997
+	// waits for the deadline the previous frame set (frameDeadline).
 	if (frameDeadline) {
 		waitUntil(nextFrameTick);
 		nextFrameTick = ticks() + 5;
@@ -689,8 +690,8 @@ void RatGame::t0021() {
 }
 
 // T0023 starts at the first point whose x is not above the rat's.
-// The 1997 build (t0023Restart false, atlantis-cd-en-688128 FUN_00434c6c @
-// 0x00434c99..0x00434cd0) does not set the position to 0: it tests point
+// The 1997 builds (t0023Restart false, atlantis-cd-en-688128 FUN_00434c6c @
+// 0x00434c99..0x00434cd0, atlantis-cd-fr-687104 FUN_004348fc) do not set the position to 0: it tests point
 // 0's x, then steps on from the position the slot was left at, which
 // nothing else resets (the loader FUN_00433290 writes the count, not the
 // position, and only the trajectory step, the reference's FUN_0043504c at
