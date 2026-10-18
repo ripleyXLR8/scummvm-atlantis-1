@@ -49,7 +49,9 @@ void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 
 	// Which build this is (exe_build.h): its DGROUP section, its table
 	// addresses and the code differences that change behaviour.
-	_exeBuild = &atlantisExeBuild((uint32)exe.size());
+	// The size alone does not tell the reference from
+	// atlantis-patch-fr-714240 (both 714240 bytes): the PE timestamp does.
+	_exeBuild = &atlantisExeBuild((uint32)exe.size(), readPeTimestamp(exe));
 	debugC(1, kDebugScript, "loadAtlantisExeTables: atlantis.exe is %s", _exeBuild->name);
 	const AtlantisExeBuild &build = *_exeBuild;
 

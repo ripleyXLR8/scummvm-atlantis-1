@@ -24,6 +24,7 @@
 
 #include "common/scummsys.h"
 #include "common/str-enc.h"
+#include "common/stream.h"
 
 namespace CryOmni3D {
 namespace Atlantis {
@@ -36,6 +37,10 @@ namespace Atlantis {
 struct AtlantisExeBuild {
 	const char *name;        // atlantis-re binaries/ name
 	uint32 size;             // file size of atlantis.exe
+	// The PE header's TimeDateStamp (IMAGE_FILE_HEADER at e_lfanew + 8):
+	// tells apart builds of the same size (the reference and
+	// atlantis-patch-fr-714240 both have 714240 bytes).
+	uint32 peTimestamp;
 	// The DGROUP section: virtual address and file offset (pefile).
 	uint32 dgroupVA, dgroupRawPtr;
 	uint32 inventoryVA;      // FUN_0042b328's object table
@@ -170,7 +175,7 @@ struct AtlantisExeBuild {
 // subtitles FUN_0042eab4 / FUN_0042ec80, DelMusik FUN_0041eee8, CON /set
 // executor FUN_00429184 (atlantis-re binaries/maps/atlantis-cd-fr-688640.csv).
 static const AtlantisExeBuild kAtlantisExeBuilds[] = {
-	// name, size, DGROUP VA / raw, inventory, guests, credits, newsound
+	// name, size, PE timestamp, DGROUP VA / raw, inventory, guests, credits, newsound
 	// table and pointer range, player row, label after marker;
 	// cursorIdRule, rheaCamera2, altGameOverNarration;
 	// bitmapSubtitles, subtitleClickCycle, playerListVerbatim,
@@ -179,44 +184,97 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	// ratFrameDeadline, ratT0023Restart, musicFirstValueRule,
 	// muriaPlacedFrames; musicLoadAllOrNothing, musicLoadMinVolume,
 	// musicStartSameTrackNoop, conCodePage.
-	{ "atlantis-cd-en-714240", 714240, 0x00490000, 0x71200,
+	{ "atlantis-cd-en-714240", 714240, 0x3b8275d6, 0x00490000, 0x71200,
 	  0x004967b0, 0x00496884, 0x004966fc, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
 	  true, true, false,
 	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
 	  false, 0, false, Common::kWindows1252 },
-	{ "atlantis-gog-714752", 714752, 0x00490000, 0x71200,
+	{ "atlantis-gog-714752", 714752, 0x385a4dc6, 0x00490000, 0x71200,
 	  0x004967b4, 0x00496888, 0x00496700, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
 	  false, false, true,
 	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
 	  false, 0, false, Common::kWindows1252 },
-	{ "atlantis-cd-en-688128", 688128, 0x00480000, 0x6c400,
+	{ "atlantis-cd-en-688128", 688128, 0x33886fd1, 0x00480000, 0x6c400,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
 	  false, false, false,
 	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1,
 	  false, 0, false, Common::kWindows1252 },
-	{ "atlantis-cd-fr-687104", 687104, 0x00480000, 0x6ba00,
+	{ "atlantis-cd-fr-687104", 687104, 0x33ef1516, 0x00480000, 0x6ba00,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861cc, 0x004a0000, 0x004b0000,
 	  0x00486546, false,
 	  false, false, true,
 	  false, false, true, false, false, false, true, false, 3, 200, false, false, false, 1,
 	  false, 0, false, Common::kWindows1252 },
-	{ "atlantis-cd-fr-688640", 688640, 0x00480000, 0x6c600,
+	{ "atlantis-cd-fr-688640", 688640, 0x33818054, 0x00480000, 0x6c600,
 	  0x0048678c, 0x00486860, 0x004866d9, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
 	  false, false, false,
 	  true, false, true, true, true, false, false, false, 5, 75, true, false, true, 1,
 	  true, 5, true, Common::kDos850 },
+	// atlantis-re experiment 2026-10-18-06 (binaries/atlantis-patch-fr-714240.md):
+	// the executable of Cryo's patch AT1CDINT.EXE ("1.01", 1999-12-17), the
+	// same size as the reference, told apart by its PE timestamp (GOG's).
+	// It is the GOG build before GOG's edits: every
+	// DGROUP byte the port reads (inventory 0x004967b4, guests 0x00496888,
+	// credits 0x00496700, newsound 0x004961e0, player row 0x00496570
+	// `#NOUVEAU JOUEUR` / `NOUVEAU JOUEUR`) equals GOG fr-FR's; DGROUP
+	// differs from it only in the drive strings at file 0x770b4 / 0x773a0
+	// (atlantis-re evidence/compare/patch_fr_714240_vs_gog_and_reference.txt).
+	// Its code is the reference's but FUN_00422fcc (no 0x219 / 0x21a rule),
+	// FUN_004283b4 (= reference FUN_0042844c, no forced camera 2) and
+	// FUN_00426570 (= reference FUN_00426590, the alternative narrations);
+	// GOG's six byte patches (not reproduced for GOG either) are absent.
+	{ "atlantis-patch-fr-714240", 714240, 0x385a4dc6, 0x00490000, 0x71200,
+	  0x004967b4, 0x00496888, 0x00496700, 0x004961e0, 0x004b0000, 0x004d0000,
+	  0x00496570, true,
+	  false, false, true,
+	  false, true, false, false, false, true, true, true, 3, 200, false, true, false, 2,
+	  false, 0, false, Common::kWindows1252 },
 };
 
-// The build of an executable of `size` bytes; the reference when unknown.
+// The build of an executable of `size` bytes and PE timestamp
+// `peTimestamp`; the first build of that size when the timestamp is not
+// listed; the reference when the size is unknown.
+inline const AtlantisExeBuild &atlantisExeBuild(uint32 size, uint32 peTimestamp) {
+	for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++)
+		if (kAtlantisExeBuilds[i].size == size && kAtlantisExeBuilds[i].peTimestamp == peTimestamp)
+			return kAtlantisExeBuilds[i];
+	for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++)
+		if (kAtlantisExeBuilds[i].size == size)
+			return kAtlantisExeBuilds[i];
+	return kAtlantisExeBuilds[0];
+}
+
+// The build of an executable of `size` bytes (the first listed of that
+// size: the reference for 714240); the reference when unknown.
 inline const AtlantisExeBuild &atlantisExeBuild(uint32 size) {
 	for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++)
 		if (kAtlantisExeBuilds[i].size == size)
 			return kAtlantisExeBuilds[i];
 	return kAtlantisExeBuilds[0];
+}
+
+// The PE TimeDateStamp of an executable: e_lfanew at 0x3c, then
+// IMAGE_FILE_HEADER.TimeDateStamp 8 bytes past the "PE\0\0" signature.
+// 0 when the stream is not a PE file.
+inline uint32 readPeTimestamp(Common::SeekableReadStream &exe) {
+	const int64 pos = exe.pos();
+	uint32 stamp = 0;
+	if (exe.seek(0x3c)) {
+		const uint32 peOff = exe.readUint32LE();
+		if (exe.seek(peOff) && exe.readUint32BE() == MKTAG('P', 'E', 0, 0)) {
+			exe.skip(4);
+			stamp = exe.readUint32LE();
+			if (exe.eos() || exe.err())
+				stamp = 0;
+		}
+	}
+	exe.clearErr();
+	exe.seek(pos);
+	return stamp;
 }
 
 } // End of namespace Atlantis

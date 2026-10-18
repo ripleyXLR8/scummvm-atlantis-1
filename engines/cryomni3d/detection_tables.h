@@ -693,6 +693,68 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 		0,
 	},
 
+	// Cryo's Windows patch AT1CDINT.EXE ("official 1.01", WinZip SFX) puts
+	// one 1999 executable with French interface strings over any Windows CD
+	// install without checking it (atlantis-re experiment 2026-10-18-06,
+	// binaries/atlantis-patch-fr-714240.md): atlantis.exe 714240 bytes,
+	// md5 e6a49004ea6160566fb01ed2ab6ab034, the reference's size but not its
+	// first 5000 bytes (exe_build.h tells the two apart by PE timestamp).
+	// One entry per CD whose BIGCD1.BIG is known, in the archives' language;
+	// the German CD's archives are not known (no entry).
+
+	// Atlantis: The Lost Tales
+	// English Windows CD (the BIGCD*.BIG of the reference entries above)
+	{
+		{
+			"atlantis",
+			"AT1CDINT patch",
+			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
+			           "BIGCD1.BIG",  "e68fd05b1b84914204fcf195c06bc180", 635406545),
+			Common::EN_ANY,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
+	// French Windows CD of August 1997 (atlantis-cd-fr-687104's BIGCD*.BIG)
+	{
+		{
+			"atlantis",
+			"AT1CDINT patch",
+			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
+			           "BIGCD1.BIG",  "f3184be3e2d2a52693d7fc5311b2ed7d", 636020326),
+			Common::FR_FRA,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
+	// French Windows CD of May 1997 (atlantis-cd-fr-688640's BIGCD*.BIG; their
+	// CON texts in DOS code page 850, decision 0020 A1, go to this build's GDI
+	// subtitles as Windows-1252 like every 714240 build's, exe_build.h)
+	{
+		{
+			"atlantis",
+			"AT1CDINT patch",
+			AD_ENTRY2s("atlantis.exe", "06fbcb375dc8021d238dc4ec1cc1d084", 714240,
+			           "BIGCD1.BIG",  "24acad3df3d968292ea12ba026d84cd1", 636020222),
+			Common::FR_FRA,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
 	// Atlantis: The Lost Tales
 	// English Windows, GOG.com (files unpacked, BIGCD*.BIG stubs; one 1999
 	// executable for all languages, atlantis-re binaries/atlantis-gog-fr-714752)

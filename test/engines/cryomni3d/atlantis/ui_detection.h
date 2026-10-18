@@ -224,6 +224,112 @@ public:
 		TS_ASSERT_EQUALS(entries, 5);
 	}
 
+	// The Atlantis entries of the detection table whose every file is found
+	// with its size and 5000-byte MD5, the files of each name taken from
+	// exeDir (atlantis.exe) or bigDir (the archives) (an AdvancedDetector full
+	// match, case-insensitive names).
+	static Common::Array<const CryOmni3D::CryOmni3DGameDescription *> fullMatches(
+	        const Common::String &exeDir, const Common::String &bigDir) {
+		Common::Array<const CryOmni3D::CryOmni3DGameDescription *> out;
+		for (const CryOmni3D::CryOmni3DGameDescription *g = CryOmni3D::gameDescriptions; g->desc.gameId; g++) {
+			if (strcmp(g->desc.gameId, "atlantis"))
+				continue;
+			bool all = true;
+			for (const ADGameFileDescription *fd = g->desc.filesDescriptions; fd->fileName && all; fd++) {
+				const bool exe = Common::String(fd->fileName).equalsIgnoreCase("atlantis.exe");
+				Common::FSNode n = findCaseless(exe ? exeDir : bigDir, fd->fileName);
+				int64 size = -1;
+				all = n.exists() && md5Head(n, size) == fd->md5 && size == (int64)fd->fileSize;
+			}
+			if (all)
+				out.push_back(g);
+		}
+		return out;
+	}
+
+	// Cryo's patch AT1CDINT (atlantis-patch-fr-714240, atlantis-re
+	// experiment 2026-10-18-06): one entry per known CD's archives, the
+	// patch executable in each.  `patch101` in atlantis_test.cfg names a
+	// folder with that atlantis.exe and the reference's (English CD's)
+	// BIGCD*.BIG; the French archives are taken from `fr1997` and
+	// `frmay1997` when configured.
+	void test_patch101_entries_match_files() {
+		const Common::String dir = AtlantisTest::configValue("patch101");
+		if (dir.empty()) { TS_WARN("patch101 not configured; skipped"); return; }
+		int entries = 0;
+		for (const CryOmni3D::CryOmni3DGameDescription *g = CryOmni3D::gameDescriptions; g->desc.gameId; g++) {
+			if (strcmp(g->desc.gameId, "atlantis") || strcmp(g->desc.extra, "AT1CDINT patch"))
+				continue;
+			entries++;
+			TS_ASSERT_EQUALS(g->desc.platform, Common::kPlatformWindows);
+			const ADGameFileDescription *exe = &g->desc.filesDescriptions[0];
+			const ADGameFileDescription *big = &g->desc.filesDescriptions[1];
+			TS_ASSERT_EQUALS(Common::String(exe->fileName), "atlantis.exe");
+			TS_ASSERT_EQUALS(Common::String(big->fileName), "BIGCD1.BIG");
+			int64 size = -1;
+			TS_ASSERT_EQUALS(md5Head(findCaseless(dir, "atlantis.exe"), size), Common::String(exe->md5));
+			TS_ASSERT_EQUALS(size, (int64)exe->fileSize);
+			// the archives: the English CD's, or the French CDs' of August
+			// and May 1997
+			const Common::String bigDir = g->desc.language == Common::EN_ANY ? dir :
+			        !strcmp(big->md5, "f3184be3e2d2a52693d7fc5311b2ed7d") ? AtlantisTest::configValue("fr1997") :
+			        !strcmp(big->md5, "24acad3df3d968292ea12ba026d84cd1") ? AtlantisTest::configValue("frmay1997") :
+			        Common::String();
+			TSM_ASSERT(big->md5, g->desc.language == Common::EN_ANY || g->desc.language == Common::FR_FRA);
+			if (bigDir.empty()) {
+				TS_WARN(Common::String::format("archives %s not configured", big->md5).c_str());
+				continue;
+			}
+			size = -1;
+			TSM_ASSERT_EQUALS(big->md5, md5Head(findCaseless(bigDir, "BIGCD1.BIG"), size), Common::String(big->md5));
+			TSM_ASSERT_EQUALS(big->md5, size, (int64)big->fileSize);
+		}
+		TS_ASSERT_EQUALS(entries, 3);
+		Common::File f;
+		TS_ASSERT(f.open(findCaseless(dir, "atlantis.exe")));
+		TS_ASSERT_EQUALS(Common::computeStreamMD5AsString(f), Common::String("e6a49004ea6160566fb01ed2ab6ab034"));
+	}
+
+	// Each install matches one entry only: the reference folder its
+	// reference entry (the patch entries share its archives and its
+	// executable's size, not its executable's head), the patch executable
+	// with each CD's archives that CD's patch entry, and the other builds
+	// their own entries.
+	void test_each_install_matches_one_entry() {
+		const Common::String patch = AtlantisTest::configValue("patch101");
+		const Common::String fr = AtlantisTest::configValue("fr1997");
+		const Common::String frMay = AtlantisTest::configValue("frmay1997");
+		const Common::String en97 = AtlantisTest::configValue("en1997");
+		struct Case { Common::String exeDir, bigDir; const char *extra; Common::Language lang; uint32 exeSize; };
+		Common::Array<Case> cases;
+		if (AtlantisTest::haveData())
+			cases.push_back({ AtlantisTest::dataDir(), AtlantisTest::dataDir(), "", Common::EN_ANY, 714240 });
+		if (!en97.empty())
+			cases.push_back({ en97, en97, "", Common::EN_ANY, 688128 });
+		if (!fr.empty())
+			cases.push_back({ fr, fr, "", Common::FR_FRA, 687104 });
+		if (!frMay.empty())
+			cases.push_back({ frMay, frMay, "", Common::FR_FRA, 688640 });
+		if (!patch.empty()) {
+			cases.push_back({ patch, patch, "AT1CDINT patch", Common::EN_ANY, 714240 });
+			if (!fr.empty())
+				cases.push_back({ patch, fr, "AT1CDINT patch", Common::FR_FRA, 714240 });
+			if (!frMay.empty())
+				cases.push_back({ patch, frMay, "AT1CDINT patch", Common::FR_FRA, 714240 });
+		}
+		if (cases.empty()) { TS_WARN("no install configured; skipped"); return; }
+		for (uint i = 0; i < cases.size(); i++) {
+			const Common::String what = cases[i].exeDir + " + " + cases[i].bigDir;
+			Common::Array<const CryOmni3D::CryOmni3DGameDescription *> m = fullMatches(cases[i].exeDir, cases[i].bigDir);
+			TSM_ASSERT_EQUALS(what.c_str(), m.size(), 1u);
+			if (m.size() != 1)
+				continue;
+			TSM_ASSERT_EQUALS(what.c_str(), Common::String(m[0]->desc.extra), cases[i].extra);
+			TSM_ASSERT_EQUALS(what.c_str(), m[0]->desc.language, cases[i].lang);
+			TSM_ASSERT_EQUALS(what.c_str(), m[0]->desc.filesDescriptions[0].fileSize, cases[i].exeSize);
+		}
+	}
+
 	// The full reference executable (not only its first 5000 bytes).
 	void test_reference_exe_full_md5() {
 		if (!AtlantisTest::haveData()) { TS_WARN("data not configured; skipped"); return; }

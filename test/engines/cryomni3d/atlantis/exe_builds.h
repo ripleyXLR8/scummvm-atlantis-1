@@ -6,7 +6,8 @@
 // (atlantis-cd-en-688128, experiment 2026-10-18-01), the French retail
 // CD's builds of August 1997 (atlantis-cd-fr-687104, experiment
 // 2026-10-18-03) and May 1997 (atlantis-cd-fr-688640, experiment
-// 2026-10-18-04): the port's tables at
+// 2026-10-18-04), the executable of Cryo's patch AT1CDINT
+// (atlantis-patch-fr-714240, experiment 2026-10-18-06): the port's tables at
 // each build's addresses must hold the same bytes; the 1999 build's
 // alternative game-over narrations; the unpacked tree read behind the stub
 // archives.
@@ -15,7 +16,8 @@
 // readNewSoundNames (exe_newsound.h), conAltGameOverNarration
 // (con_script.h), BigFileArchive::addLooseRoot (bigfile.cpp).  Real files:
 // `data` (reference), `gog` (one sub-directory per language), `en1997`,
-// `fr1997` and `frmay1997` in atlantis_test.cfg; skipped when absent.
+// `fr1997`, `frmay1997` and `patch101` in atlantis_test.cfg; skipped when
+// absent.
 
 #include "atlantis_test_helper.h"
 #include "../../../system/null_osystem.h"
@@ -44,6 +46,13 @@ class AtlantisExeBuildsTestSuite : public CxxTest::TestSuite {
 	// dir/atlantis.exe or dir/ATLANTIS.EXE (the retail CDs' spelling).
 	static bool readExeIn(const Common::String &dir, Common::Array<byte> &out) {
 		return readExe(dir + "/atlantis.exe", out) || readExe(dir + "/ATLANTIS.EXE", out);
+	}
+
+	// The build of an executable's bytes, by size and PE timestamp, as
+	// loadAtlantisExeTables picks it.
+	static const CryOmni3D::Atlantis::AtlantisExeBuild &buildOf(const Common::Array<byte> &e) {
+		Common::MemoryReadStream ms(e.data(), e.size());
+		return CryOmni3D::Atlantis::atlantisExeBuild(e.size(), CryOmni3D::Atlantis::readPeTimestamp(ms));
 	}
 
 	static Common::String cstr(const Common::Array<byte> &b, uint32 off) {
@@ -391,6 +400,8 @@ public:
 			exes.push_back({ AtlantisTest::configValue("fr1997"), 0x00486670 });
 		if (!AtlantisTest::configValue("frmay1997").empty())
 			exes.push_back({ AtlantisTest::configValue("frmay1997"), 0x00486674 });
+		if (!AtlantisTest::configValue("patch101").empty())
+			exes.push_back({ AtlantisTest::configValue("patch101"), 0x0049669b });
 		const Common::String gog = AtlantisTest::configValue("gog");
 		if (!gog.empty())
 			exes.push_back({ gog + "/fr-FR", 0x0049669b });
@@ -402,7 +413,7 @@ public:
 				TS_FAIL(exes[x].dir.c_str());
 				continue;
 			}
-			const AtlantisExeBuild &b = atlantisExeBuild(e.size());
+			const AtlantisExeBuild &b = buildOf(e);
 			// the credits table follows FONTMIN directly
 			TS_ASSERT_EQUALS(b.creditWidthsVA, exes[x].fontMinVA + 101);
 			const byte *credits = &e[b.fileOffset(b.creditWidthsVA)];
@@ -447,6 +458,107 @@ public:
 			TS_ASSERT(!cstr(g, fileOff(0x00496570) + marker.size() + 1).empty());
 			if (l == 1)
 				TS_ASSERT_EQUALS(marker, "#NOUVEAU JOUEUR");
+		}
+	}
+
+	// atlantis-patch-fr-714240 (experiment 2026-10-18-06): the reference's
+	// size, told apart by its PE timestamp; GOG's flags and table addresses.
+	void test_patch101_build() {
+		using namespace CryOmni3D::Atlantis;
+		const AtlantisExeBuild &p = atlantisExeBuild(714240, 0x385a4dc6);
+		const AtlantisExeBuild &g = atlantisExeBuild(714752);
+		TS_ASSERT_EQUALS(Common::String(p.name), "atlantis-patch-fr-714240");
+		// the size alone, or the reference's timestamp, or an unknown one:
+		// the reference
+		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714240).name), "atlantis-cd-en-714240");
+		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714240, 0x3b8275d6).name), "atlantis-cd-en-714240");
+		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714240, 0).name), "atlantis-cd-en-714240");
+		// GOG's timestamp with GOG's size stays GOG
+		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714752, 0x385a4dc6).name), "atlantis-gog-714752");
+		TS_ASSERT(!p.cursorIdRule && !p.rheaCamera2 && p.altGameOverNarration);
+		TS_ASSERT_EQUALS(p.dgroupVA, g.dgroupVA);
+		TS_ASSERT_EQUALS(p.dgroupRawPtr, g.dgroupRawPtr);
+		TS_ASSERT_EQUALS(p.inventoryVA, g.inventoryVA);
+		TS_ASSERT_EQUALS(p.guestVA, g.guestVA);
+		TS_ASSERT_EQUALS(p.creditWidthsVA, g.creditWidthsVA);
+		TS_ASSERT_EQUALS(p.newSoundTableVA, g.newSoundTableVA);
+		TS_ASSERT_EQUALS(p.newSoundPtrMin, g.newSoundPtrMin);
+		TS_ASSERT_EQUALS(p.newSoundPtrMax, g.newSoundPtrMax);
+		TS_ASSERT_EQUALS(p.playerRowVA, g.playerRowVA);
+		TS_ASSERT_EQUALS(p.playerLabelAfterMarker, g.playerLabelAfterMarker);
+		// every other flag as GOG's (from bitmapSubtitles to conCodePage)
+		TS_ASSERT_EQUALS(p.bitmapSubtitles, g.bitmapSubtitles);
+		TS_ASSERT_EQUALS(p.subtitleClickCycle, g.subtitleClickCycle);
+		TS_ASSERT_EQUALS(p.playerListVerbatim, g.playerListVerbatim);
+		TS_ASSERT_EQUALS(p.upperCaseNames, g.upperCaseNames);
+		TS_ASSERT_EQUALS(p.gameOverVoiceAtEntry, g.gameOverVoiceAtEntry);
+		TS_ASSERT_EQUALS(p.loadPickerKnobAtBar, g.loadPickerKnobAtBar);
+		TS_ASSERT_EQUALS(p.loadPickerClamp, g.loadPickerClamp);
+		TS_ASSERT_EQUALS(p.hexaForcesObject402, g.hexaForcesObject402);
+		TS_ASSERT_EQUALS(p.ogreRevealFrames, g.ogreRevealFrames);
+		TS_ASSERT_EQUALS(p.ogreRevealTicks, g.ogreRevealTicks);
+		TS_ASSERT_EQUALS(p.ratFrameDeadline, g.ratFrameDeadline);
+		TS_ASSERT_EQUALS(p.ratT0023Restart, g.ratT0023Restart);
+		TS_ASSERT_EQUALS(p.musicFirstValueRule, g.musicFirstValueRule);
+		TS_ASSERT_EQUALS(p.muriaPlacedFrames, g.muriaPlacedFrames);
+		TS_ASSERT_EQUALS(p.musicLoadAllOrNothing, g.musicLoadAllOrNothing);
+		TS_ASSERT_EQUALS(p.musicLoadMinVolume, g.musicLoadMinVolume);
+		TS_ASSERT_EQUALS(p.musicStartSameTrackNoop, g.musicStartSameTrackNoop);
+		TS_ASSERT_EQUALS(p.conCodePage, g.conCodePage);
+	}
+
+	// The patch executable and the reference read through the port's
+	// selection (size + PE timestamp): each gets its own build; the
+	// patch's tables equal the reference's and GOG fr-FR's bytes, its
+	// player row is `#NOUVEAU JOUEUR` / `NOUVEAU JOUEUR`, and its newsound
+	// names are the reference's 137.
+	void test_patch101_tables_equal_reference_tables() {
+		using namespace CryOmni3D::Atlantis;
+		const Common::String dir = AtlantisTest::configValue("patch101");
+		if (!AtlantisTest::haveData() || dir.empty()) { TS_WARN("data / patch101 not configured; skipped"); return; }
+		Common::Array<byte> ref, e;
+		TS_ASSERT(readExe(AtlantisTest::dataDir() + "/atlantis.exe", ref));
+		TS_ASSERT(readExeIn(dir, e));
+		if (ref.empty() || e.empty())
+			return;
+		TS_ASSERT_EQUALS(e.size(), 714240u);
+		const AtlantisExeBuild &rb = buildOf(ref);
+		const AtlantisExeBuild &b = buildOf(e);
+		TS_ASSERT_EQUALS(Common::String(rb.name), "atlantis-cd-en-714240");
+		TS_ASSERT_EQUALS(Common::String(b.name), "atlantis-patch-fr-714240");
+		{
+			Common::MemoryReadStream ms(e.data(), e.size());
+			TS_ASSERT_EQUALS(readPeTimestamp(ms), 0x385a4dc6u);
+		}
+		TS_ASSERT(!memcmp(&ref[rb.fileOffset(rb.inventoryVA)], &e[b.fileOffset(b.inventoryVA)], 52 * 4));
+		TS_ASSERT_EQUALS(READ_LE_UINT32(&e[b.fileOffset(b.inventoryVA) + 51 * 4]), 0xffffffffu);
+		TS_ASSERT(!memcmp(&ref[rb.fileOffset(rb.guestVA)], &e[b.fileOffset(b.guestVA)], 10 * 4));
+		TS_ASSERT_EQUALS(READ_LE_UINT32(&e[b.fileOffset(b.guestVA) + 9 * 4]), 0xffffffffu);
+		TS_ASSERT(!memcmp(&ref[rb.fileOffset(rb.creditWidthsVA)], &e[b.fileOffset(b.creditWidthsVA)], 256));
+		const uint32 row = b.fileOffset(b.playerRowVA);
+		TS_ASSERT_EQUALS(cstr(e, row), "#NOUVEAU JOUEUR");
+		TS_ASSERT_EQUALS(cstr(e, row + 16), "NOUVEAU JOUEUR");
+		Common::Array<Common::String> refNames, names;
+		Common::MemoryReadStream rs(ref.data(), ref.size()), es(e.data(), e.size());
+		readNewSoundNames(rs, refNames);
+		readNewSoundNames(es, names, b.newSoundTableVA, b.dgroupVA, b.dgroupRawPtr, b.newSoundPtrMin,
+		                  b.newSoundPtrMax);
+		TS_ASSERT_EQUALS(refNames.size(), 137u);
+		TS_ASSERT_EQUALS(names.size(), refNames.size());
+		for (uint i = 0; i < names.size() && i < refNames.size(); i++)
+			TS_ASSERT_EQUALS(names[i], refNames[i]);
+		// DGROUP equals GOG fr-FR's but the drive strings (file 0x770b4..
+		// 0x770b6, 0x773a0..0x773aa)
+		const Common::String gog = AtlantisTest::configValue("gog");
+		Common::Array<byte> g;
+		if (!gog.empty() && readExe(gog + "/fr-FR/Atlantis.exe", g)) {
+			uint diffs = 0;
+			for (uint32 off = 0x71200; off < 0x71200 + 0x2fc00; off++)
+				if (e[off] != g[off]) {
+					diffs++;
+					TS_ASSERT((off >= 0x770b4 && off <= 0x770b6) || (off >= 0x773a0 && off <= 0x773aa));
+				}
+			TS_ASSERT_EQUALS(diffs, 11u);
 		}
 	}
 
