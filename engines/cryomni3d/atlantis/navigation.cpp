@@ -251,7 +251,18 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 	showMouse(true);
 	setMousePos(Common::Point(320, 240));
 
-	// Drain stale clicks from the place change / window focus.
+	// The view on screen at once: the original's loop draws it on its first
+	// pass; the port's wait below must not leave the move's last video frame
+	// (or the previous place) on screen meanwhile.
+	if (_warpLoaded) {
+		const Graphics::Surface *view = _omni3dMan.getSurface();
+		if (view) {
+			g_system->copyRectToScreen(view->getPixels(), view->pitch, 0, 0, view->w, view->h);
+			g_system->updateScreen();
+		}
+	}
+
+	// Drain stale clicks from the place change / window focus (the port's).
 	for (int grace = 0; grace < 5 && !shouldAbort(); grace++) {
 		pollEvents();
 		g_system->delayMillis(20);
