@@ -6,7 +6,8 @@
 // soundMenuTableWalk, loadPickerKnobRecord and menuWalkHit
 // (menu_layout.cpp) print the lines of atlantis-re
 // tools/emu/ui_menu_record_table.py, which runs the original walk, sprite
-// record function and hit test under Unicorn (goldens
+// record function, hit test and LOAD picker entry stores (5 then 20 files)
+// under Unicorn (goldens
 // ui_menu_record_table_{en714240,en688128,fr688640}.txt; sections counts,
 // sequence, stale and loadknob; the writers section is the static scan).
 // Used by ui_menus.h (the reference), ui_en1997.h and ui_frmay1997.h.
