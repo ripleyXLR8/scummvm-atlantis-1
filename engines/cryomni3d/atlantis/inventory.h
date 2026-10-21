@@ -94,7 +94,13 @@ struct AtlantisGuests {
 	// lowers it by 7 a frame and the slide-out raises it back (FUN_0042c2c4,
 	// FUN_0042c59c).  Not reset with the list.
 	int32 portraitY;
-	AtlantisGuests() : portraitY(350) { clear(); }
+	// 0x00496144 (0 in the exe image): set by a follower portrait click
+	// (FUN_0042c8ac @ 0x0042cc1d), cleared only at the end of a conversation
+	// (FUN_00425828 @ 0x00425bdb), so the object-in-hand path, which returns
+	// at 0x004258b7, leaves it set for the next conversation.  Not reset with
+	// the list (no memset of FUN_004239f4 covers it).
+	bool talk;
+	AtlantisGuests() : portraitY(350), talk(false) { clear(); }
 	void clear();
 	// FUN_0042b480 (list part): append {id, index of id in table}.
 	void add(int32 guestId, const Common::Array<int32> &table);

@@ -211,11 +211,19 @@ public:
 
 	// The original's two generators (random.h): the C rand, seeded 1 at
 	// launch and shared by the rat (FUN_00438fd4), crab (FUN_0043ede8) and
-	// ogre (FUN_00442a0c) puzzles; the puzzle LCG, seeded from the clock by
-	// the dispatcher FUN_0043a1e0 at every puzzle launch.
+	// ogre (FUN_00442a0c) puzzles; its other two callers (0x0046694b,
+	// 0x0046696d, in the collision routine 0x004665ec) are unreachable code
+	// (atlantis-re functions/puzzles-FUN_0043d28c.md); the puzzle LCG, seeded
+	// from the clock by the dispatcher FUN_0043a1e0 at every puzzle launch.
 	uint32 _crtRandSeed;
 	int crtRand() { return crtRandNext(_crtRandSeed); }
 	uint16 _puzzleLcgSeed;
+	// FUN_00451d0c, the game clock: timeGetTime() - [0x00bcb5b8].  Its epoch
+	// (FUN_00451cec) is taken at boot (0x0041b80d), at the toolbar exit
+	// (0x0042c844) and after the in-game menu (0x0041cb84): in run() and
+	// rebaseConClocks (con_exec.cpp, which defines gameClockMs).
+	uint32 _clockEpoch = 0;
+	uint32 gameClockMs() const;
 	// The held object (the OBJETENMAIN variable), and emptying the hand.
 	const Object *heldObject() const { return _inventory.selectedObject(); }
 	uint currentPlaceId() const { return _currentPlaceId; }

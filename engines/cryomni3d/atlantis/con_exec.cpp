@@ -155,8 +155,10 @@ void CryOmni3DEngine_Atlantis::execConInitCommands() {
 }
 
 int CryOmni3DEngine_Atlantis::resolveSpeakerPersoId(const Common::String &speaker) const {
-	// atlantis.exe FUN_00428f58: memcmp of the text after '[' against each
-	// literal of the chain below, in code order (case-sensitive); every test
+	// atlantis.exe FUN_00428f58: strncmp (FUN_0044a83f) of the text after
+	// '[' against each literal of the chain below, in code order
+	// (case-sensitive; the size-guarded memcmp used here is equivalent
+	// because the literals contain no NUL); every test
 	// runs and a hit overwrites the previous result, so the LAST match wins
 	// (e.g. "Seth" -> 513 then 514).  The literals contain no ',' or ']', so
 	// comparing the speaker token is the same as comparing the raw text.
@@ -277,8 +279,11 @@ void CryOmni3DEngine_Atlantis::playPuzzle(int puzzleId) {
 		_gameVars["finpuzzle"] = check;
 		return;
 	}
-	// FUN_0043a1e0 seeds the puzzle LCG 0x007bec20 from the clock.
-	_puzzleLcgSeed = (uint16)g_system->getMillis();
+	// FUN_0043a1e0 seeds the puzzle LCG 0x007bec20 with the low 16 bits of
+	// the game clock FUN_00451d0c (0x0043a1fb..0x0043a200), the milliseconds
+	// since its epoch was last taken (FUN_00451cec: boot, toolbar exit,
+	// in-game menu).
+	_puzzleLcgSeed = (uint16)gameClockMs();
 	switch (puzzleId) {
 	case 0: {
 		// Celestial alignment ("eclipse on Atlantis") at CHAPI012 vue 221.
@@ -490,15 +495,9 @@ void CryOmni3DEngine_Atlantis::execConSetCommand(const Common::String &cmd, int3
 	const int value = set.value;
 	// EnableSuj,perso=suj,suj... / DisableSuj,perso=suj,... (FUN_0042a100
 	// @ 0x0042a4ef..0x0042a560: FUN_00425f6c / FUN_0042606c on the text from
-	// the first digit).
-	if (key == "enablesuj") {
-		_subjects.enable(*setText, set.valuePos);
+	// the first digit; con_eval.cpp applyConSubjectSet).
+	if (applyConSubjectSet(_subjects, set, *setText))
 		return;
-	}
-	if (key == "disablesuj") {
-		_subjects.disable(*setText, set.valuePos);
-		return;
-	}
 
 	// Time1=N / Time2=N — restart the timer at N seconds; the variable itself
 	// is written by updateConClocks (atlantis.exe FUN_0042a100 @ 0x0042a321,
@@ -714,11 +713,14 @@ void CryOmni3DEngine_Atlantis::execConSetCommand(const Common::String &cmd, int3
 
 	// stopsound=N — stop the currently playing newsound.  N is ignored: the
 	// original engine only tracks one ambient channel and any stopsound
-	// silences it.
+	// silences it.  FUN_0042b290 also clears the poller's playing flag
+	// 0x00772912 (@ 0x0042b2d8) but not the last value 0x006cd87c, so the
+	// next non-zero NewSound starts, the same value included.
 	if (key == "stopsound") {
 		_gameVars["newsound"] = 0;
 		if (_mixer->isSoundHandleActive(_newSoundHandle))
 			_mixer->stopHandle(_newSoundHandle);
+		_newSoundPlaying = false;
 		return;
 	}
 
@@ -765,10 +767,20 @@ private:
 
 } // End of anonymous namespace
 
+uint32 CryOmni3DEngine_Atlantis::gameClockMs() const {
+	// FUN_00451d0c: timeGetTime() - [0x00bcb5b8], the epoch FUN_00451cec
+	// takes at boot (0x0041b80d), after the in-game menu (0x0041cb84) and
+	// at the toolbar exit (0x0042c844); _clockEpoch is taken in run() and
+	// rebaseConClocks.
+	return g_system->getMillis() - _clockEpoch;
+}
+
 void CryOmni3DEngine_Atlantis::updateConClocks() {
-	// atlantis.exe FUN_0041c75c, at the start of every warp frame.
+	// atlantis.exe FUN_0041c75c, at the start of every warp frame.  Random
+	// is the low byte of the game clock (0x0041c774); ChapterTime, Time1
+	// and Time2 are differences of two clock values, so any base serves.
 	const uint32 now = g_system->getMillis();
-	_gameVars["random"] = (int)(now & 0xff);
+	_gameVars["random"] = (int)(gameClockMs() & 0xff);
 	_gameVars["chaptertime"] = _conClocks.chapterTime(now);
 	_gameVars["time1"] = _conClocks.timerValue(1, now);
 	_gameVars["time2"] = _conClocks.timerValue(2, now);
@@ -781,7 +793,9 @@ void CryOmni3DEngine_Atlantis::restartConTimer(int timer, int value) {
 void CryOmni3DEngine_Atlantis::rebaseConClocks() {
 	// After the toolbar (FUN_0042c59c @ 0x0042c844) and the in-game menu
 	// (FUN_0041c838 @ 0x0041cb84): the timers resume from their current
-	// values, and ChapterTime starts again from 0.
+	// values, and ChapterTime starts again from 0.  FUN_00451cec first
+	// restarts the game clock FUN_00451d0c at about 0.
+	_clockEpoch = g_system->getMillis();
 	_conClocks.rebase(g_system->getMillis(), _gameVars.getValOrDefault("time1", 0),
 	                  _gameVars.getValOrDefault("time2", 0));
 }
@@ -905,19 +919,13 @@ void CryOmni3DEngine_Atlantis::addGuest(int32 guestId) {
 }
 
 void CryOmni3DEngine_Atlantis::talkToGuest(int32 guestId) {
-	// FUN_00425828 with 0x00496144 = 1: the other guests are hidden only
-	// when the guest has enabled subjects (the loop at 0x0042594d runs on
-	// the subject path, after the JBE at 0x0042592a), then restored.
-	byte saved[AtlantisGuests::kSlots];
-	memcpy(saved, _guests.sprite, sizeof(saved));
-	const bool hasSubjects = !_subjects.subjects(guestId).empty();
-	if (hasSubjects)
-		for (uint i = 0; i < _guests.count; i++)
-			if (_guests.id[i] != guestId)
-				_guests.sprite[i] = AtlantisGuests::kHidden;
+	// FUN_0042c8ac @ 0x0042cc1d: a follower portrait click sets 0x00496144,
+	// then runs FUN_00425828 (0x0042cc57).  interactNPC hides and restores
+	// the other followers, and clears the flag, on its conversation path
+	// only; with an object in hand the flag stays set (Quirk 3, atlantis-re
+	// functions/scripts-FUN_00425828.md).
+	_guests.talk = true;
 	interactNPC(guestId);
-	if (_guests.count <= AtlantisGuests::kSlots)
-		memcpy(_guests.sprite, saved, sizeof(saved));
 }
 
 void CryOmni3DEngine_Atlantis::subGuest(int32 guestId) {
@@ -942,7 +950,12 @@ void CryOmni3DEngine_Atlantis::showPerso(int perso) {
 }
 
 void CryOmni3DEngine_Atlantis::runConClick() {
-	// atlantis.exe FUN_00425cf4 (flag 0x00496170 set: a play is counted).
+	// atlantis.exe FUN_00425cf4.  0x00496170 is set around the scan, the play
+	// and the put-back (0x00425d2c..0x00425d82) for every caller (NPC with an
+	// object in hand, object click, zone click): the executor counts the play
+	// (0x00428493) and FUN_0041a298 ignores the right press's bar toggle
+	// (0x0041a305) during the section.
+	_sectionPlay = true;
 	struct Ctx {
 		static bool test(const ConSection &sec, void *ctx) {
 			const CryOmni3DEngine_Atlantis *e = (const CryOmni3DEngine_Atlantis *)ctx;
@@ -974,6 +987,7 @@ void CryOmni3DEngine_Atlantis::runConClick() {
 		}
 	}
 
+	_sectionPlay = false;   // 0x00425d82
 	_gameVars["clicperso"] = 0;
 	_gameVars["cliczone"] = 0;
 }
@@ -1004,7 +1018,9 @@ void CryOmni3DEngine_Atlantis::runArrivalSelSections(int arrivedVue, int fromVue
 	// copies LastVue as it is (0x0042777d) and FUN_0042a100 scans after it
 	// (0x0042a60e) with no test.  A negative origin is the port's unknown
 	// place (no place entered yet): the arrived place stands for it.  A move
-	// into a sub-WAM passes the place left, as any other move (0x00423def).
+	// into a sub-WAM passes the place left, as any other move (0x00423def);
+	// after a departure section that ran Vue=N it is N, since the Vue=
+	// rewrote 0x006cd7c0 (0x0042a6fd; gameStep sets _arrivalFromVue).
 	_gameVars["arriveevue"] = (fromVue >= 0) ? fromVue : arrivedVue;
 
 	// Single /sel pool, file order, first match fires (atlantis.exe
@@ -1138,10 +1154,10 @@ void CryOmni3DEngine_Atlantis::interactNPC(int persoId) {
 	// and the object leaves the hand.
 	// The port's ObjetEnMain is the inventory selection (liveValue).
 	if (_inventory.selectedObject() != nullptr) {
-		// FUN_00425cf4 sets 0x00496170 around its scan and play.
-		_sectionPlay = true;
+		// FUN_00425cf4 sets 0x00496170 around its scan and play.  The return
+		// at 0x004258b7 skips the follower save, hide and restore and leaves
+		// 0x00496144 (_guests.talk) as it is.
 		runConClick();
-		_sectionPlay = false;
 		_gameVars["objetenmain"] = 0;
 		_inventory.setSelectedObject(nullptr);
 		return;
@@ -1150,26 +1166,46 @@ void CryOmni3DEngine_Atlantis::interactNPC(int persoId) {
 	_sectionPlay = true;
 	// New conversation: forget the previous cam.
 	_lastDialCam = 0;
+	// 0x004258ce..0x004258fe: the followers' sprites are saved, and
+	// restored at the end when 0x00496144 is set (0x00425ba0..0x00425bdb).
+	byte savedGuestSprites[AtlantisGuests::kSlots];
+	memcpy(savedGuestSprites, _guests.sprite, sizeof(savedGuestSprites));
+	auto endFollowerTalk = [&]() {
+		if (!_guests.talk)
+			return;
+		for (uint i = 0; i < _guests.count && i < AtlantisGuests::kSlots; i++)
+			_guests.sprite[i] = savedGuestSprites[i];
+		_guests.talk = false;
+	};
 
 	// atlantis.exe FUN_00425828: when the perso has enabled subjects, the
 	// menu lists them in table order (EnableSuj appends, DisableSuj removes
 	// and shifts) and is shown first (0x00425930..0x00425a8a).  Then the
 	// eligible /con entries are walked in file order (FUN_004281f8) and the
-	// first that fits plays (0x00425abe..0x00425b75): an entry with no /suj
-	// line always fits; one with a /suj line fits when the perso has no
-	// subjects, or when its list holds the chosen subject (FUN_004264a8); a
-	// click outside the grid (-1) stops the walk at the first /suj entry; an
-	// empty grid cell gives subject 0, which no list holds, so the walk goes
-	// on to the first eligible entry without a /suj line.
+	// first that fits plays (0x00425abe..0x00425b75): an entry whose body
+	// does not start with /Suj or /suj always fits (a /suj line further down
+	// is not a gate, ConSection::sujIds); one that does fits when the perso
+	// has no subjects, or when its list holds the chosen subject
+	// (FUN_004264a8); a click outside the grid (-1) stops the walk at the
+	// first /suj entry; an empty grid cell gives subject 0, which no list
+	// holds, so the walk goes on to the first eligible entry without a /suj
+	// line.
 	Common::Array<int> sujs;
 	for (uint8 s : _subjects.subjects(persoId))
 		sujs.push_back(s);
 	const bool persoHasMenu = !sujs.empty();
 	int chosen = -1;
 	if (persoHasMenu) {
+		// 0x00425944..0x004259b4: with 0x00496144 set, every follower but
+		// the clicked perso is hidden, for the menu and the entry's play.
+		if (_guests.talk)
+			for (uint i = 0; i < _guests.count && i < AtlantisGuests::kSlots; i++)
+				if (_guests.id[i] != persoId)
+					_guests.sprite[i] = AtlantisGuests::kHidden;
 		chosen = showSubjectMenu(sujs);
 		if (shouldAbort()) {
 			_sectionPlay = false;
+			endFollowerTalk();
 			return;
 		}
 	}
@@ -1211,6 +1247,7 @@ void CryOmni3DEngine_Atlantis::interactNPC(int persoId) {
 
 	_sectionPlay = false;
 	_gameVars["clicperso"] = 0;
+	endFollowerTalk();
 }
 
 // FUN_00432a64 (atlantis-re functions/audio-FUN_00432a64.md).  The loop flag
