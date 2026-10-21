@@ -604,6 +604,13 @@ private:
 	// Sound-menu knob X positions, session-persistent like the original's
 	// menu record table; 0 = not seeded from SONMENU.TXT yet.
 	int _sonMenuKnobX[4];
+	// The original's menu record table, one for the session (zeroed .bss at
+	// start-up; menu_layout.h MenuRecordTable), with the build's records
+	// per menu; menuRecordTable() gives it to the menus, or null under
+	// kEnhMinorBugFixes (per-menu records; exe_build.h
+	// menuRecordTableRecords).
+	mutable MenuRecordTable _menuRecords;
+	MenuRecordTable *menuRecordTable() const;
 	// True when the OMNI 3D option inverts the vertical look.
 	bool omni3dInvertY() const;
 	// LOAD screen: the player's per-episode saves listed by EPI.TXT name, plus

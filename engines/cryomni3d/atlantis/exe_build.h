@@ -212,7 +212,8 @@ struct AtlantisExeBuild {
 	// atlantis-cd-fr-688640 (FUN_0041efa4 @ 0x0041eff4), 20 (0xa1) in every
 	// other build.  SONMENU.TXT has 18 records, so in the two 16-record
 	// builds its records 16 and 17 overwrite SUREMENU's count and first
-	// records (Fable pass 2 opus-gap2-per-build-flags#0).
+	// records (Fable pass 2 opus-gap2-per-build-flags#0): the port's
+	// MenuRecordTable (menu_layout.h, menuRecordTableRecords below).
 	uint8 menuRecordsPerMenu;
 
 	uint32 fileOffset(uint32 va) const { return va - dgroupVA + dgroupRawPtr; }
@@ -510,6 +511,18 @@ inline const AtlantisExeBuild &atlantisExeBuild(uint32 size) {
 // `Annulla` zone 18 px, before the end of the word).
 inline int menuPosItemZoneByteWidth(const AtlantisExeBuild &b, bool minorBugFixes) {
 	return minorBugFixes ? 22 : b.menuPosItemByteWidth;
+}
+
+// The records per menu of the session-wide menu record table the port
+// keeps (MenuRecordTable, menu_layout.h): the build's (16 in
+// atlantis-cd-en-688128 and atlantis-cd-fr-688640, 20 in the others; the
+// original's single static table, decision 0016 row 35), 0 with the minor
+// bug fixes enhancement: per-menu, unbounded records that start from zero
+// at every menu visit, so SONMENU's records 16-17 no longer move
+// SUREMENU's left ornament off screen and the LOAD knob hidden by a visit
+// with 11 files or fewer comes back on a later visit with more.
+inline uint menuRecordTableRecords(const AtlantisExeBuild &b, bool minorBugFixes) {
+	return minorBugFixes ? 0 : b.menuRecordsPerMenu;
 }
 
 // LOADMUSIK's rules the port applies (music.cpp execMusicList): the build's

@@ -436,7 +436,75 @@ MenuWalkRecord &walkSlot(MenuWalk &walk, uint n) {
 	return walk.records[n];
 }
 
+int16 tableWord(uint8 lo, uint8 hi) {
+	return (int16)(uint16)(lo | (hi << 8));
+}
+
 } // End of anonymous namespace
+
+void MenuRecordTable::reset(uint recordsPerMenu) {
+	_stride = 1 + 8 * recordsPerMenu;
+	_bytes.clear();
+	_bytes.resize(kMenus * _stride);
+	for (uint32 i = 0; i < _bytes.size(); i++)
+		_bytes[i] = 0;
+}
+
+// Past the 15 blocks lies other .bss of the original ([UNKNOWN] what): no
+// shipped menu writes or reads there (counts at most 18, the stale count
+// 119 of menu 6 ends in menu 13's block; ui_menu_record_table_*.txt), so
+// the port keeps zeros there.
+void MenuRecordTable::putByte(uint32 off, uint8 v) {
+	while (_bytes.size() <= off)
+		_bytes.push_back(0);
+	_bytes[off] = v;
+}
+
+void MenuRecordTable::setCount(int menu, uint8 n) {
+	putByte((uint32)menu * _stride, n);
+}
+
+MenuWalkRecord MenuRecordTable::record(int menu, uint k) const {
+	const uint32 o = (uint32)menu * _stride + 1 + 8 * k;
+	MenuWalkRecord r;
+	r.x = tableWord(byteAt(o), byteAt(o + 1));
+	r.y = tableWord(byteAt(o + 2), byteAt(o + 3));
+	r.w = tableWord(byteAt(o + 4), byteAt(o + 5));
+	r.h = tableWord(byteAt(o + 6), byteAt(o + 7));
+	return r;
+}
+
+void MenuRecordTable::setRecord(int menu, uint k, const MenuWalkRecord &r) {
+	const uint32 o = (uint32)menu * _stride + 1 + 8 * k;
+	const int16 v[4] = { r.x, r.y, r.w, r.h };
+	for (int i = 0; i < 4; i++) {
+		putByte(o + 2 * i, (uint8)((uint16)v[i] & 0xff));
+		putByte(o + 2 * i + 1, (uint8)((uint16)v[i] >> 8));
+	}
+}
+
+void MenuRecordTable::records(int menu, Common::Array<MenuWalkRecord> &out) const {
+	const uint n = count(menu);
+	out.resize(n);
+	for (uint k = 0; k < n; k++)
+		out[k] = record(menu, k);
+}
+
+MenuWalkRecord MenuLayout::storedRecord(uint k) const {
+	if (table && menu >= 0 && menu < MenuRecordTable::kMenus)
+		return table->record(menu, k);
+	if (k < walk.records.size())
+		return walk.records[k];
+	MenuWalkRecord r = { 0, 0, 0, 0 };
+	return r;
+}
+
+void MenuLayout::setStoredRecord(uint k, const MenuWalkRecord &r) {
+	if (table && menu >= 0 && menu < MenuRecordTable::kMenus)
+		table->setRecord(menu, k, r);
+	else
+		walkSlot(walk, k) = r;
+}
 
 int menuWalkHit(const Common::Array<MenuWalkRecord> &records, int mx, int my) {
 	for (uint k = 0; k < records.size(); k++) {
@@ -464,9 +532,32 @@ int menuNumber(const char *fileName) {
 }
 
 void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
-                  int toggleA, int toggleB, MenuWalk &walk, int posItemByteWidth) {
+                  int toggleA, int toggleB, MenuWalk &walk, int posItemByteWidth,
+                  MenuRecordTable *table) {
 	walk.ops.clear();
+	if (menu < 0 || menu >= MenuRecordTable::kMenus)
+		table = nullptr;
 	uint count = 0;               // 0x006126b0 + 0xa1 * menu = 0
+	if (table)
+		table->setCount(menu, 0);   // the count byte only (en-688128 @ 0x0041ef8a)
+	// Record `count`: the table's (whatever an earlier walk, another menu's
+	// overflow or the LOAD picker left there) or the per-menu one; written
+	// back and counted by `put` (the count byte is a byte: `inc byte ptr`).
+	auto get = [&]() {
+		if (table)
+			return table->record(menu, count);
+		return walkSlot(walk, count);
+	};
+	auto put = [&](const MenuWalkRecord &r) {
+		if (table) {
+			table->setRecord(menu, count, r);
+			table->setCount(menu, (uint8)(count + 1));
+			count = table->count(menu);
+		} else {
+			walkSlot(walk, count) = r;
+			count++;
+		}
+	};
 	uint32 p = 0;
 	int line = 0;                 // EBP-0x14
 	int penX = 0, penY = 0;       // EBP-0x24, EBP-0x20
@@ -494,12 +585,12 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 				w += (t[q] >= 0x20 && t[q] - 0x20 < (int)ARRAYSIZE(kFontMaxMeasureWidths)) ? kFontMaxMeasureWidths[t[q] - 0x20] : 0;
 			penX = (640 - w) / 2;
 			penY = y;
-			MenuWalkRecord &r = walkSlot(walk, count);
+			MenuWalkRecord r;
 			r.x = (int16)(penX - 11);
 			r.y = (int16)(y - 28);
 			r.w = (int16)w;
 			r.h = 28;
-			count++;
+			put(r);
 		}
 		if (walkAt(t, size, p, "<")) {              // 0x0041fe42
 			p++;
@@ -509,14 +600,14 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 			p = walkStep(p, y, 2);
 			penX = x;
 			penY = y;
-			MenuWalkRecord &r = walkSlot(walk, count);
+			MenuWalkRecord r;
 			r.x = (int16)(x - 11);
 			r.y = (int16)(y - 28);
 			// bytes to the CR x 0x16 (atlantis-cd-it-687104 FUN_0041ecb4:
 			// x 16, `shl ebx,4` @ 0x0041f068, stored @ 0x0041f098)
 			r.w = (int16)(posItemByteWidth * (int)(toCr(p) - p));
 			r.h = 28;
-			count++;
+			put(r);
 		}
 		if (walkAt(t, size, p, "//")) {             // 0x0041ffb7
 			p += 2;
@@ -556,7 +647,7 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 			// 0x004209b0); the blits take both (0x00420a7f..0x00420a95), so a
 			// slider keeps its knob and the LOAD knob (record 4, written by
 			// FUN_0041cf78) is drawn where it was put.
-			MenuWalkRecord &r = walkSlot(walk, count);
+			MenuWalkRecord r = get();
 			int bx = x, by = y;
 			if (r.x == 0)
 				r.x = (int16)x;
@@ -570,7 +661,7 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 			r.h = (int16)h;
 			MenuWalkOp op = { true, v < 3, false, (int16)bx, (int16)by, idx, line, (int)count };
 			walk.ops.push_back(op);
-			count++;
+			put(r);
 			p = toCr(p) + 1;                          // past the CR
 			draw = false;
 			line++;
@@ -599,7 +690,31 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 		}
 		p++;
 	}
-	walk.records.resize(count);
+	if (table)
+		table->records(menu, walk.records);
+	else
+		walk.records.resize(count);
+}
+
+void loadPickerKnobRecord(MenuLayout &layout, const LoadPickerScroll &s) {
+	MenuWalkRecord r = layout.storedRecord(4);
+	if (s.knobX != 0)
+		r.x = (int16)s.knobX;
+	r.y = (int16)s.knobY;
+	layout.setStoredRecord(4, r);
+}
+
+void soundMenuTableWalk(MenuLayout &layout, const int knobX[4], int posItemByteWidth) {
+	MenuRecordTable *table = layout.table;
+	if (!table || layout.menu < 0 || layout.menu >= MenuRecordTable::kMenus || layout.raw.empty())
+		return;
+	for (int t = 0; t < 4; t++) {
+		MenuWalkRecord r = table->record(layout.menu, 5 + t);
+		r.x = (int16)knobX[t];
+		table->setRecord(layout.menu, 5 + t, r);
+	}
+	walkMenuText(layout.raw.data(), layout.raw.size(), layout.menu, -1, 0, 0, layout.walk,
+	             posItemByteWidth, table);
 }
 
 uint nameKeyCode(uint16 unicode) {

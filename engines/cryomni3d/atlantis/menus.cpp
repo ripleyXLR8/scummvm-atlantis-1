@@ -326,6 +326,19 @@ int CryOmni3DEngine_Atlantis::menuPosItemByteWidth() const {
 	return menuPosItemZoneByteWidth(*_exeBuild, enhancementEnabled(kEnhMinorBugFixes));
 }
 
+MenuRecordTable *CryOmni3DEngine_Atlantis::menuRecordTable() const {
+	// The original's single static table (every build; 16 records per menu
+	// in atlantis-cd-en-688128 / atlantis-cd-fr-688640, so SONMENU's records
+	// 16-17 land on SUREMENU's block); per-menu records with the minor bug
+	// fixes (exe_build.h menuRecordTableRecords, decision 0016 row 35).
+	const uint n = menuRecordTableRecords(*_exeBuild, enhancementEnabled(kEnhMinorBugFixes));
+	if (n == 0)
+		return nullptr;
+	if (_menuRecords.recordsPerMenu() != n)
+		_menuRecords.reset(n);
+	return &_menuRecords;
+}
+
 // Render a parsed menu: SPRMENU sprites first, then FONTMAX labels / toggle
 // values on top (the hovered item in the bright FONTMAX2 glyphs — that is how
 // the original tints the highlight).  Each text/toggle item's click rect is
@@ -345,7 +358,7 @@ void CryOmni3DEngine_Atlantis::renderMenuLayout(Graphics::ManagedSurface &dst,
 			if (layout.items[i].kind == MenuItem::kToggle)
 				flags[nt++] = layout.items[i].selected == 0 ? 1 : 0;
 		walkMenuText(layout.raw.data(), layout.raw.size(), layout.menu, hoveredTextIdx,
-		             flags[0], flags[1], layout.walk, menuPosItemByteWidth());
+		             flags[0], flags[1], layout.walk, menuPosItemByteWidth(), layout.table);
 		for (const MenuWalkOp &op : layout.walk.ops) {
 			if (!op.sprite)
 				drawFontMaxText(dst, Common::String((char)(op.index + 0x20)), op.x, op.y, op.hoverFont);
@@ -1084,15 +1097,12 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 		// entry (0x0041d1fa), mouse y - 10 while dragging (0x0041d2b0), x
 		// 0xffce with 11 files or fewer (0x0041d21a); FUN_004207c0 then draws
 		// the knob at the stored x / y (walkMenuText).
-		if (layout.menu == 1) {
-			while (layout.walk.records.size() <= 4) {
-				MenuWalkRecord r = { 0, 0, 0, 0 };
-				layout.walk.records.push_back(r);
-			}
-			if (sb.knobX != 0)
-				layout.walk.records[4].x = (int16)sb.knobX;
-			layout.walk.records[4].y = (int16)sb.knobY;
-		}
+		// The record lives in the session's table (menuRecordTable): x 0xffce
+		// stays there for the later visits, as in the original, whose
+		// picker never writes x again (atlantis-re
+		// ui_menu_record_table_*.txt `loadknob`).
+		if (layout.menu == 1)
+			loadPickerKnobRecord(layout, sb);
 
 		surf.blitFrom(bg);
 		renderMenuLayout(surf, layout, btnHover, hitRects);
@@ -1276,6 +1286,18 @@ void CryOmni3DEngine_Atlantis::displaySoundMenu(const Graphics::ManagedSurface &
 			_sonMenuKnobX[t] = layout.items[knobItem[t]].hx;
 	}
 
+	// The original draws this menu with the walk (en-688128 FUN_0041d218 @
+	// 0x0041d2b9, `mov eax,5; call 0x0041ef34`), which writes its 18
+	// records into the session's table: in a 16-record build records 16 and
+	// 17 (OK, Cancel: the text's, whatever the knobs) land on menu 6's
+	// count byte and records 0-1, and SUREMENU's /spr=5 keeps that x / y
+	// for the session (confirmQuit; atlantis-re
+	// ui_menu_record_table_*.txt `sequence`).  The port draws and hit-tests
+	// this menu itself; the walk here only keeps the table as the
+	// original's, its knob records 5..8 at the knobs' x (FUN_0041d218 @
+	// 0x0041d2b2).
+	soundMenuTableWalk(layout, _sonMenuKnobX, menuPosItemByteWidth());
+
 	// Text records by ordinal: 0 title, 1..4 slider labels, 5 Left, 6 Right,
 	// 7 OK, 8 Cancel.
 	int leftIdx = -1, rightIdx = -1, okIdx = -1, cancelIdx = -1, titleIdx = -1;
@@ -1449,6 +1471,10 @@ void CryOmni3DEngine_Atlantis::displaySoundMenu(const Graphics::ManagedSurface &
 // "ARE YOU SURE ?" quit confirmation (SUREMENU.TXT) over the menu backdrop.
 // The prompt label is inert; only the OK (confirm) and Cancel buttons react.
 // Returns true to quit.
+// Its records are menu 6's of the session's table (menuRecordTable): in
+// atlantis-cd-en-688128 / fr-688640, after the sound menu, record 1 (the
+// /spr=5 ornament) keeps x / y (-23039,-31743) (fr: (-23039,-26111)), off
+// screen (displaySoundMenu, soundMenuTableWalk).
 bool CryOmni3DEngine_Atlantis::confirmQuit(const Graphics::ManagedSurface &bg) {
 	MenuLayout layout;
 	if (!loadMenuLayout("SUREMENU.TXT", layout))
@@ -1699,6 +1725,7 @@ bool CryOmni3DEngine_Atlantis::loadMenuLayout(const char *baseName,
 	if (!out.loadFromStream(*s))
 		return false;
 	out.menu = menuNumber(baseName);
+	out.table = out.menu >= 0 ? menuRecordTable() : nullptr;
 	return true;
 }
 

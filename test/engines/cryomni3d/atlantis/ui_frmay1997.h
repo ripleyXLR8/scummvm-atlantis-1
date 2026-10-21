@@ -31,6 +31,7 @@
 #include "atlantis_test_helper.h"
 #include "video_subtitles_en1997.h"
 #include "video_test_big.h"
+#include "ui_menu_record_table.h"
 #include "../../../system/null_osystem.h"
 
 #include "common/algorithm.h"
@@ -501,6 +502,17 @@ public:
 			TS_ASSERT(text.contains("Cr\x82on"));
 			delete[] con;
 		}
+	}
+
+	// The menu record table, 16 records per menu (FUN_0041efa4 stride 0x81
+	// @ 0x0041eff4): SONMENU's records 16-17 put SUREMENU's /spr=5 at
+	// (-23039,-26111) (`Annuler` 154 wide), against the original under
+	// emulation (ui_menu_record_table.py, ui_menu_record_table_fr688640.txt).
+	void test_menu_record_table_vs_golden() {
+		TS_ASSERT_EQUALS(menuRecordTableRecords(UiFrMay1997::may(), false), 16u);
+		TS_ASSERT_EQUALS(menuRecordTableRecords(UiFrMay1997::may(), true), 0u);
+		UiMenuRecordTable::checkVsGolden(UiFrMay1997::dir(), "ui_menu_record_table_fr688640.txt",
+		                                 UiFrMay1997::may());
 	}
 };
 

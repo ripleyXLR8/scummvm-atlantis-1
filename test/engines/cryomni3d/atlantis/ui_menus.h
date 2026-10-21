@@ -16,6 +16,7 @@
 // to the port's toggle index.
 
 #include "atlantis_test_helper.h"
+#include "ui_menu_record_table.h"
 #include "../../../system/null_osystem.h"
 
 #include "common/archive.h"
@@ -1480,4 +1481,17 @@ public:
 	void test_shipped_menu_walk_hit_tables() { run("walk_rects"); }
 	void test_shipped_menu_walk_sprites() { run("walk_sprites"); }
 	void test_shipped_menu_walk_glyphs() { run("walk_glyphs"); }
+	// The session's menu record table of the reference (20 records per
+	// menu, 0x006126b0 stride 0xa1): no menu overflows (SONMENU 18), the
+	// stale hit test of menu 6 equals the fresh one, and the LOAD knob
+	// written x 0xffce on a visit with 11 files or fewer stays off screen
+	// on a later visit with more (FUN_0041cf78 writes x only @ 0x0041d21a);
+	// against ui_menu_record_table_en714240.txt (ui_menu_record_table.py).
+	void test_menu_record_table_vs_golden() {
+		using namespace CryOmni3D::Atlantis;
+		TS_ASSERT_EQUALS(menuRecordTableRecords(atlantisExeBuild(714240), false), 20u);
+		TS_ASSERT_EQUALS(menuRecordTableRecords(atlantisExeBuild(714240), true), 0u);
+		UiMenuRecordTable::checkVsGolden(AtlantisTest::dataDir(), "ui_menu_record_table_en714240.txt",
+		                                 atlantisExeBuild(714240));
+	}
 };

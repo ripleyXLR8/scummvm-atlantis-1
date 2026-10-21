@@ -105,12 +105,55 @@ struct MenuWalk {
 	Common::Array<MenuWalkRecord> records;
 	Common::Array<MenuWalkOp> ops;
 };
+// The original's menu record table: one static .bss table for the whole
+// session (every build), 15 blocks of a count byte and `recordsPerMenu`
+// records {s16 x, y, w, h}, block m at m * stride, stride = 1 + 8 x
+// recordsPerMenu: 0x006126b0 / 0xa1 / 20 in the reference (FUN_0041fb6c,
+// FUN_004207c0, FUN_004210c0), 0x006026b0 / 0x81 / 16 in
+// atlantis-cd-en-688128 (FUN_0041ef34 `imul eax,eax,0x81` @ 0x0041ef84,
+// FUN_0041fa84, FUN_00420304) and atlantis-cd-fr-688640 (FUN_0041efa4,
+// FUN_0041faf4, FUN_00420374).  A walk zeroes the menu's count byte only
+// (0x0041ef8a) and writes record k = count at m * stride + 1 + 8k with no
+// bound, so a menu of more records writes into the next menu's block:
+// SONMENU.TXT's 18 records in a 16-record build put its records 16 and 17
+// over SUREMENU's count byte and records 0 and 1 (atlantis-re
+// tools/emu/ui_menu_record_table.py, evidence/golden/
+// ui_menu_record_table_*.txt).  Nothing else writes the table but the LOAD
+// picker (record 4 of menu 1) and the sound menu's sliders (records 5..8 x
+// of menu 5) (the golden's `writers` section).
+class MenuRecordTable {
+public:
+	enum { kMenus = 15 };
+	explicit MenuRecordTable(uint recordsPerMenu = 20) { reset(recordsPerMenu); }
+	// A zeroed table (the .bss at start-up) of the given record count.
+	void reset(uint recordsPerMenu);
+	uint recordsPerMenu() const { return (_stride - 1) / 8; }
+	uint8 count(int menu) const { return byteAt((uint32)menu * _stride); }
+	void setCount(int menu, uint8 n);
+	MenuWalkRecord record(int menu, uint k) const;
+	void setRecord(int menu, uint k, const MenuWalkRecord &r);
+	// The menu's records 0 .. count - 1 as stored (another menu's overflow
+	// included).
+	void records(int menu, Common::Array<MenuWalkRecord> &out) const;
+
+private:
+	uint8 byteAt(uint32 off) const { return off < _bytes.size() ? _bytes[off] : 0; }
+	void putByte(uint32 off, uint8 v);
+	uint32 _stride;
+	Common::Array<byte> _bytes;
+};
+
 // hoverLine: DAT_006cd850; toggleA / toggleB: DAT_004960a8 / DAT_004960ac.
 // posItemByteWidth: a positioned item's record width per byte to the CR,
 // 0x16 (FUN_0041fb6c @ 0x0041fe42..) but 16 in atlantis-cd-it-687104
 // (FUN_0041ecb4 @ 0x0041f068; AtlantisExeBuild::menuPosItemByteWidth).
+// table: the session's record table (the original): the walk reads the
+// stored records from it and writes them back, `walk.records` receives a
+// copy of the menu's count records.  Null: per-menu records in
+// `walk.records` only, unbounded (kEnhMinorBugFixes, or no menu number).
 void walkMenuText(const byte *text, uint32 size, int menu, int hoverLine,
-                  int toggleA, int toggleB, MenuWalk &walk, int posItemByteWidth = 22);
+                  int toggleA, int toggleB, MenuWalk &walk, int posItemByteWidth = 22,
+                  MenuRecordTable *table = nullptr);
 // atlantis.exe FUN_004210c0: the first record strictly containing the
 // mouse, coordinates read as u16 (a negative x / y is never hit), sprite
 // records included; -1 for none (the original's 0xff).
@@ -127,8 +170,16 @@ struct MenuLayout {
 	Common::Array<byte> raw;
 	int menu;
 	mutable MenuWalk walk;
+	// The session's record table the walk uses (the original's static
+	// table), or null for per-menu records (kEnhMinorBugFixes).
+	MenuRecordTable *table;
 
-	MenuLayout() : menu(-1) {}
+	MenuLayout() : menu(-1), table(nullptr) {}
+
+	// Record k as the next walk will find it: in the table when there is one
+	// (and a menu number), else in `walk.records` (zero when absent).
+	MenuWalkRecord storedRecord(uint k) const;
+	void setStoredRecord(uint k, const MenuWalkRecord &r);
 
 	// Parse the menu-text stream.  Returns false only when the buffer is
 	// unreadable; an empty / truncated file yields an empty layout and true.
@@ -226,6 +277,21 @@ struct LoadPickerScroll {
 void loadPickerScrollInit(int count, LoadPickerScroll &s, bool knobAtBar = true);
 void loadPickerScrollFrame(LoadPickerScroll &s, bool trackLatched, bool buttonDown, int mouseY,
                            bool clamp = true);
+// The picker's writes of the knob, record 4 of menu 1, before a walk: y
+// always (0x0041d1fa / 0x0041d2b0; en-688128 0x0041cc23 / 0x0041ccd9), x
+// 0xffce only with 11 files or fewer (0x0041d21a; en-688128 0x0041cc43),
+// never back: with the session's table (layout.table) a later visit with
+// more files keeps x 0xffce, the knob off screen (atlantis-re
+// ui_menu_record_table_*.txt `loadknob`); per-menu records start from zero
+// at each visit (kEnhMinorBugFixes).
+void loadPickerKnobRecord(MenuLayout &layout, const LoadPickerScroll &s);
+// The sound menu's walk into the session's table (en-688128 FUN_0041d218
+// @ 0x0041d2b9, the reference FUN_0041d940): its knob records 5..8 at the
+// knobs' x (the sliders' writes, en-688128 @ 0x0041d2b2), then the walk of
+// SONMENU.TXT, whose records 16 and 17 overwrite menu 6's count byte and
+// records 0-1 in a 16-record build.  Nothing without a table (the port
+// draws and hit-tests this menu itself).
+void soundMenuTableWalk(MenuLayout &layout, const int knobX[4], int posItemByteWidth = 22);
 
 // atlantis.exe FUN_004211f0: the cell under (mx, my) of a cols x rows grid
 // at (x0, y0) with cells cellW x cellH, bounds INCLUSIVE on both sides (so

@@ -14,13 +14,18 @@
 //   10 rat frame deadline; T0023's search not restarted at point 0
 //   12 LOADMUSIK / DELMUSIK first-value rule
 //   13 Muria: one frame before the hook (the build flag)
+// and the 16-record menu table (Fable pass 2 opus-gap2-per-build-flags#0):
+// against the emulated golden ui_menu_record_table_en688128.txt.
 //
 // Port code exercised directly: nameEntryChar, fontMinBlits,
 // loadPickerScrollInit / loadPickerScrollFrame (menu_layout.cpp),
 // HexaGame::setUp, OgreDraw::reveal, RatGame (frame pacing, t0023),
-// conMusicApply (con_eval.cpp), atlantisExeBuild (exe_build.h).
+// conMusicApply (con_eval.cpp), atlantisExeBuild (exe_build.h),
+// MenuRecordTable / walkMenuText / soundMenuTableWalk /
+// loadPickerKnobRecord (menu_layout.cpp, through ui_menu_record_table.h).
 
 #include "atlantis_test_helper.h"
+#include "ui_menu_record_table.h"
 #include "../../../system/null_osystem.h"
 
 #include "common/array.h"
@@ -341,6 +346,65 @@ public:
 		disk = 0;
 		conMusicApply(true, list, 7, disk, copies, true);
 		TS_ASSERT_EQUALS(disk, 1u << 4);
+	}
+
+	// The menu record table, 16 records per menu (FUN_0041ef34 stride 0x81
+	// @ 0x0041ef84): the record counts of the 15 menus, SONMENU's records
+	// 16-17 over SUREMENU's count and records 0-1 (the ARE YOU SURE ?
+	// /spr=5 then blitted at (-23039,-31743) for the session), menu 6's
+	// stale hit test, the LOAD knob kept at x 0xffce, all against the
+	// original under emulation (ui_menu_record_table.py).
+	void test_menu_record_table_vs_golden() {
+		using namespace CryOmni3D::Atlantis;
+		TS_ASSERT_EQUALS(menuRecordTableRecords(atlantisExeBuild(688128), false), 16u);
+		UiMenuRecordTable::checkVsGolden(AtlantisTest::configValue("en1997"),
+		                                 "ui_menu_record_table_en688128.txt", atlantisExeBuild(688128));
+	}
+
+	// kEnhMinorBugFixes (decision 0016 row 35): per-menu records from zero
+	// at each visit; the ornament stays at (130,220) after the sound menu
+	// and the LOAD knob comes back on a visit with more than 11 files.
+	void test_menu_record_table_minor_bug_fixes() {
+		using namespace CryOmni3D::Atlantis;
+		TS_ASSERT_EQUALS(menuRecordTableRecords(atlantisExeBuild(688128), true), 0u);
+		const Common::String dir = AtlantisTest::configValue("en1997");
+		UiMenuRecordTable::Texts tx;
+		if (dir.empty() || !UiMenuRecordTable::loadTexts(dir, tx)) {
+			TS_WARN("en1997 not configured; skipped");
+			return;
+		}
+		MenuLayout a, son, b;
+		UiMenuRecordTable::layoutFor(tx, 6, nullptr, a);
+		UiMenuRecordTable::walk(a);
+		UiMenuRecordTable::layoutFor(tx, 5, nullptr, son);
+		soundMenuTableWalk(son, UiMenuRecordTable::kSonKnobX);   // no table: nothing
+		TS_ASSERT(son.walk.records.empty());
+		UiMenuRecordTable::layoutFor(tx, 6, nullptr, b);
+		UiMenuRecordTable::walk(b);
+		TS_ASSERT_EQUALS(UiMenuRecordTable::blits(b.walk), Common::String("(130,220,5) (500,260,6)"));
+		// the same with the session table: off screen
+		MenuRecordTable table(16);
+		UiMenuRecordTable::layoutFor(tx, 5, &table, son);
+		soundMenuTableWalk(son, UiMenuRecordTable::kSonKnobX);
+		UiMenuRecordTable::layoutFor(tx, 6, &table, b);
+		UiMenuRecordTable::walk(b);
+		TS_ASSERT_EQUALS(UiMenuRecordTable::blits(b.walk), Common::String("(-23039,-31743,5) (500,260,6)"));
+		// LOAD: 5 files then 20, each visit a fresh per-menu layout
+		LoadPickerScroll sb;
+		MenuLayout l1, l2, plain;
+		UiMenuRecordTable::layoutFor(tx, 1, nullptr, plain);
+		UiMenuRecordTable::walk(plain);
+		loadPickerScrollInit(5, sb, false);
+		UiMenuRecordTable::layoutFor(tx, 1, nullptr, l1);
+		loadPickerKnobRecord(l1, sb);
+		UiMenuRecordTable::walk(l1);
+		TS_ASSERT_EQUALS(l1.walk.records[4].x, -50);
+		loadPickerScrollInit(20, sb, false);
+		UiMenuRecordTable::layoutFor(tx, 1, nullptr, l2);
+		loadPickerKnobRecord(l2, sb);
+		UiMenuRecordTable::walk(l2);
+		TS_ASSERT_EQUALS(l2.walk.records[4].x, plain.walk.records[4].x);
+		TS_ASSERT_DIFFERS(l2.walk.records[4].x, -50);
 	}
 };
 
