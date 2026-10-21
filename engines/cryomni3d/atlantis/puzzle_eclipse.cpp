@@ -172,8 +172,11 @@ int EclipsePuzzle::run() {
 	const Graphics::PixelFormat fmt = g_system->getScreenFormat();
 	Graphics::ManagedSurface working(kScreenW, kScreenH, fmt);
 
+	// No SetCursorPos before the loop (the import slot 0x00c302f8 has no
+	// reader in FUN_004240fc, FUN_0043a1e0, FUN_00448ad0 or FUN_0044154c):
+	// the puzzle starts with the pointer where the warp loop left it at the
+	// zone click, which the warp exit has put in the mouse.
 	g_system->lockMouse(false);
-	_engine->setMousePos(Common::Point(kScreenW / 2, kScreenH / 2));
 	_engine->showMouse(false);   // FUN_00441b2c draws the cursor into the frame
 
 	// FUN_0044154c's loop: the click, the exit test, a frame, then the win

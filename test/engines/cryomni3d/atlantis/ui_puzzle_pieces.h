@@ -81,8 +81,9 @@ public:
 		int repX[13], repY[13];
 		for (int v = 0; v < 13; v++)
 			repX[v] = -1;
-		for (int y = 0; y < 480; y++) {
-			if (y)
+		// Rows 1..479: row 0 is past the BMP (the exe reads puzsrp2c.spr there).
+		for (int y = 1; y < 480; y++) {
+			if (y > 1)
 				all += '\n';
 			for (int x = 0; x < 640; x++) {
 				Rules r;

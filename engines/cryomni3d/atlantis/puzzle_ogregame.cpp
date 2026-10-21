@@ -239,16 +239,19 @@ int OgreGamePuzzle::run() {
 	const Graphics::PixelFormat fmt = g_system->getScreenFormat();
 	Graphics::ManagedSurface working(kScreenW, kScreenH, fmt);
 
+	// No SetCursorPos before the loop (the import slot 0x00c302f8 has no
+	// reader in FUN_004240fc, FUN_0043a1e0, FUN_00448ad0 or FUN_0044203c;
+	// FUN_004439c4's is the held-piece clamp): the puzzle starts with the
+	// pointer where the warp loop left it at the zone click.
 	g_system->lockMouse(false);
-	_engine->setMousePos(Common::Point(kScreenW / 2, kScreenH / 2));
 	_engine->showMouse(false);   // FUN_004439c4 draws the cursor into the frame
 
 	int  result = 0;
 	bool prevButton = (_engine->getCurrentMouseButton() != 0);
 	int grabX = 0, grabY = 0;     // 0x007bebe8 / 0x007bebec
 	// 0x004960ec / 0x004960f0 as the previous frame left them, after the
-	// FUN_004439c4 clamp (0x00442178).
-	Common::Point lastPos(kScreenW / 2, kScreenH / 2);
+	// FUN_004439c4 clamp (0x00442178); at entry the zone click's pointer.
+	Common::Point lastPos = _engine->getMousePos();
 
 	// FUN_0044203c: a click (FUN_00443c3c), the board (FUN_00442b88), the
 	// cursor (FUN_004439c4), the present; it reads no key.

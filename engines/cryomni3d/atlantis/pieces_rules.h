@@ -55,7 +55,11 @@ public:
 	}
 
 	// A byte of the raw BMP at [x - y * 640 + base] (0x4b438 for clicks,
-	// 0x4b1b8 for the cursor), 0 off the file.
+	// 0x4b1b8 for the cursor), 0 off the file.  0x4b438 is the file size,
+	// so a click on the top row (y = 0) is off the file; there the exe reads
+	// the next pool allocation, puzsrp2c.spr (FUN_004459c0), which the port
+	// does not reproduce (atlantis-re: functions/puzzles-FUN_00445ba0.md,
+	// Differences of FUN_004460c8).
 	static byte mapValue(const Common::Array<byte> &map, int x, int y, int base) {
 		const int idx = x - y * 640 + base;
 		return (idx >= 0 && idx < (int)map.size()) ? map[idx] : 0;
@@ -68,7 +72,8 @@ public:
 	// FUN_004460c8.  kClickMove and kClickReset play a sound (serp_2_1,
 	// serp_2_2), kClickBoard serp_2_3 (a click on the board off the pieces,
 	// or on a piece that has already moved); kClickLeave ends the puzzle (2).
-	// Values above 13 index past the exe's arrays; the shipped map has none.
+	// Values above 13 index past the exe's arrays; the shipped map has none
+	// below the top row.
 	Click click(const Common::Array<byte> &map, int x, int y) {
 		const byte v = mapValue(map, x, y, 0x4b438);
 		if (v == 0) {
