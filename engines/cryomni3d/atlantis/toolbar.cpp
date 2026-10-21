@@ -182,51 +182,79 @@ void Atlantis_Toolbar::drawToolbar(const Graphics::Surface *original) {
 		_destSurface.copyRectToSurface(_bgSurface, 0, 0, Common::Rect(0, 0, 640, _destSurface.h));
 	}
 
-	if (_position == (uint)_destSurface.h)
-		return;  // fully hidden
-
 	// Draw the bar background (and any other menu sprites) over it.
-	for (const MenuSprData &spr : _menuSprData) {
-		int baseX = spr.tx - spr.xoff;
-		int baseY = menuSpriteTop(spr.ty, spr.yoff, _position);
-		for (int y = 0; y < (int)spr.h; y++) {
-			int dy = baseY + y;
-			if (dy < 0 || dy >= _destSurface.h)
-				continue;
-			for (int x = 0; x < (int)spr.w; x++) {
-				int dx = baseX + x;
-				if (dx < 0 || dx >= _destSurface.w)
+	if (barBackgroundDrawn()) {
+		for (const MenuSprData &spr : _menuSprData) {
+			int baseX = spr.tx - spr.xoff;
+			int baseY = menuSpriteTop(spr.ty, spr.yoff, _position);
+			for (int y = 0; y < (int)spr.h; y++) {
+				int dy = baseY + y;
+				if (dy < 0 || dy >= _destSurface.h)
 					continue;
-				uint sidx = y * spr.w + x;
-				uint16 pix = spr.pixels[sidx];
-				if (spr.blend[sidx] == kSprTranspBlend)
-					continue;
-				uint16 *dp = (uint16 *)_destSurface.getBasePtr(dx, dy);
-				if (spr.blend[sidx] != kSprNoBlend)
-					pix = blendSprPixel565(pix, *dp, spr.blend[sidx]);
-				*dp = pix;
+				for (int x = 0; x < (int)spr.w; x++) {
+					int dx = baseX + x;
+					if (dx < 0 || dx >= _destSurface.w)
+						continue;
+					uint sidx = y * spr.w + x;
+					uint16 pix = spr.pixels[sidx];
+					if (spr.blend[sidx] == kSprTranspBlend)
+						continue;
+					uint16 *dp = (uint16 *)_destSurface.getBasePtr(dx, dy);
+					if (spr.blend[sidx] != kSprNoBlend)
+						pix = blendSprPixel565(pix, *dp, spr.blend[sidx]);
+					*dp = pix;
+				}
 			}
 		}
 	}
 
-	// Draw inventory item icons on top of the slot ornaments.  An empty slot
-	// just leaves the ornament visible; the item currently in hand is skipped.
+	// Draw inventory item icons on top of the slot ornaments.
+	Common::Array<BarIcon> icons;
+	barIcons(icons);
+	if (_engine)
+		for (const BarIcon &icon : icons)
+			_engine->drawInventoryIcon(_destSurface, (*_inventory)[icon.record], icon.zone);
+}
+
+bool Atlantis_Toolbar::barBackgroundDrawn() const {
+	if (_position >= (uint)_destSurface.h)
+		return false;   // fully hidden
+	// FUN_0042c59c: the background goes with slot 0, under record first's
+	// gate (@ 0x0042c643..0x0042c674).
+	if (_slideOutSlotY)
+		return slideOutRecordDrawn(_inventoryOffset, _slideOutSlotY, _slideOutGateFix);
+	return true;
+}
+
+void Atlantis_Toolbar::barIcons(Common::Array<BarIcon> &out) const {
+	out.clear();
+	// Outside the slide-out (_slideOutSlotY == 0) the bar is drawn whole or,
+	// at _position 82, not at all.
+	if (!_slideOutSlotY && _position >= (uint)_destSurface.h)
+		return;
 	for (uint i = 0; i < kInventorySlots; i++) {
 		uint invIdx = i + _inventoryOffset;
-		Object *obj = (invIdx < _inventory->size()) ? (*_inventory)[invIdx] : nullptr;
+		// FUN_0042c59c's record gate (slideOutRecordDrawn).
+		if (_slideOutSlotY && !slideOutRecordDrawn(invIdx, _slideOutSlotY, _slideOutGateFix))
+			continue;
+		// An empty slot just leaves the ornament visible (no record, present
+		// 0 @ 0x0042c682); the object in hand (OBJETENMAIN) is skipped
+		// (@ 0x0042c68b..0x0042c6af).
+		Object *obj = (_inventory && invIdx < _inventory->size()) ? (*_inventory)[invIdx] : nullptr;
 		if (obj == nullptr)
 			continue;
 		if (obj == _inventory->selectedObject())
 			continue;
-
 		// Slot rect in toolbar-local coords, offset by the slide position.  Not
-		// clipped to the surface here — drawInventoryIcon() clips, so the icon
-		// doesn't shift/trim mid-slide.
-		Common::Rect r = _zones[kZoneInventory0 + i].rect;
-		r.translate(0, _position);
-		if (r.bottom <= 0 || r.top >= (int)_destSurface.h)
-			continue;
-		_engine->drawInventoryIcon(_destSurface, obj, r);
+		// clipped here: the blit FUN_00410430 clips (drawInventoryIcon), so an
+		// icon below the bar on the slide-out's 506 frame still shows its top
+		// rows.
+		BarIcon icon;
+		icon.record = invIdx;
+		icon.slot = i;
+		icon.zone = _zones[kZoneInventory0 + i].rect;
+		icon.zone.translate(0, _position);
+		out.push_back(icon);
 	}
 }
 
@@ -310,20 +338,27 @@ bool Atlantis_Toolbar::slideIn(const Graphics::Surface *original) {
 	return false;
 }
 
-// FUN_0042c59c: each frame the bar is drawn at the slots' y while it is
-// below 0x1fa (506), then they move down 7; it stops when they reach 0x208
-// (520): 11 frames, the last two without the bar.  The portraits go back
-// down to 350.
+// FUN_0042c59c: each frame the bar is drawn at the slots' y, then they move
+// down 7; it stops when they reach 0x208 (520): 11 frames.  Each record is
+// gated by the slot y it reads at 0x00611788 + 4 r (slideOutRecordDrawn): the
+// background and the records < 9 are not drawn from 0x1fa (506), the
+// records >= 9 (scrolled bar) on every frame.  The portraits go back down
+// to 350.
 bool Atlantis_Toolbar::slideOut(const Graphics::Surface *original) {
+	_slideOutGateFix = _engine->enhancementEnabled(kEnhMinorBugFixes);
 	for (int slotY = 443; slotY < 0x208 && !_engine->shouldAbort(); slotY += 7) {
-		_position = slotY < 0x1fa ? (uint)(slotY - 443) : (uint)_destSurface.h;
+		_slideOutSlotY = slotY;
+		_position = (uint)(slotY - 443);
 		slideFrame(original);
 		_engine->slideGuestPortraits(7);
-		if (barTick(original))
+		if (barTick(original)) {
+			_slideOutSlotY = 0;
 			return true;
+		}
 		// FUN_00432178 after FUN_0042be3c when no GameOver / Exit (0x0042c811)
 		_engine->ambientFrame();
 	}
+	_slideOutSlotY = 0;
 	_position = _destSurface.h;
 	return false;
 }

@@ -24,7 +24,11 @@
 // slideFrame, presentBarFrame and drawInventoryIcon need the engine and are
 // not run (the guest portraits, the held-object skip and the per-frame
 // ambientFrame of the slides are not covered); test_icon_hotspots checks
-// iconHotspot, which drawInventoryIcon uses.
+// iconHotspot, which drawInventoryIcon uses.  test_slide_out_frames_vs_original
+// runs drawToolbar (background), barIcons / barBackgroundDrawn and
+// slideOutRecordDrawn over the frames of FUN_0042c59c, the icons drawn as
+// drawInventoryIcon draws them (drawSprSprite at iconHotspot), against
+// atlantis-re/tools/emu/ui_bar_slide_out.py (golden ui_bar_slide_out.txt).
 // portInvent() calls conInvent (inventory.cpp), the "inventN" branch of
 // execConSetCommand (con_exec.cpp).
 
@@ -45,6 +49,10 @@
 #include "cryomni3d/sprites.h"
 #include "cryomni3d/atlantis/inventory.h"
 #include "cryomni3d/atlantis/sprite_blend.h"
+#include "cryomni3d/atlantis/sprite_decode.h"
+#include "cryomni3d/atlantis/bigfile.h"
+#include "common/archive.h"
+#include "common/fs.h"
 
 #define private public
 #include "cryomni3d/atlantis/toolbar.h"
@@ -672,5 +680,184 @@ public:
 		// A /con click section (0x00496170) never toggles it.
 		BarSessionRules::rightPressed(s, true, false);
 		TS_ASSERT(!BarSessionRules::warpFrameStart(s));
+	}
+
+	// FUN_0042c59c, the slide-out, frame by frame (golden ui_bar_slide_out.txt,
+	// atlantis-re tools/emu/ui_bar_slide_out.py: FUN_0042c59c, FUN_00410430
+	// and FUN_0041047f run unmodified, the view stubbed with the hash pattern).
+	// Each record is gated on the int32 at 0x00611788 + 4 r (@ 0x0042c643):
+	// records >= 9 read past the slot table and stay drawn on the frames at
+	// slot y 506 and 513, so a scrolled bar shows 1..4 rows of their icons at
+	// 506.  Port: drawToolbar (the OBJETS0 background, engine.cpp's
+	// addMenuSprite), barIcons and barBackgroundDrawn under the slide-out
+	// state slideOut sets; the icons drawn as drawInventoryIcon draws them
+	// (drawSprSprite at iconHotspot(zone, 0)); the strip placed at row 398
+	// as slideFrame places it.  With the gate fix (kEnhMinorBugFixes) the
+	// frames from 506 show the view only.
+	void test_slide_out_frames_vs_original() {
+		using namespace GraphicsToolbarTest;
+		typedef CryOmni3D::Atlantis::Atlantis_Toolbar TB;
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("graphics_toolbar: no atlantis_test.cfg, slide-out test skipped");
+			return;
+		}
+		Common::Array<Common::String> lines;
+		TS_ASSERT(AtlantisTest::loadGoldenLines("ui_bar_slide_out.txt", lines));
+		if (!SearchMan.hasArchive("toolbar_test_data"))
+			SearchMan.addDirectory("toolbar_test_data", Common::FSNode(Common::Path(AtlantisTest::dataDir(), '/')));
+		CryOmni3D::Atlantis::BigFileArchive big;
+		TS_ASSERT(big.open(Common::Path("BIGCD1.BIG")));
+		Common::Array<CryOmni3D::Atlantis::SprSprite> bar, icons;
+		{
+			Common::ScopedPtr<Common::SeekableReadStream> s0(big.createReadStreamForMember(Common::String("SPRITE\\2D\\OBJETS0.SPR")));
+			Common::ScopedPtr<Common::SeekableReadStream> s1(big.createReadStreamForMember(Common::String("SPRITE\\2D\\OBJETS1.SPR")));
+			TS_ASSERT(s0 && s1);
+			if (!s0 || !s1)
+				return;
+			TS_ASSERT(CryOmni3D::Atlantis::readSprFile(*s0, bar));
+			TS_ASSERT(CryOmni3D::Atlantis::readSprFile(*s1, icons));
+		}
+		TS_ASSERT_EQUALS(bar.size(), 1u);
+		// Catalogue: object i has icon i (OBJETS1 sprite i) and id 1000 + i,
+		// the harness's records.
+		Common::Array<uint> ids;
+		for (uint i = 0; i < icons.size(); i++)
+			ids.push_back(1000 + i);
+		CryOmni3D::Objects objects;
+		portSetupObjects(objects, ids);
+		const Graphics::PixelFormat rgb565(2, 5, 6, 5, 0, 11, 5, 0, 0);
+		Graphics::Surface view;
+		view.create(640, 480, rgb565);
+		for (uint i = 0; i < 640u * 480u; i++)
+			((uint16 *)view.getPixels())[i] = (uint16)((i * 2654435761U) >> 16);
+		const Common::String viewOnly = stripMd5(view);
+
+		uint frames = 0, bad = 0, badFix = 0, slivers = 0;
+		for (int fix = 0; fix < 2; fix++) {
+			NullCb nc;
+			Common::ScopedPtr<TB> tb;
+			Common::ScopedPtr<CryOmni3D::Inventory> invp;
+			uint first = 0;
+			for (uint li = 0; li < lines.size(); li++) {
+				const Common::String &ln = lines[li];
+				if (ln.hasPrefix("#"))
+					continue;
+				Common::Array<Common::String> f;
+				splitWords(ln, f);
+				if (f[0] == "scenario") {
+					first = atoi(field(f, "first").c_str());
+					tb.reset();
+					invp.reset(new CryOmni3D::Inventory());
+					CryOmni3D::Inventory &inv = *invp;
+					inv.init(30, new Common::Functor1Mem<uint, void, NullCb>(&nc, &NullCb::cb));
+					Common::Array<Common::String> spr;
+					splitOn(field(f, "sprites"), ',', spr);
+					for (uint k = 0; k < spr.size(); k++)
+						CryOmni3D::Atlantis::inventoryAppend(inv, &objects[atoi(spr[k].c_str())]);
+					const Common::String held = field(f, "held");
+					if (held != "-")
+						inv.setSelectedObject(&objects[atoi(held.c_str())]);
+					tb.reset(new TB());
+					initToolbarNoGfx(*tb, &inv);
+					tb->addMenuSprite(bar[0].w, bar[0].h, bar[0].xoff, bar[0].yoff,
+					                  0, TB::kBarHotspotY - TB::kBarSurfaceTop,
+					                  bar[0].pixels.data(), bar[0].blend.data());
+					tb->_inventoryOffset = first;
+					continue;
+				}
+				// <scenario> frame= slotY= bg= icons= rows= md5=
+				const int slotY = atoi(field(f, "slotY").c_str());
+				tb->_slideOutSlotY = slotY;
+				tb->_slideOutGateFix = fix != 0;
+				tb->_position = (uint)(slotY - 443);
+				tb->drawToolbar(&view);
+				Common::Array<TB::BarIcon> list;
+				tb->barIcons(list);
+				Common::String got;
+				for (uint k = 0; k < list.size(); k++) {
+					const CryOmni3D::Object *obj = (*invp)[list[k].record];
+					const uint sprIdx = (uint)(obj - &objects.front());
+					const Common::Point h = TB::iconHotspot(list[k].zone, 0);
+					CryOmni3D::Atlantis::drawSprSprite(*tb->_destSurface.surfacePtr(), icons[sprIdx], h.x, h.y);
+					got += Common::String::format("%s%u:%u:%u:%d:%d", k ? "," : "", list[k].record,
+					                              list[k].slot, sprIdx, h.x, h.y + TB::kBarSurfaceTop);
+				}
+				if (got.empty())
+					got = "-";
+				Graphics::Surface frame;
+				frame.copyFrom(view);
+				if (tb->_position < (uint)tb->_destSurface.h)
+					frame.copyRectToSurface(*tb->_destSurface.surfacePtr(), 0, TB::kBarSurfaceTop,
+					                        Common::Rect(0, 0, 640, tb->_destSurface.h));
+				const Common::String md5 = stripMd5(frame);
+				frame.free();
+				const Common::String bgGot = tb->barBackgroundDrawn() ? "1" : "0";
+				if (!fix) {
+					frames++;
+					const bool ok = bgGot == field(f, "bg") && got == field(f, "icons") && md5 == field(f, "md5");
+					if (!ok) {
+						bad++;
+						TS_WARN(Common::String::format("%s: bg %s icons %s md5 %s", ln.c_str(),
+						                               bgGot.c_str(), got.c_str(), md5.c_str()).c_str());
+					}
+					if (slotY == 0x1fa && field(f, "rows") != "-")
+						slivers++;
+				} else {
+					// The fix: the same frames before 506, the view alone from 506.
+					const bool ok = slotY < 0x1fa
+					                ? (bgGot == field(f, "bg") && got == field(f, "icons") && md5 == field(f, "md5"))
+					                : (bgGot == "0" && got == "-" && md5 == viewOnly);
+					if (!ok) {
+						badFix++;
+						TS_WARN(Common::String::format("fix %s: bg %s icons %s md5 %s", ln.c_str(),
+						                               bgGot.c_str(), got.c_str(), md5.c_str()).c_str());
+					}
+				}
+			}
+		}
+		view.free();
+		TS_ASSERT_EQUALS(frames, 77u);
+		TS_ASSERT_EQUALS(slivers, 6u);
+		TS_ASSERT_EQUALS(bad, 0u);
+		TS_ASSERT_EQUALS(badFix, 0u);
+	}
+
+private:
+	static void splitWords(const Common::String &s, Common::Array<Common::String> &out) {
+		splitOn(s, ' ', out);
+	}
+	static void splitOn(const Common::String &s, char c, Common::Array<Common::String> &out) {
+		out.clear();
+		Common::String cur;
+		for (uint i = 0; i < s.size(); i++) {
+			if (s[i] == c) {
+				if (!cur.empty())
+					out.push_back(cur);
+				cur.clear();
+			} else {
+				cur += s[i];
+			}
+		}
+		if (!cur.empty())
+			out.push_back(cur);
+	}
+	// The value of `key=` among the words, "" when absent.
+	static Common::String field(const Common::Array<Common::String> &words, const char *key) {
+		const Common::String k = Common::String(key) + "=";
+		for (uint i = 0; i < words.size(); i++)
+			if (words[i].hasPrefix(k.c_str()))
+				return words[i].substr(k.size());
+		return "";
+	}
+	// md5 of screen rows 398..479, little-endian RGB565 as the harness dumps them.
+	static Common::String stripMd5(const Graphics::Surface &s) {
+		Common::Array<byte> b;
+		for (int y = 480 - 82; y < 480; y++)
+			for (int x = 0; x < 640; x++) {
+				const uint16 p = *(const uint16 *)s.getBasePtr(x, y);
+				b.push_back(p & 0xff);
+				b.push_back(p >> 8);
+			}
+		return AtlantisTest::md5Hex(b.begin(), b.size());
 	}
 };

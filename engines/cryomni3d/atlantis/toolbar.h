@@ -60,6 +60,31 @@ public:
 	}
 	void addMenuSprite(uint16 w, uint16 h, int16 xoff, int16 yoff,
 	                   int tx, int ty, const uint16 *pix, const uint8 *blend);
+	// FUN_0042c59c @ 0x0042c643: on a slide-out frame drawn at slot y slotY,
+	// record `record` is drawn when the int32 at 0x00611788 + 4 * record is
+	// below 0x1fa (506).  That is slotY itself for a record < 9; for a record
+	// >= 9 it lies past the 9-entry slot table, where the only store is
+	// FUN_004278a0 @ 0x00427af0 (0x1bb) and .bss holds 0, so such a record is
+	// drawn on every frame (a 1..4-row sliver of its icon at 506).  The bar
+	// background (slot 0) takes the gate of record `first`.  With fixGate
+	// (kEnhMinorBugFixes) every record is gated on slotY.
+	static bool slideOutRecordDrawn(uint record, int slotY, bool fixGate) {
+		if (record < kInventorySlots || fixGate)
+			return slotY < 0x1fa;
+		return true;
+	}
+	// One icon of the bar frame: record (inventory index), its slot and the
+	// slot zone shifted by the slide position (drawInventoryIcon draws the
+	// icon's hotspot at its centre, iconHotspot).
+	struct BarIcon {
+		uint record;
+		uint slot;
+		Common::Rect zone;
+	};
+	// The bar frame drawToolbar composes: whether the OBJETS0 background is
+	// drawn, and the icons in drawing order.
+	bool barBackgroundDrawn() const;
+	void barIcons(Common::Array<BarIcon> &out) const;
 
 	bool displayToolbar(const Graphics::Surface *original);
 	// atlantis.exe FUN_004278a0 after a pick-up: FUN_0042c2c4 slides the bar
@@ -114,6 +139,10 @@ private:
 	bool _inventoryButtonDragging;
 
 	uint _position;
+	// The slot y of the slide-out frame being drawn (FUN_0042c59c), 0 outside
+	// the slide-out; and whether its record gate is fixed (kEnhMinorBugFixes).
+	int _slideOutSlotY = 0;
+	bool _slideOutGateFix = false;
 
 	struct MenuSprData {
 		Common::Array<uint16> pixels;
