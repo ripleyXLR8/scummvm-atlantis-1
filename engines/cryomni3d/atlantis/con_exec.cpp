@@ -803,7 +803,10 @@ void CryOmni3DEngine_Atlantis::rebaseConClocks() {
 bool CryOmni3DEngine_Atlantis::barFrameTick(bool &played) {
 	animateSprites();
 	played = runConTimers();
-	return shouldAbort() || _gameVars.getValOrDefault("gameover", 0) != 0 ||
+	// Called without virtual dispatch (no class derives from this one), so
+	// that a test can run it on an engine it cannot construct
+	// (graphics_toolbar.h test_bar_ambient_restart_vs_original).
+	return CryOmni3DEngine_Atlantis::shouldAbort() || _gameVars.getValOrDefault("gameover", 0) != 0 ||
 	       _gameVars.getValOrDefault("exit", 0) != 0;
 }
 

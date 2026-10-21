@@ -26,8 +26,12 @@
 // too, and slideGuestPortraits) on a zero-filled engine through a test
 // SlideSink against atlantis-re/tools/emu/ui_bar_slide_guests.py (golden
 // ui_bar_slide_guests.txt: FUN_0042c2c4 / FUN_0042c59c with FUN_0042bc58);
-// the engine's sink (screen copy, pace, shouldAbort, barTick /
-// ambientFrame), presentBarFrame's screen copy and drawInventoryIcon need
+// the engine sink's tick (barTick, then ambientFrame) is run by
+// test_bar_ambient_restart_vs_original, with holdPass (the pick-up hold
+// loop's pass), against atlantis-re/tools/emu/ui_bar_ambient_restart.py
+// (golden ui_bar_ambient_restart.txt: FUN_0042c2c4 / FUN_0042c59c /
+// FUN_0042cc98 with FUN_00432178); the sink's screen copy, pace and
+// shouldAbort, presentBarFrame's screen copy and drawInventoryIcon need
 // the running engine and are not run; test_icon_hotspots checks iconHotspot, which
 // drawInventoryIcon uses.  test_slide_out_frames_vs_original
 // runs drawToolbar (background), barIcons / barBackgroundDrawn and
@@ -68,6 +72,10 @@
 #include "cryomni3d/atlantis/toolbar.h"
 #undef private
 #undef protected
+#include "cryomni3d/atlantis/ambient_output.h"
+#include "audio/mixer_intern.h"
+#include "common/events.h"
+#include "common/system.h"
 
 #include <new>
 
@@ -133,6 +141,157 @@ struct OmniViewPeek : CryOmni3D::Omni3DManager {
 		m.*(&OmniViewPeek::_dirtyCoords) = false;
 	}
 };
+
+// The engine's ambient output (_ambientOut) in a test: a fixed Miles status
+// per slot (AIL_sample_status), and the calls logged as the tokens of
+// atlantis-re/tools/emu/ui_bar_ambient_restart.py: stop:i,
+// start:i:variant:loopcount (loop count 0 = loop forever), pan:i:p,
+// vol:i:v.  Nothing reaches the mixer, which the base class only uses in
+// its destructor (stopHandle); the test OSystem has none, so the output
+// owns an idle one.
+struct IdleMixer {
+	Audio::MixerImpl mixer;
+	IdleMixer() : mixer(22050) {}
+};
+class LogAmbientOut : private IdleMixer, public CryOmni3D::Atlantis::AtlantisAmbientOutput {
+public:
+	int st[CryOmni3D::Atlantis::AmbientSounds::kSlots];
+	Common::Array<Common::String> log;
+	LogAmbientOut() : IdleMixer(), AtlantisAmbientOutput(&mixer) {
+		for (uint i = 0; i < CryOmni3D::Atlantis::AmbientSounds::kSlots; i++)
+			st[i] = kPlaying;
+	}
+	int status(uint slot) override { return st[slot]; }
+	void start(uint slot, uint, uint variant, bool loopForever) override {
+		log.push_back(Common::String::format("start:%u:%u:%d", slot, variant, loopForever ? 0 : 1));
+	}
+	void stop(uint slot) override { log.push_back(Common::String::format("stop:%u", slot)); }
+	void setPan(uint slot, uint8 pan) override { log.push_back(Common::String::format("pan:%u:%u", slot, pan)); }
+	void setVolume(uint slot, uint8 v) override { log.push_back(Common::String::format("vol:%u:%u", slot, v)); }
+	void release(uint) override {}
+	// The calls since the last take, comma-separated ("-" for none).
+	Common::String take() {
+		Common::String r;
+		for (uint i = 0; i < log.size(); i++) {
+			if (i)
+				r += ",";
+			r += log[i];
+		}
+		log.clear();
+		return r.empty() ? Common::String("-") : r;
+	}
+};
+
+// AtlantisWAMParser's place and object lists: wam_parser.h is included by an
+// earlier test header without the access defines, and an explicit
+// instantiation may name private members, which the friend returns.
+template<class Tag, typename Tag::type M>
+struct WamMember {
+	friend typename Tag::type wamMember(Tag) { return M; }
+};
+struct WamPlaces {
+	typedef Common::Array<CryOmni3D::Atlantis::AtlantisPlace> CryOmni3D::Atlantis::AtlantisWAMParser::*type;
+	friend type wamMember(WamPlaces);
+};
+struct WamObjects {
+	typedef Common::Array<CryOmni3D::Atlantis::AtlantisAmbientObject> CryOmni3D::Atlantis::AtlantisWAMParser::*type;
+	friend type wamMember(WamObjects);
+};
+template struct WamMember<WamPlaces, &CryOmni3D::Atlantis::AtlantisWAMParser::_places>;
+template struct WamMember<WamObjects, &CryOmni3D::Atlantis::AtlantisWAMParser::_ambientObjects>;
+
+// The test OSystem has no event manager, which Engine::shouldQuit (through
+// CryOmni3DEngine_Atlantis::shouldAbort, in barFrameTick) reads: a quiet
+// one, never quitting.  OSystem deletes it with itself.
+struct QuietEvents : Common::EventManager {
+	bool pollEvent(Common::Event &) override { return false; }
+	void pushEvent(const Common::Event &) override {}
+	void purgeMouseEvents() override {}
+	void purgeKeyboardEvents() override {}
+	Common::Point getMousePos() const override { return Common::Point(); }
+	int getButtonState() const override { return 0; }
+	int getModifierState() const override { return 0; }
+	int shouldQuit() const override { return 0; }
+	int shouldReturnToLauncher() const override { return 0; }
+	void resetReturnToLauncher() override {}
+	void resetQuit() override {}
+	Common::Keymapper *getKeymapper() override { return nullptr; }
+	Common::Keymap *getGlobalKeymap() override { return nullptr; }
+};
+struct OSystemPeek : OSystem {
+	static void installQuietEvents() {
+		Common::EventManager *OSystem::*em = &OSystemPeek::_eventManager;
+		if (!(g_system->*em))
+			g_system->*em = new QuietEvents();
+	}
+};
+
+// The harness's clock FUN_00451d0c: 70, so FUN_004320bc draws r = 70.
+inline uint32 ambientClock70(void *) {
+	return 70;
+}
+
+// The zero-filled engine's ambient state as ui_bar_ambient_restart.py sets
+// the original's: place 77 with three references to objects 1..3 (file
+// positions (100, 0, 0), (0, 100, 0), (-50, 30, 10), loudness 500, two
+// variants each, weights 60 / 40, 60 / 40 and 150 / 40; references t = 0,
+// m = 200, c = 0), entered through AmbientSounds::enterPlace; statuses
+// done / playing / stopped; the loop flag 0 after the entry (the harness
+// clears 0x00495e8c), no camera entry, angles 0.  The members the engine
+// constructor would build are built in place.
+inline void setupEngineAmbient(CryOmni3D::Atlantis::CryOmni3DEngine_Atlantis *e, LogAmbientOut &out) {
+	using namespace CryOmni3D::Atlantis;
+	typedef Common::HashMap<Common::String, int> VarMap;
+	typedef Common::HashMap<int32, AtlantisCentrePos> CentreMap;
+	new (&e->_gameVars) VarMap();
+	new (&e->_ambientCentres) CentreMap();
+	new (&e->_ambient) AmbientSounds();
+	static const float kPos[3][3] = { { 100.0f, 0.0f, 0.0f }, { 0.0f, 100.0f, 0.0f }, { -50.0f, 30.0f, 10.0f } };
+	static const uint8 kWeights[3][2] = { { 60, 40 }, { 60, 40 }, { 150, 40 } };
+	AtlantisPlace p;
+	p.placeId = 77;
+	for (uint i = 0; i < 3; i++) {
+		AtlantisAmbientObject o;
+		o.id = (uint8)(i + 1);
+		for (uint k = 0; k < 3; k++)
+			o.pos[k] = kPos[i][k];
+		o.loudness = 500.0f;
+		o.weights[0] = kWeights[i][0];
+		o.weights[1] = kWeights[i][1];
+		o.weights[2] = o.weights[3] = 0;
+		o.variants[0] = Common::String::format("a%u.apc", i);
+		o.variants[1] = Common::String::format("b%u.apc", i);
+		(e->_wam.*wamMember(WamObjects())).push_back(o);
+		AtlantisAmbientRef r;
+		r.objectId = o.id;
+		r.t = 0.0f;
+		r.m = 200.0f;
+		r.c = 0.0f;
+		p.ambientRefs.push_back(r);
+	}
+	(e->_wam.*wamMember(WamPlaces())).push_back(p);
+	e->_currentPlaceId = 77;
+	e->_ambient.setClock(&ambientClock70, nullptr);
+	e->_ambient.enterPlace(out, *e->_wam.findPlaceById(77), e->_wam.getAmbientObjects());
+	e->_ambient._loopFlag = false;
+	out.st[0] = AmbientSampleOutput::kDone;
+	out.st[1] = AmbientSampleOutput::kPlaying;
+	out.st[2] = AmbientSampleOutput::kStopped;
+	out.log.clear();
+	e->_ambientOut = &out;
+}
+
+inline void teardownEngineAmbient(CryOmni3D::Atlantis::CryOmni3DEngine_Atlantis *e) {
+	using namespace CryOmni3D::Atlantis;
+	typedef Common::HashMap<Common::String, int> VarMap;
+	typedef Common::HashMap<int32, AtlantisCentrePos> CentreMap;
+	e->_ambientOut = nullptr;
+	(e->_wam.*wamMember(WamPlaces())).clear();
+	(e->_wam.*wamMember(WamObjects())).clear();
+	e->_gameVars.~VarMap();
+	e->_ambientCentres.~CentreMap();
+	e->_ambient.~AmbientSounds();
+}
 
 } // End of namespace GraphicsToolbarTest
 
@@ -930,8 +1089,9 @@ public:
 	// animateSprites, currentViewSurface, composeBarFrame = view, bar,
 	// drawGuests) and the guest y (CryOmni3DEngine_Atlantis::
 	// slideGuestPortraits) when the frame is handed over.  The sink stands
-	// for the engine's EngineSlideSink: the screen copy, pacing, shouldAbort,
-	// barTick and ambientFrame need the running engine and are not run.
+	// for the engine's EngineSlideSink: its screen copy, pacing and
+	// shouldAbort need the running engine and are not run; its tick (barTick,
+	// ambientFrame) is test_bar_ambient_restart_vs_original's.
 	// `original` is the snapshot navigation.cpp passes (the view with the
 	// portraits drawn at 350): with a view loaded the frame must not show it.
 	// Checked per frame against the original: the number of frames of each
@@ -1109,6 +1269,210 @@ public:
 		TS_ASSERT_EQUALS(golden.size(), 11u);
 		TS_ASSERT_EQUALS(frames, 2u * 209u);
 		TS_ASSERT_EQUALS(lastInFrames, 2u * 10u);
+		TS_ASSERT_EQUALS(bad, 0u);
+	}
+
+	// FUN_00432178 in the bar slides and the pick-up hold loop against the
+	// original (golden ui_bar_ambient_restart.txt from
+	// atlantis-re/tools/emu/ui_bar_ambient_restart.py: FUN_0042c2c4,
+	// FUN_0042c59c and FUN_0042cc98 run with FUN_00432178, FUN_004320bc and
+	// FUN_00450ed8; Fable pass 2 opus-gap3-ui-draw-glue#2).  Three ambient
+	// samples: 0 done, 1 playing, 2 stopped.
+	// Slides: slideIn / slideOut run whole on a zero-filled engine with the
+	// ambient state built in place (setupEngineAmbient), through a sink
+	// derived from the engine's EngineSlideSink: its stop (no abort) and
+	// present (no screen copy) are the test's, its tick is the engine's
+	// (barTick: barFrameTick's sprites and CON timers, GameOver / Exit;
+	// then ambientFrame -> AmbientSounds::frame on _ambientOut).  The
+	// harness's timer stub (GAMEOVER or EXIT set by FUN_0042be3c on a given
+	// frame) is the CON variable set at that frame's present, before the
+	// tick reads it.  Per frame the Miles calls (restarts of samples 0 and 2
+	// with the drawn variant and loop count, then pan and volume of the
+	// three) match the original's, and a frame ended by GameOver / Exit
+	// makes none.
+	// Hold loop: Atlantis_Toolbar::holdPass (displayPickup's pass after its
+	// frame) with the golden's pointer and button edges, 5 or 12 records:
+	// per pass the Miles calls (the pass that reads the click included), the
+	// edge returned and the first shown record after the pass (the edge
+	// scroll runs on the click pass too) match; the port's scroll throttle
+	// (110 ms, decision 0013) is kept out of the way with passes 1 s apart.
+	void test_bar_ambient_restart_vs_original() {
+		using namespace GraphicsToolbarTest;
+		typedef CryOmni3D::Atlantis::Atlantis_Toolbar TB;
+		typedef CryOmni3D::Atlantis::CryOmni3DEngine_Atlantis Eng;
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("graphics_toolbar: no atlantis_test.cfg, bar ambient test skipped");
+			return;
+		}
+		OSystemPeek::installQuietEvents();
+		Common::Array<Common::String> lines;
+		TS_ASSERT(AtlantisTest::loadGoldenLines("ui_bar_ambient_restart.txt", lines));
+		if (!SearchMan.hasArchive("toolbar_test_data"))
+			SearchMan.addDirectory("toolbar_test_data", Common::FSNode(Common::Path(AtlantisTest::dataDir(), '/')));
+		CryOmni3D::Atlantis::BigFileArchive big;
+		TS_ASSERT(big.open(Common::Path("BIGCD1.BIG")));
+		Common::Array<CryOmni3D::Atlantis::SprSprite> bar;
+		{
+			Common::ScopedPtr<Common::SeekableReadStream> s0(big.createReadStreamForMember(Common::String("SPRITE\\2D\\OBJETS0.SPR")));
+			TS_ASSERT(s0);
+			if (!s0)
+				return;
+			TS_ASSERT(CryOmni3D::Atlantis::readSprFile(*s0, bar));
+		}
+		TS_ASSERT_EQUALS(bar.size(), 1u);
+		if (bar.size() != 1)
+			return;
+		const Graphics::PixelFormat rgb565(2, 5, 6, 5, 0, 11, 5, 0, 0);
+
+		struct Scenario {
+			Common::Array<Common::String> head;
+			Common::Array<Common::String> rows;   // without the name
+		};
+		Common::Array<Scenario> golden;
+		for (uint li = 0; li < lines.size(); li++) {
+			if (lines[li].hasPrefix("#"))
+				continue;
+			Common::Array<Common::String> f;
+			splitWords(lines[li], f);
+			if (f[0] == "scenario") {
+				golden.push_back(Scenario());
+				golden.back().head = f;
+			} else if (!golden.empty()) {
+				golden.back().rows.push_back(Common::String(lines[li].c_str() + f[0].size() + 1));
+			}
+		}
+
+		// The engine's sink, with the test's stop and present.
+		struct Sink : TB::EngineSlideSink {
+			Sink(TB &tb, const Graphics::Surface *original) : TB::EngineSlideSink(tb, original) {}
+			Eng *e = nullptr;
+			LogAmbientOut *out = nullptr;
+			const char *phase = "";
+			Common::String timerPhase, timerVar;
+			int timerFrame = -1;
+			uint n = 0;
+			Common::String setNow;
+			Common::Array<Common::String> got;
+			bool stop() override { return false; }
+			void present(const Graphics::ManagedSurface &) override {
+				setNow = "-";
+				if (timerPhase == phase && (int)n == timerFrame) {
+					e->_gameVars[timerVar] = 1;   // FUN_0042be3c sets it
+					setNow = timerVar;
+					setNow.toUppercase();
+				}
+			}
+			bool tick() override {
+				const bool closed = TB::EngineSlideSink::tick();
+				const Common::String calls = out->take();
+				got.push_back(Common::String::format("phase=%s frame=%u slotY=%d timer=%s ambient=%d calls=%s", phase, n,
+				                                     443 + (int)_tb._position, setNow.c_str(),
+				                                     calls == "-" ? 0 : 1, calls.c_str()));
+				n++;
+				return closed;
+			}
+		};
+
+		uint slides = 0, holds = 0, rows = 0, bad = 0, clickPasses = 0;
+		Graphics::ManagedSurface original(640, 480, rgb565);
+		for (uint si = 0; si < golden.size(); si++) {
+			const Scenario &sc = golden[si];
+			const Common::String &name = sc.head[1];
+			Eng *e = rawStorage<Eng>();
+			LogAmbientOut out;
+			setupEngineAmbient(e, out);
+			Common::Array<Common::String> got;
+			if (sc.head[2].hasPrefix("timer=")) {
+				// timer=- or timer=<phase>:<frame>:<VAR>
+				slides++;
+				Common::Array<Common::String> t;
+				splitOn(field(sc.head, "timer"), ':', t);
+				TB tb;
+				initToolbarNoGfx(tb, nullptr);
+				tb._engine = e;
+				tb._format = rgb565;
+				tb.addMenuSprite(bar[0].w, bar[0].h, bar[0].xoff, bar[0].yoff,
+				                 0, TB::kBarHotspotY - TB::kBarSurfaceTop,
+				                 bar[0].pixels.data(), bar[0].blend.data());
+				Sink sink(tb, &original.rawSurface());
+				sink.e = e;
+				sink.out = &out;
+				if (t.size() == 3) {
+					sink.timerPhase = t[0];
+					sink.timerFrame = atoi(t[1].c_str());
+					sink.timerVar = t[2];
+					sink.timerVar.toLowercase();
+				}
+				sink.phase = "in";
+				const bool inClosed = tb.slideIn(&original.rawSurface(), sink);
+				TSM_ASSERT_EQUALS(name.c_str(), inClosed, sink.timerPhase == "in");
+				if (!inClosed) {
+					sink.phase = "out";
+					sink.n = 0;
+					TSM_ASSERT_EQUALS(name.c_str(), tb.slideOut(&original.rawSurface(), sink), sink.timerPhase == "out");
+				}
+				got = sink.got;
+			} else {
+				// records=<n> first=<f>: holdPass with the golden's input.
+				holds++;
+				const uint nrec = atoi(field(sc.head, "records").c_str());
+				Common::Array<uint> ids;
+				for (uint k = 0; k < nrec; k++)
+					ids.push_back(1000 + k);
+				CryOmni3D::Objects objects;
+				portSetupObjects(objects, ids);
+				CryOmni3D::Inventory inv;
+				NullCb nc;
+				inv.init(20, new Common::Functor1Mem<uint, void, NullCb>(&nc, &NullCb::cb));
+				for (uint k = 0; k < nrec; k++)
+					portInvent(objects, inv, ids[k], 1);
+				TB tb;
+				initToolbarNoGfx(tb, &inv);
+				tb._engine = e;
+				tb._inventoryOffset = atoi(field(sc.head, "first").c_str());
+				uint prevButton = 0, passes = 0;
+				uint32 nextScrollMs = 0;
+				for (uint k = 0; k < sc.rows.size(); k++) {
+					Common::Array<Common::String> f;
+					splitWords(sc.rows[k], f);
+					if (f[0] == "exit")
+						break;
+					Common::Array<Common::String> xy;
+					splitOn(field(f, "mouse"), ',', xy);
+					const Common::Point mouse((int16)atoi(xy[0].c_str()), (int16)atoi(xy[1].c_str()));
+					const Common::String edgeWant = field(f, "edge");
+					const uint button = edgeWant == "left" ? 1 : edgeWant == "right" ? 2 : 0;
+					const int edge = tb.holdPass(button, prevButton, mouse, 1000 * (passes + 1), nextScrollMs);
+					const Common::String calls = out.take();
+					got.push_back(Common::String::format("pass=%u mouse=%d,%d edge=%s ambient=%d first=%u calls=%s", passes,
+					                                     mouse.x, mouse.y, edge == 1 ? "left" : edge == 2 ? "right" : "-",
+					                                     calls == "-" ? 0 : 1, tb._inventoryOffset, calls.c_str()));
+					passes++;
+					if (edge != 0) {
+						clickPasses++;
+						break;
+					}
+				}
+				got.push_back(Common::String::format("exit passes=%u first=%u end=%u", passes, tb._inventoryOffset,
+				                                     tb._inventoryOffset + 9));
+			}
+			TSM_ASSERT_EQUALS(name.c_str(), got.size(), sc.rows.size());
+			for (uint k = 0; k < got.size() && k < sc.rows.size(); k++) {
+				rows++;
+				if (got[k] != sc.rows[k]) {
+					bad++;
+					TS_WARN(Common::String::format("%s\n  port %s\n  orig %s", name.c_str(), got[k].c_str(),
+					                               sc.rows[k].c_str()).c_str());
+				}
+			}
+			teardownEngineAmbient(e);
+			::operator delete(e);
+		}
+		original.free();
+		TS_ASSERT_EQUALS(slides, 4u);
+		TS_ASSERT_EQUALS(holds, 4u);
+		TS_ASSERT_EQUALS(clickPasses, 4u);
+		TS_ASSERT_EQUALS(rows, 58u - 8u);
 		TS_ASSERT_EQUALS(bad, 0u);
 	}
 

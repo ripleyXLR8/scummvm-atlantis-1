@@ -118,7 +118,8 @@ public:
 	// engine's (EngineSlideSink, used by slideIn / slideOut(original)):
 	// shouldAbort before the frame; the screen copy, the port's pace and
 	// pollEvents; then barTick and ambientFrame.  A test passes its own to
-	// run the slide loops and read each frame.
+	// run the slide loops and read each frame (or derives from
+	// EngineSlideSink to keep its tick).
 	class SlideSink {
 	public:
 		virtual ~SlideSink() {}
@@ -165,7 +166,21 @@ public:
 	int32 guestClicked() const { return _guestClicked; }
 
 private:
-	class EngineSlideSink;
+	// The engine's side of a slide frame: shouldAbort before it; the screen
+	// copy, the port's pace and pollEvents; then barTick and, when the bar
+	// stays, ambientFrame (FUN_0042be3c then FUN_00432178 @ 0x0042c569 /
+	// 0x0042c811).
+	class EngineSlideSink : public SlideSink {
+	public:
+		EngineSlideSink(Atlantis_Toolbar &tb, const Graphics::Surface *original) : _tb(tb), _original(original) {}
+		bool stop() override;
+		void present(const Graphics::ManagedSurface &frame) override;
+		bool tick() override;
+
+	private:
+		Atlantis_Toolbar &_tb;
+		const Graphics::Surface *_original;
+	};
 	typedef uint(Atlantis_Toolbar::*ZoneCallback)(uint dragStatus);
 
 	struct Zone {
