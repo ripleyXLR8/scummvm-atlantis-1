@@ -293,9 +293,11 @@ public:
 		TS_ASSERT_EQUALS(over79, UiFrMay1997::scanField(scan, "rows_over_79"));
 		TS_ASSERT_EQUALS(over84, UiFrMay1997::scanField(scan, "rows_over_84"));
 		TS_ASSERT_EQUALS(withHigh, UiFrMay1997::scanField(scan, "lines_with_high_bytes"));
-		// rows_hist: {1: 1891, 2: 555, 3: 73, 4: 16, 5: 4, 6: 1}
-		static const int kHist[][2] = { { 1, 1891 }, { 2, 555 }, { 3, 73 }, { 4, 16 }, { 5, 4 }, { 6, 1 } };
-		TS_ASSERT(scan.contains("'rows_hist': {1: 1891, 2: 555, 3: 73, 4: 16, 5: 4, 6: 1}"));
+		// rows_hist: {1: 1852, 2: 589, 3: 76, 4: 18, 5: 4, 6: 1}, each line as
+		// the first after start-up (a zero tail after the NUL; before
+		// 2026-10-21 the harness planted a CR there: {1: 1891, 2: 555, ...})
+		static const int kHist[][2] = { { 1, 1852 }, { 2, 589 }, { 3, 76 }, { 4, 18 }, { 5, 4 }, { 6, 1 } };
+		TS_ASSERT(scan.contains("'rows_hist': {1: 1852, 2: 589, 3: 76, 4: 18, 5: 4, 6: 1}"));
 		for (uint i = 0; i < ARRAYSIZE(kHist); i++)
 			TSM_ASSERT_EQUALS(kHist[i][0], hist[kHist[i][0]], kHist[i][1]);
 		TS_ASSERT_EQUALS(high.size(), wantHigh.size());
@@ -376,7 +378,10 @@ public:
 		Common::Array<uint16> screen(640 * 480, 0x8410);
 		Common::Array<Common::String> rows;
 		splitSubtitleBitmap(sample, rows);
-		TS_ASSERT_EQUALS(rows.size(), 2u);
+		// 3 rows as the first line after start-up: the second window's last
+		// word runs into the zero tail, the backward cut (2 rows with the CR
+		// the harness planted before 2026-10-21)
+		TS_ASSERT_EQUALS(rows.size(), 3u);
 		for (uint i = 0; i < rows.size(); i++) {
 			const int y = subtitleLineYBitmap(i, rows.size());
 			drawSubtitleBitmapRow((byte *)screen.data(), 2, 640, 480, font.data(), fontSize,

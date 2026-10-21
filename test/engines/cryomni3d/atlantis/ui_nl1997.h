@@ -541,9 +541,10 @@ public:
 	// The FONTS.BIN breaker (en-688128's FUN_0042e970, this build's
 	// FUN_0042e990) on every distinct Dutch dialog text, against the
 	// golden's scan (atlantis-re tools/emu/video_subtitles_nl688128.py):
-	// 2539 lines, 1945 distinct texts, rows {1: 1510, 2: 355, 3: 67, 4: 9,
-	// 5: 4}, the longest row 81 bytes, 8 rows over 79 bytes, the high bytes
-	// of the distinct texts.
+	// 2539 lines, 1945 distinct texts, rows {1: 1484, 2: 379, 3: 69, 4: 9,
+	// 5: 4} (each text as the first line after start-up, a zero tail after
+	// its NUL), the longest row 81 bytes, 8 rows over 79 bytes, the high
+	// bytes of the distinct texts.
 	void test_subtitle_scan_vs_golden() {
 		const Common::String dir = AtlantisTest::configValue("nl1997");
 		if (dir.empty()) { TS_WARN("nl1997 not configured; skipped"); return; }
@@ -552,7 +553,7 @@ public:
 		TS_ASSERT(AtlantisTest::loadGoldenLines("video_subtitles_nl688128.txt", golden));
 		bool sawHist = false;
 		for (uint i = 0; i < golden.size(); i++)
-			sawHist |= golden[i].hasPrefix("# rows per line: {1: 1510, 2: 355, 3: 67, 4: 9, 5: 4}");
+			sawHist |= golden[i].hasPrefix("# rows per line: {1: 1484, 2: 379, 3: 69, 4: 9, 5: 4}");
 		TS_ASSERT(sawHist);
 		VideoTest::Big big(dir);
 		TS_ASSERT(!big.empty());
@@ -590,9 +591,9 @@ public:
 		}
 		TS_ASSERT_EQUALS(lines, 2539);
 		TS_ASSERT_EQUALS(distinct.size(), 1945u);
-		TS_ASSERT_EQUALS(hist[1], 1510);
-		TS_ASSERT_EQUALS(hist[2], 355);
-		TS_ASSERT_EQUALS(hist[3], 67);
+		TS_ASSERT_EQUALS(hist[1], 1484);
+		TS_ASSERT_EQUALS(hist[2], 379);
+		TS_ASSERT_EQUALS(hist[3], 69);
 		TS_ASSERT_EQUALS(hist[4], 9);
 		TS_ASSERT_EQUALS(hist[5], 4);
 		TS_ASSERT_EQUALS(longest, 81);

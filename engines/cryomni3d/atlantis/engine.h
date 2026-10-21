@@ -55,6 +55,7 @@
 #include "cryomni3d/atlantis/saveload_format.h"
 #include "cryomni3d/atlantis/sprite_anim.h"
 #include "cryomni3d/atlantis/sprite_decode.h"
+#include "cryomni3d/atlantis/subtitle_layout.h"
 #include "cryomni3d/atlantis/toolbar.h"
 #include "cryomni3d/atlantis/transition_turn.h"
 #include "cryomni3d/atlantis/warp_cursor.h"
@@ -831,10 +832,18 @@ private:
 	// 0x004191c2..0x004191f9), read at the first subtitle.
 	Common::Array<byte> _subtitleBitmapFont;
 	bool _subtitleBitmapFontTried = false;
-	// The subtitles of this build (subtitle_layout.h): the rows of `text`,
-	// the y of row i of n, whether its font is there, and the rows drawn on
-	// `dst` with their shadow, y moved by offY (the TTF text cut at
-	// widthBudget).
+	// The subtitle text buffer (subtitle_layout.h SubtitleTextBuffer): zeroed
+	// with the engine, as the original's start-up clear (FUN_00422bd0, once
+	// per run: loading a game or starting a new one keeps it); written for
+	// every `[` line the section executor runs and for a game-over narrator
+	// line (dialog.cpp playConSection), whether the subtitles are shown or
+	// not.  The 1997 breakers read its bytes past the NUL.
+	SubtitleTextBuffer _subtitleText;
+	// The subtitles of this build (subtitle_layout.h): the rows of `text`
+	// (the GDI builds; the bitmap builds break _subtitleText, which the
+	// caller has just filled with that text), the y of row i of n, whether
+	// its font is there, and the rows drawn on `dst` with their shadow, y
+	// moved by offY (the TTF text cut at widthBudget).
 	void subtitleRows(const Common::String &text, Common::Array<Common::String> &rows) const;
 	int subtitleRowY(uint i, uint n) const;
 	int subtitleRowStep() const;

@@ -143,6 +143,15 @@ public:
 		return pos;
 	}
 
+	// From pos up to (not including) the next CR, the stop of the
+	// executor's copy loops.
+	Common::String upToCR(uint32 pos) const {
+		uint32 end = pos;
+		while (end < _t.size() && _t[end] != '\r')
+			end++;
+		return Common::String(_t.begin() + MIN(pos, end), end - MIN(pos, end));
+	}
+
 	Common::String line(uint32 pos) const {
 		uint32 end = lineEnd(pos);
 		Common::String s(_t.begin() + MIN(pos, end), end - MIN(pos, end));
@@ -201,6 +210,7 @@ void readBody(const ConText &t, uint32 pos, ConSection &sec) {
 			ConSectionItem item;
 			item.isSet = false;
 			item.line = parseDialogLine(s);
+			item.line.raw = t.upToCR(pos);
 			sec.items.push_back(item);
 			// The dialog code copies the text up to the CR (0x00428785).
 			while (pos < t.size() && t.at(pos) != '\r')

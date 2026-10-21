@@ -407,8 +407,10 @@ public:
 		}
 		TS_ASSERT_EQUALS(checked, 16);
 		// the space-free runs of the golden: `x` * 75, `x` * 76 + " tail",
-		// "short " + `x` * 80; en-688128's rows as emulated (76; 77 | 5; 87),
-		// sv-688128 faults: the port's cut at 75 (decision 0023 D2)
+		// "short " + `x` * 80; en-688128's rows as emulated with the zero
+		// tail of a first line after start-up (10 empty rows; 77 | 5; a
+		// fault), sv-688128 faults: the port's cuts (76 and 87 at the end
+		// of the text, decision 0016 row 26; 75, decision 0023 D2)
 		const Common::String run75 = Common::String(75, 'x');
 		const Common::String run81 = Common::String(76, 'x') + " tail";
 		const Common::String run86 = "short " + Common::String(80, 'x');
@@ -421,8 +423,10 @@ public:
 		TS_ASSERT(rows.size() == 1 && rows[0].size() == 76);
 		splitSubtitleBitmap(run81, rows, false);
 		TS_ASSERT(rows.size() == 2 && rows[0].size() == 77 && rows[1].size() == 5);
+		// " short" (the forward scan runs into the zero tail: the backward
+		// cut), then a window without a space: the rest of the text
 		splitSubtitleBitmap(run86, rows, false);
-		TS_ASSERT(rows.size() == 1 && rows[0].size() == 87);
+		TS_ASSERT(rows.size() == 2 && rows[0] == " short" && rows[1].size() == 81);
 		splitSubtitleBitmap(run75, rows, true);
 		TS_ASSERT(rows.size() == 2 && rows[0].size() == 75 && rows[1] == "x");
 		splitSubtitleBitmap(run81, rows, true);
@@ -443,9 +447,10 @@ public:
 	// D1 on the 2539 Swedish dialog lines, against the golden's scan
 	// (atlantis-re tools/emu/video_subtitles_sv688128.py): this build's
 	// rows 1..5 = 1920 / 520 / 85 / 9 / 5, longest 75, none over 75;
-	// en-688128's breaker 1951 / 500 / 74 / 10 / 4, longest 81, 292 rows
-	// over 75 and 17 over 79; 277 lines broken differently, 43 with one row
-	// more in this build, none with fewer.
+	// en-688128's breaker 1920 / 525 / 80 / 10 / 4, longest 81, 255 rows
+	// over 75 and 16 over 79; 242 lines broken differently, 6 with one row
+	// more in this build, none with fewer (each line as the first after
+	// start-up, a zero tail after its NUL).
 	void test_subtitle_scan_vs_golden() {
 		const Common::String dir = AtlantisTest::configValue("sv1997");
 		if (dir.empty()) { TS_WARN("sv1997 not configured; skipped"); return; }
@@ -456,10 +461,10 @@ public:
 		for (uint i = 0; i < golden.size(); i++) {
 			sawSv |= golden[i].hasPrefix("sv-688128: {'lines': 2539, 'rows_hist': {1: 1920, 2: 520, 3: 85, 4: 9, 5: 5}, "
 			                             "'max_row_len': 75, 'rows_over_75': 0, 'rows_over_79': 0}");
-			sawEn |= golden[i].hasPrefix("en-688128: {'lines': 2539, 'rows_hist': {1: 1951, 2: 500, 3: 74, 4: 10, 5: 4}, "
-			                             "'max_row_len': 81, 'rows_over_75': 292, 'rows_over_79': 17}");
-			sawDiff |= golden[i].hasPrefix("## lines whose rows differ between the two breakers: 277 "
-			                               "(more rows with sv-688128: 43, fewer: 0)");
+			sawEn |= golden[i].hasPrefix("en-688128: {'lines': 2539, 'rows_hist': {1: 1920, 2: 525, 3: 80, 4: 10, 5: 4}, "
+			                             "'max_row_len': 81, 'rows_over_75': 255, 'rows_over_79': 16}");
+			sawDiff |= golden[i].hasPrefix("## lines whose rows differ between the two breakers: 242 "
+			                               "(more rows with sv-688128: 6, fewer: 0)");
 		}
 		TS_ASSERT(sawSv && sawEn && sawDiff);
 		VideoTest::Big big(dir);
@@ -510,16 +515,16 @@ public:
 		TS_ASSERT_EQUALS(histSv[5], 5);
 		TS_ASSERT_EQUALS(longestSv, 75);
 		TS_ASSERT_EQUALS(over75Sv, 0);
-		TS_ASSERT_EQUALS(histEn[1], 1951);
-		TS_ASSERT_EQUALS(histEn[2], 500);
-		TS_ASSERT_EQUALS(histEn[3], 74);
+		TS_ASSERT_EQUALS(histEn[1], 1920);
+		TS_ASSERT_EQUALS(histEn[2], 525);
+		TS_ASSERT_EQUALS(histEn[3], 80);
 		TS_ASSERT_EQUALS(histEn[4], 10);
 		TS_ASSERT_EQUALS(histEn[5], 4);
 		TS_ASSERT_EQUALS(longestEn, 81);
-		TS_ASSERT_EQUALS(over75En, 292);
-		TS_ASSERT_EQUALS(over79En, 17);
-		TS_ASSERT_EQUALS(differ, 277);
-		TS_ASSERT_EQUALS(more, 43);
+		TS_ASSERT_EQUALS(over75En, 255);
+		TS_ASSERT_EQUALS(over79En, 16);
+		TS_ASSERT_EQUALS(differ, 242);
+		TS_ASSERT_EQUALS(more, 6);
 		TS_ASSERT_EQUALS(fewer, 0);
 	}
 

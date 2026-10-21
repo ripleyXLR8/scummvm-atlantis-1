@@ -382,6 +382,7 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 				execConSetCommand(item.setCmd, item.offset);
 				pendingGameOver = atoi(item.setCmd.c_str() + 9);
 				if (conGameOverNarrator(sec.items, itemIdx, gameOverText)) {
+					uint narrator = itemIdx + 1;
 					// The 1997 builds take the letter the executor left
 					// (atlantis-cd-en-688128 0x00486198, FUN_004256a4;
 					// atlantis-cd-fr-687104 0x00486194, FUN_00425430); for
@@ -400,8 +401,13 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 						if (pick) {
 							gameOverText = sec.items[itemIdx + 1 + pick].line.text;
 							gameOverTrack = (char)(gameOverTrack + pick);
+							narrator += pick;
 						}
 					}
+					// The game-over screen copies the narrator line into the
+					// subtitle text buffer (atlantis-cd-en-688128
+					// FUN_004256a4 @ 0x00425a31..0x00425a50), shown or not.
+					_subtitleText.store(conNarratorBufferText(sec.items[narrator].line.raw));
 				}
 				break;
 			}
@@ -418,6 +424,11 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 		// a line after /set commands); the walk ends by raising it
 		// (0x00428d8b, on the only exit).
 		musicDuck(true);
+
+		// The executor copies every `[` line it runs into the subtitle text
+		// buffer, shown or not, before the line plays (atlantis-cd-en-688128
+		// FUN_00427420 @ 0x00427707..0x00427722): the 1997 breakers read it.
+		_subtitleText.store(conLineBufferText(item.line.raw));
 
 		// Dialog line — resolve the on-screen speaker and the talking-head shot.
 		// FUN_00428f58 runs only when ClicPerso is 0 (0x00428689) and writes

@@ -152,8 +152,9 @@ const Graphics::Font *CryOmni3DEngine_Atlantis::subtitleFont() {
 void CryOmni3DEngine_Atlantis::subtitleRows(const Common::String &text, Common::Array<Common::String> &rows) const {
 	if (_exeBuild->bitmapSubtitles)
 		// atlantis-cd-en-688128 FUN_0042e970; atlantis-cd-sv-688128
-		// FUN_0042ea7c (backward cuts only)
-		splitSubtitleBitmap(text, rows, _exeBuild->subtitleBreakBackOnly);
+		// FUN_0042ea7c (backward cuts only): on the text buffer, its tail
+		// included (the forward scan runs past the NUL)
+		splitSubtitleBitmap(_subtitleText, rows, _exeBuild->subtitleBreakBackOnly);
 	else
 		splitSubtitle(text, rows);         // FUN_0042ffe8
 }

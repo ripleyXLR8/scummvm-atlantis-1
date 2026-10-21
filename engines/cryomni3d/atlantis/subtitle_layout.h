@@ -41,27 +41,67 @@ void splitSubtitle(const Common::String &text, Common::Array<Common::String> &li
 static const int kSubtitleX = 5;
 int subtitleLineY(uint i, uint n);
 
+// The subtitle text buffer of the bitmap-subtitle builds of 1997
+// (exe_build.h bitmapSubtitles): atlantis-cd-en-688128 0x00603d68,
+// atlantis-cd-fr-688640 0x00603ac0, atlantis-cd-nl-688128 and
+// atlantis-cd-sv-688128 0x00603f68, 0x400 bytes in each (the object at
+// 0x00604168 / 0x00603ec0 / 0x00604368 follows it).  It is zeroed once, at
+// start-up (FUN_00422bd0 @ 0x00422c58, called from the WinMain start-up code
+// @ 0x00419499), and written only by the section executor for every `[`
+// line it runs (FUN_00427420 @ 0x00427707..0x00427722) and by the game-over
+// screen for its narrator line (FUN_004256a4 @ 0x00425a31..0x00425a50):
+// the bytes up to the line's CR, then a NUL, the rest left as it was.  So
+// after the NUL it holds zeros, or the tail of an earlier, longer text
+// (atlantis-re experiment 2026-10-21-01, decision 0016 row 34).
+class SubtitleTextBuffer {
+public:
+	static const uint kSize = 0x400;
+
+	SubtitleTextBuffer() { clear(); }
+
+	// FUN_00422bd0's memset.
+	void clear();
+	// A copy loop: `bytes`, then a NUL.  A text of 0x400 bytes or more would
+	// run on into the object after the buffer; none is shipped (the longest
+	// dialog line has 435 bytes, atlantis-cd-fr-688640), the port cuts it.
+	void store(const Common::String &bytes);
+	// The bytes up to the NUL.
+	Common::String text() const;
+	byte at(uint i) const { return i < kSize ? _buf[i] : 0; }
+
+private:
+	byte _buf[kSize];
+};
+
 // The English retail build of 1997 (atlantis-cd-en-688128, exe_build.h
 // bitmapSubtitles; atlantis-re experiment 2026-10-18-01 item 1, decision
 // 0018; also the French build of May 1997, atlantis-cd-fr-688640
-// FUN_0042eab4 / FUN_0042ec80, experiment 2026-10-18-04, decision 0020).  FUN_0042e970 breaks the buffer " " + text: up to 75 bytes, one
+// FUN_0042eab4 / FUN_0042ec80, experiment 2026-10-18-04, decision 0020, and
+// the Dutch build's FUN_0042e990, decision 0022).  FUN_0042e970 breaks the
+// text buffer (" " + text, the byte after ']' first): up to 75 bytes, one
 // row; otherwise, from the end p of a 75-byte window, it scans forward (f)
 // and back (b) for a space (a CR stops the scan one byte further) and
 // breaks at the nearer one, the forward one when f < b: the row is the 75
 // + f or 75 - b bytes up to the space, the space starts the next row; the
-// last row (75 bytes or fewer left) is the rest.  The original stores only
-// the NUL after the text (atlantis-cd-en-688128 @ 0x00427722, 0x00425a50);
-// the bytes after it are zeros or stale text of earlier lines, never a CR,
-// so a forward scan past the end depends on what was shown before
-// [UNKNOWN].  The port stops as if a CR followed the NUL, the input the
-// emulation harnesses plant (atlantis-re tools/emu/video_subtitles_en688128.py),
-// a named difference (see the code).  Rows of 85 bytes or more overrun
+// last row (75 bytes or fewer left) is the rest.  The forward scan does not
+// stop at the NUL: when the text's last word crosses the window end it
+// reads the buffer's tail, zeros (then b wins) or the tail of an earlier,
+// longer text, whose spaces can make the forward cut win (the rows then
+// depend on what was shown before, as in the original: about 32 of the
+// 2540 English lines change rows between a zero tail and the planted CR the
+// harnesses assumed before 2026-10-21).  Rows of 85 bytes or more overrun
 // their buffer (see the code).
 // backOnly: the Swedish build's FUN_0042ea7c (atlantis-cd-sv-688128,
 // exe_build.h subtitleBreakBackOnly, decision 0023 D): every row ends at
 // the last space at or before the window end (75 - b bytes), so no row is
 // longer than 75 bytes; a window without a space after the row's first
 // byte (the original faults there) is cut at 75 bytes (decision 0023 D2).
+// The forward scan still runs there, its count unused: the tail does not
+// change the rows.
+void splitSubtitleBitmap(const SubtitleTextBuffer &buf, Common::Array<Common::String> &lines,
+                         bool backOnly = false);
+// The same on the buffer as the first line after start-up leaves it: " " +
+// text, a NUL, zeros.
 void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::String> &lines,
                          bool backOnly = false);
 

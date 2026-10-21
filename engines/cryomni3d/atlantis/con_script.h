@@ -52,7 +52,12 @@ namespace Atlantis {
 struct ConLine {
 	Common::String speaker;  // e.g. "Seth", "Garde13"
 	Common::String params;   // e.g. "cam3", "off" (comma-separated in source)
-	Common::String text;
+	Common::String text;     // after "] ", trailing blanks removed
+	// The line as the file has it, from its '[' up to (not including) its
+	// CR, trailing blanks kept: what the executor and the game-over screen
+	// copy into the subtitle text buffer (conLineBufferText,
+	// conNarratorBufferText).
+	Common::String raw;
 
 	// Optional panorama angle hints, sourced directly from the CON dialog
 	// directive — when present, the original engine writes them straight into
@@ -168,6 +173,30 @@ inline bool conGameOverNarrator(const Common::Array<ConSectionItem> &items, uint
 		return false;
 	text = items[setIdx + 1].line.text;
 	return true;
+}
+
+// The bytes the section executor copies into the subtitle text buffer for a
+// `[` line (`raw`, ConLine::raw): from the byte after the line's first ']'
+// up to the CR (atlantis-cd-en-688128 FUN_00427420 @ 0x0042764a..0x00427653,
+// the ']' search, then the copy 0x00427707..0x00427722; the reference's
+// FUN_0042844c copies the same way, 0x00428785), trailing blanks kept.  The
+// copy is a do-while: a ']' right before the CR would copy the CR, the LF and
+// the next line; no shipped line has one (atlantis-re experiment
+// 2026-10-21-01), the port copies nothing then.
+inline Common::String conLineBufferText(const Common::String &raw) {
+	const uint32 close = raw.find(']');
+	if (close == Common::String::npos || close + 1 >= raw.size())
+		return Common::String();
+	return raw.substr(close + 1);
+}
+
+// The game-over screen's copy of its narrator line (atlantis-cd-en-688128
+// FUN_004256a4 @ 0x00425a31..0x00425a50): from the line's 13th byte (the
+// byte after "[Narratrice]" in all 144 game overs of every 1997 release) up
+// to the CR.  A line of 12 bytes or fewer would copy its CR and on; none is
+// shipped, the port copies nothing then.
+inline Common::String conNarratorBufferText(const Common::String &raw) {
+	return raw.size() > 12 ? raw.substr(12) : Common::String();
 }
 
 // The 1999 build's alternative game-over narrations (FUN_00426570 of
