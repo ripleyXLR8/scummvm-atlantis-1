@@ -3,6 +3,7 @@
 #include <math.h>
 
 #include "cryomni3d/atlantis/dialog_view.h"
+#include "cryomni3d/atlantis/omni3d.h"
 
 // video audit — the view behind each dialog line.
 //
@@ -54,6 +55,9 @@ class VideoDialogViewTestSuite : public CxxTest::TestSuite {
 	}
 
 public:
+	void setUp() override { Common::install_null_g_system(); }
+	void tearDown() override { Common::uninstall_null_g_system(); }
+
 	// CHAPI003 /35 (Companions' quarters, timer): Agatha's "You just found
 	// them" (35C) is shown at the player's angle, not at the reverse shot of
 	// the Seth line before it.
@@ -126,9 +130,11 @@ public:
 	// below it).  FOV in effect at the call of FUN_0042ee88 (0x00428b1c),
 	// ORIGINAL emulated 2026-10-21 (tools/emu/video_dialog_line_view.py's
 	// LineView with a hook there, player at 30/5; Fable pass 2 r1:dialog#3):
-	// CHAPI056 /744 A [Anna] (ClicPerso 329): no FOV call since the last
-	// reset; CHAPI065 /901 A [Sorciere] (ClicPerso 323): 75.137, the last
-	// reset's; CHAPI003 /40 A [Lascoyt,269,0,cam2] (521): 20.68, cam 2's;
+	// CHAPI056 /744 A [Anna] (ClicPerso 329) and CHAPI065 /901 A [Sorciere]
+	// (ClicPerso 323): no FOV call since the walk began (golden 'fov entry';
+	// corrected 2026-10-21: this said 75.137 for 901 A, a value the ad hoc
+	// hook carried over from the section run before it); CHAPI003 /40 A
+	// [Lascoyt,269,0,cam2] (521): 20.68, cam 2's;
 	// CHAPI056 /747 A [Seth] (514): 48.0, cam 4's; /747 B [Anna] (663):
 	// 20.68, cam 2's.
 	void test_cam_fov() {
@@ -140,5 +146,63 @@ public:
 		TS_ASSERT(DialogView::lineView(kept, false, 521, true, rad(269), 0, vmax).camFov);
 		TS_ASSERT(DialogView::lineView(kept, true, 514, false, 0, 0, vmax).camFov);
 		TS_ASSERT(DialogView::lineView(kept, false, 663, false, 0, 0, vmax).camFov);
+	}
+
+	// Every talking head of the game against the golden
+	// video_dialog_line_view.txt (the ORIGINAL FUN_0042844c on the 926
+	// sections, atlantis-re tools/emu/video_dialog_line_view.py --all): its
+	// "orig head row R camC clic P fov F" lines give ClicPerso as
+	// 0x00428a9d tests it and the FOV in effect at the call of FUN_0042ee88
+	// (0x00428b1c): the cam's FOV, 75.137 after a per-line reset
+	// (0x00428b4d), or 'entry' (no FUN_0045179a since the walk began).  The
+	// port sets kDialogCamFovDeg[cam - 2] when DialogView::lineView says
+	// camFov (playConSection), else keeps its warp FOV kWarpFovDeg.  A line
+	// is a Seth line when its header starts with "[Seth" (a head line has no
+	// off flag).
+	void test_cam_fov_vs_original() {
+		using namespace CryOmni3D::Atlantis;
+		if (AtlantisTest::goldenDir().empty()) {
+			TS_WARN("no golden directory configured; skipping");
+			return;
+		}
+		Common::Array<Common::String> golden;
+		TS_ASSERT(AtlantisTest::loadGoldenLines("video_dialog_line_view.txt", golden));
+		const DialogView::Angles kept = {rad(30), rad(5)};
+		const double vmax = rad(50) * 0.9;
+		uint heads = 0, camFovs = 0, resets = 0, entries = 0, bad = 0;
+		for (uint g = 0; g < golden.size(); g++) {
+			const char *l = golden[g].c_str();
+			const char *h = strstr(l, "orig head row ");
+			const char *b = strchr(l, '[');
+			int row = 0, cam = 0, clic = 0;
+			char fov[16] = "";
+			if (!h || !b || sscanf(h, "orig head row %d cam%d clic %d fov %15s", &row, &cam, &clic, fov) != 4)
+				continue;
+			heads++;
+			const bool seth = strncmp(b, "[Seth", 5) == 0;
+			const bool camFov = DialogView::lineView(kept, seth, clic, false, 0, 0, vmax).camFov;
+			const double port = camFov ? kDialogCamFovDeg[cam - 2] : kWarpFovDeg;
+			bool ok;
+			if (!strcmp(fov, "entry")) {
+				entries++;
+				ok = !camFov;   // neither sets a FOV for the line
+			} else {
+				const double orig = atof(fov);
+				if (fabs(orig - kWarpFovDeg) < 0.0005)
+					resets++;
+				else
+					camFovs++;
+				ok = fabs(orig - port) < 0.0005;
+			}
+			if (!ok) {
+				bad++;
+				TS_WARN(Common::String::format("%s: port FOV %.3f", l, port).c_str());
+			}
+		}
+		TS_ASSERT_EQUALS(heads, 2048u);
+		TS_ASSERT_EQUALS(camFovs, 2044u);
+		TS_ASSERT_EQUALS(resets, 0u);
+		TS_ASSERT_EQUALS(entries, 4u);   // CHAPI056 /744 A, CHAPI065 /901 A, CHAPI068 /998 A, CHAPI069 /1019 A
+		TS_ASSERT_EQUALS(bad, 0u);
 	}
 };
