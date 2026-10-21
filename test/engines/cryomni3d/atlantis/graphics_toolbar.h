@@ -19,7 +19,12 @@
 // buildInventoryCatalogue, findInventoryObject, inventoryAppend,
 // inventoryRemove, inventoryReset), Atlantis_Toolbar::hitTestZones /
 // callbackInventory / setupZones / menuSpriteTop (toolbar.cpp); init()
-// itself cannot run (see initToolbarNoGfx).
+// itself cannot run (see initToolbarNoGfx).  test_bar_frame_pixels runs
+// drawToolbar (view under the transparent texels, _position offset);
+// slideFrame, presentBarFrame and drawInventoryIcon need the engine and are
+// not run (the guest portraits, the held-object skip and the per-frame
+// ambientFrame of the slides are not covered); test_icon_hotspots checks
+// iconHotspot, which drawInventoryIcon uses.
 // portInvent() calls conInvent (inventory.cpp), the "inventN" branch of
 // execConSetCommand (con_exec.cpp).
 
@@ -39,6 +44,7 @@
 #include "cryomni3d/objects.h"
 #include "cryomni3d/sprites.h"
 #include "cryomni3d/atlantis/inventory.h"
+#include "cryomni3d/atlantis/sprite_blend.h"
 
 #define private public
 #include "cryomni3d/atlantis/toolbar.h"
@@ -287,9 +293,66 @@ public:
 		TS_ASSERT_EQUALS(tb._zones.size(), 10u);   // 9 slots + the column at x >= 630
 		for (uint i = 0; i < 9; i++) {
 			const Common::Rect &r = tb._zones[i].rect;
-			TS_ASSERT_EQUALS((r.left + r.right) / 2, (int)(i * 70 + 42));
-			TS_ASSERT_EQUALS((r.top + r.bottom) / 2 + (480 - 82), 443);
+			const Common::Point h = CryOmni3D::Atlantis::Atlantis_Toolbar::iconHotspot(r, 0);
+			TS_ASSERT_EQUALS(h.x, (int)(i * 70 + 42));
+			TS_ASSERT_EQUALS(h.y, 443 - 398);
+			TS_ASSERT_EQUALS(CryOmni3D::Atlantis::Atlantis_Toolbar::iconHotspot(r, 7).y, 443 - 398 + 7);
 		}
+	}
+
+	// The bar is drawn over the frame being composed, not over the snapshot
+	// taken when the bar opened: each frame of the bar loops renders the view
+	// anew before the bar (FUN_0042c8ac @ 0x0042c93f, FUN_0042c2c4 @
+	// 0x0042c381, FUN_0042c59c @ 0x0042c60e: FUN_00451d8b) `STATIC`.  So
+	// under a transparent texel the bar shows the current view (viewB), never
+	// the opening snapshot (_bgSurface, viewA), and the sprite top moves with
+	// the slide position (menuSpriteTop).  Expected values: the view pixels
+	// themselves (no emulated value is involved).
+	void test_bar_frame_pixels() {
+		using namespace GraphicsToolbarTest;
+		const Graphics::PixelFormat rgb565(2, 5, 6, 5, 0, 11, 5, 0, 0);
+		CryOmni3D::Inventory inv;
+		NullCb nc;
+		inv.init(20, new Common::Functor1Mem<uint, void, NullCb>(&nc, &NullCb::cb));
+		CryOmni3D::Atlantis::Atlantis_Toolbar tb;
+		initToolbarNoGfx(tb, &inv);
+		const uint16 kViewA = 0x1111, kViewB = 0x2222, kBar = 0x7bef;
+		tb._bgSurface.create(640, 82, rgb565);
+		for (int y = 0; y < 82; y++)
+			for (int x = 0; x < 640; x++)
+				*(uint16 *)tb._bgSurface.getBasePtr(x, y) = kViewA;
+		// One bar sprite 40 x 82 at its hotspot (0, 443): columns 0..19
+		// transparent, 20..39 opaque.
+		const int w = 40, h = 82;
+		Common::Array<uint16> pix(w * h, kBar);
+		Common::Array<uint8> blend(w * h, (uint8)CryOmni3D::Atlantis::kSprNoBlend);
+		for (int y = 0; y < h; y++)
+			for (int x = 0; x < 20; x++)
+				blend[y * w + x] = (uint8)CryOmni3D::Atlantis::kSprTranspBlend;
+		const int16 yoff = 0;
+		const int ty = CryOmni3D::Atlantis::Atlantis_Toolbar::kBarHotspotY -
+		               CryOmni3D::Atlantis::Atlantis_Toolbar::kBarSurfaceTop;
+		tb.addMenuSprite(w, h, 0, yoff, 0, ty, pix.data(), blend.data());
+		Graphics::Surface viewB;
+		viewB.create(640, 480, rgb565);
+		for (int y = 0; y < 480; y++)
+			for (int x = 0; x < 640; x++)
+				*(uint16 *)viewB.getBasePtr(x, y) = kViewB;
+		for (uint position = 0; position <= 7; position += 7) {
+			tb._position = position;
+			tb.drawToolbar(&viewB);
+			const int top = CryOmni3D::Atlantis::Atlantis_Toolbar::menuSpriteTop(ty, yoff, position);
+			int bad = 0;
+			for (int y = 0; y < 82; y++)
+				for (int x = 0; x < 40; x++) {
+					const uint16 got = *(const uint16 *)tb._destSurface.getBasePtr(x, y);
+					const bool barTexel = x >= 20 && y >= top && y < top + h;
+					if (got != (barTexel ? kBar : kViewB))
+						bad++;
+				}
+			TSM_ASSERT_EQUALS(Common::String::format("position %u", position).c_str(), bad, 0);
+		}
+		viewB.free();
 	}
 
 	// Bar background: original OBJETS0 sprite 0 drawn with hotspot (0, 443),

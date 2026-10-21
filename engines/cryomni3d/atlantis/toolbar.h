@@ -53,6 +53,11 @@ public:
 	static const int kBarHotspotY = 443;
 	// Top row, in the bar surface, of a menu sprite at (tx, ty).
 	static int menuSpriteTop(int ty, int16 yoff, uint position) { return (ty - yoff) + (int)position; }
+	// FUN_0042c8ac / FUN_0042c2c4: an icon's hotspot is the slot centre,
+	// shifted down by the slide position.
+	static Common::Point iconHotspot(const Common::Rect &zone, uint position) {
+		return Common::Point((zone.left + zone.right) / 2, (zone.top + zone.bottom) / 2 + (int)position);
+	}
 	void addMenuSprite(uint16 w, uint16 h, int16 xoff, int16 yoff,
 	                   int tx, int ty, const uint16 *pix, const uint8 *blend);
 
@@ -62,14 +67,16 @@ public:
 	// until a left or right click, FUN_0042c59c slides the bar out.  True for
 	// a right click (the object stays in hand).
 	bool displayPickup(const Graphics::Surface *original, Object *obj);
-	// One frame of the bar loops' engine work (barFrameTick); true when the
-	// bar must close.  Redraws the view and the bar after a timer section.
 	// One frame of the bar loops (FUN_0042c8ac step 2): the place sprites,
 	// the view, the bar, the guests, presented whole.
 	void presentBarFrame(const Graphics::Surface *original);
+	// One frame of the bar loops' engine work (barFrameTick); true when the
+	// bar must close.  Redraws the frame (presentBarFrame) after a timer
+	// section.
 	bool barTick(const Graphics::Surface *original);
-	// One frame of a bar slide: the view, the guest portraits, the bar at
-	// _position (82 = not drawn), on the whole screen.
+	// One frame of a bar slide: the place sprites, the view rendered anew,
+	// the bar at _position (82 = not drawn), then the guest portraits, on the
+	// whole screen.
 	void slideFrame(const Graphics::Surface *original);
 	// FUN_0042c2c4 / FUN_0042c59c; true when a timer closed the bar.
 	bool slideIn(const Graphics::Surface *original);
@@ -133,6 +140,8 @@ private:
 	Common::Array<Zone>::const_iterator hitTestZones(const Common::Point &mousePos) const;
 	uint captureEvent(const Common::Point &mousePos, uint dragStatus);
 	void drawBackground(const Graphics::Surface *original);
+	// The bar strip into _destSurface over the bottom 82 rows of `original`
+	// (the frame being composed; _bgSurface when null).
 	void drawToolbar(const Graphics::Surface *original);
 	// Runs the open toolbar's event loop.  Returns true when it ended because
 	// an inventory item was taken (the caller then skips the slide-down so the

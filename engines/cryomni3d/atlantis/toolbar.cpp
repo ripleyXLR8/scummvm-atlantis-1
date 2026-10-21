@@ -170,23 +170,20 @@ void Atlantis_Toolbar::drawToolbar(const Graphics::Surface *original) {
 	if (_position > 82)
 		_position = 82;
 
-	if (_position != 0) {
-		// Not fully visible: copy the top _position rows from the scene.
-		if (original) {
-			int srcY = original->h - _destSurface.h;
-			Common::Rect srcRct(0, srcY, 640, srcY + _position);
-			_destSurface.copyRectToSurface(*original, 0, 0, srcRct);
-		}
+	// Under the bar is the frame being composed: each frame of the bar loops
+	// renders the whole view into the work buffer before the bar
+	// (FUN_00451d8b: FUN_0042c2c4 @ 0x0042c381, FUN_0042c59c @ 0x0042c60e,
+	// FUN_0042c8ac @ 0x0042c93f, FUN_0042cc98).  The opening snapshot
+	// _bgSurface stands in only when there is no frame.
+	if (original && original->h >= _destSurface.h) {
+		const int srcY = original->h - _destSurface.h;
+		_destSurface.copyRectToSurface(*original, 0, 0, Common::Rect(0, srcY, 640, original->h));
+	} else {
+		_destSurface.copyRectToSurface(_bgSurface, 0, 0, Common::Rect(0, 0, 640, _destSurface.h));
 	}
 
 	if (_position == (uint)_destSurface.h)
 		return;  // fully hidden
-
-	// Copy the scene strip into the visible region.
-	{
-		Common::Rect visRct(0, _position, 640, _destSurface.h);
-		_destSurface.copyRectToSurface(_bgSurface, 0, _position, visRct);
-	}
 
 	// Draw the bar background (and any other menu sprites) over it.
 	for (const MenuSprData &spr : _menuSprData) {
@@ -258,23 +255,37 @@ bool Atlantis_Toolbar::displayToolbar(const Graphics::Surface *original) {
 	if (_engine->shouldAbort())
 		return false;
 
-	// Slide down (FUN_0042c59c), after a take too (FUN_0042c098 calls it at
-	// 0x0042c219 on every exit); a timer that sets GameOver or Exit ends it
-	// early (0x0042c805).
+	// Slide down (FUN_0042c59c), after a take too: FUN_0042c098 calls it at
+	// 0x0042c219 on every exit without GAMEOVER.  GAMEOVER set by the
+	// slide-in (tested @ 0x0042c0c9) or by the bar loop (@ 0x0042c0ed) skips
+	// to its tail with no slide-out, except that the bar loop's exit with a
+	// guest portrait under the pointer runs FUN_0042c59c itself (0x0042cbfe,
+	// before the conversation).  A timer that sets GameOver or Exit ends the
+	// slide-out early (0x0042c805).
 	(void)itemTaken;
-	slideOut(original);
+	if (_engine->_gameVars.getValOrDefault("gameover", 0) == 0 || _guestClicked != 0)
+		slideOut(original);
 
 	return false;
 }
 
+// One frame of FUN_0042c2c4 / FUN_0042c59c: the place sprites (FUN_00425304
+// @ 0x0042c327 / 0x0042c5b4), the view rendered anew (FUN_00451d8b @
+// 0x0042c381 / 0x0042c60e), the bar (FUN_00410430), then the guest portraits
+// over it (FUN_0042bc58 @ 0x0042c4a9 / 0x0042c702).  `original` (the view
+// when the bar opened) is used only when no view is loaded.
 void Atlantis_Toolbar::slideFrame(const Graphics::Surface *original) {
+	_engine->animateSprites();   // FUN_00425304
+	const Graphics::Surface *view = _engine->currentViewSurface();   // FUN_00451d8b
+	if (!view)
+		view = original;
 	Graphics::ManagedSurface frame(640, 480, _format);
-	if (original)
-		frame.blitFrom(*original);
-	_engine->drawGuests(frame);
+	if (view)
+		frame.blitFrom(*view);
 	drawToolbar(&frame.rawSurface());
 	if (_position < (uint)_destSurface.h)
 		frame.blitFrom(_destSurface, Common::Point(0, frame.h - _destSurface.h));
+	_engine->drawGuests(frame);   // FUN_0042bc58, after the bar
 	g_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 	g_system->updateScreen();
 	// [UNKNOWN] the slides have no timer of their own; the port's pace.
@@ -292,6 +303,8 @@ bool Atlantis_Toolbar::slideIn(const Graphics::Surface *original) {
 		slideFrame(original);
 		if (barTick(original))
 			return true;
+		// FUN_00432178 after FUN_0042be3c when no GameOver / Exit (0x0042c569)
+		_engine->ambientFrame();
 	}
 	_position = 0;
 	return false;
@@ -308,6 +321,8 @@ bool Atlantis_Toolbar::slideOut(const Graphics::Surface *original) {
 		_engine->slideGuestPortraits(7);
 		if (barTick(original))
 			return true;
+		// FUN_00432178 after FUN_0042be3c when no GameOver / Exit (0x0042c811)
+		_engine->ambientFrame();
 	}
 	_position = _destSurface.h;
 	return false;
@@ -334,12 +349,10 @@ void Atlantis_Toolbar::presentBarFrame(const Graphics::Surface *original) {
 bool Atlantis_Toolbar::barTick(const Graphics::Surface *original) {
 	bool played = false;
 	bool close = _engine->barFrameTick(played);
-	// A timer section drew over the screen: put the view and the bar back.
+	// A timer section drew over the screen: put the view, the bar and the
+	// guests back, as the next frame of the loop draws them.
 	if (played && original && !close) {
-		g_system->copyRectToScreen(original->getPixels(), original->pitch, 0, 0, original->w, original->h);
-		drawToolbar(original);
-		g_system->copyRectToScreen(_destSurface.getPixels(), _destSurface.pitch, 0, original->h - _destSurface.h,
-		                           _destSurface.w, _destSurface.h);
+		presentBarFrame(original);
 		g_system->updateScreen();
 	}
 	return close;
@@ -370,6 +383,9 @@ bool Atlantis_Toolbar::displayPickup(const Graphics::Surface *original, Object *
 	while (!_engine->shouldAbort()) {
 		_engine->pollEvents();
 		uint button = _engine->getCurrentMouseButton();
+		// FUN_00432178 at 0x0042cf19, after the input FUN_0041a298 on every
+		// pass, the pass that reads the click included.
+		_engine->ambientFrame();
 		if (button != prevButton && button == 1)
 			break;
 		if (button != prevButton && button == 2) {
@@ -423,10 +439,7 @@ bool Atlantis_Toolbar::handleToolbarEvents(const Graphics::Surface *original) {
 	_inventoryButtonDragging = false;
 
 	updateZones();
-	drawToolbar(original);
-	const int barY = original ? original->h - _destSurface.h : (480 - 82);
-	g_system->copyRectToScreen(_destSurface.getPixels(), _destSurface.pitch, 0, barY,
-	                           _destSurface.w, _destSurface.h);
+	presentBarFrame(original);
 	g_system->updateScreen();
 
 	// [UNKNOWN] pace: FUN_0042c8ac scrolls once per frame and the loop has

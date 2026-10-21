@@ -206,11 +206,13 @@ Common::String sprTextSharpSAsSs(const Common::String &text);
 // offset is not clamped to count - 11.
 // knobAtBar false: the knob starts at y 0 (atlantis-cd-en-688128
 // FUN_0041c9a8 @ 0x0041cc23, atlantis-cd-fr-687104 FUN_0041c708 @
-// 0x0041c98a).  clamp false (atlantis-cd-en-688128 only): no clamp at 0x7b,
-// so mouse y 0x7c..0x84 leaves the knob above the bar and the offset (knob
-// y - 0x7b) / step truncated toward zero, as a byte (0x0041ccd6..
-// 0x0041ccf4); atlantis-cd-fr-687104 clamps as the reference
-// (0x0041ca60..0x0041ca76).
+// 0x0041c98a).  clamp false (atlantis-cd-en-688128, atlantis-cd-fr-688640
+// FUN_0041ca00, atlantis-cd-nl-688128 FUN_0041c9e0): no clamp at 0x7b, so
+// mouse y 0x7c..0x84 leaves the knob above the bar and the offset (knob
+// y - 0x7b) / step truncated toward zero, as a byte (atlantis-cd-en-688128
+// @ 0x0041ccd6..0x0041ccf4); atlantis-cd-fr-687104 (and the de / es / it
+// 687104 builds) clamps as the reference (0x0041ca60..0x0041ca76), and
+// atlantis-cd-sv-688128 too (0x0041cd08..0x0041cd1e).
 // See atlantis-re: functions/ui-FUN_0041cf78.md step 4,
 // experiments/2026-10-16-04-load-picker.md, 2026-10-18-01 item 7,
 // 2026-10-18-03 item 7.
@@ -236,12 +238,20 @@ int menuGridHit(int x0, int y0, int cellW, int cellH, int cols, int rows, bool c
 // (x - 305) / 213 * 127, rounded toward zero (FUN_00451d6e), 0..127.
 int menuVolumeFromKnob(int x);
 
+// The port keeps those AIL volumes (0..127) in ScummVM's 0..maxMixer scale:
+// the menu stores ceil(a * maxMixer / 127) and the readers (place.cpp
+// effectsVolume127, music.cpp musicSyncVolume) truncate v * 127 / maxMixer,
+// so a value set in the menu reads back unchanged (127 -> 256 -> 127).
+inline int menuMixerFromAilVolume(int a, int maxMixer) { return (a * maxMixer + 126) / 127; }
+inline int menuAilFromMixerVolume(int v, int maxMixer) { return v * 127 / maxMixer; }
+
 // atlantis.exe options menu, SUBTITLES item: on = !on; counter + 1; when
 // the counter is 2, on = 0; when it is 3, it returns to 0 (the byte counter
 // DAT_00496098).  Subtitles are drawn when on is set (FUN_00430178).
 void subtitleToggleClick(bool &on, uint8 &counter);
 
-// atlantis.exe options menu, OMNI 3D item (FUN_0041d5f4 @ 0x0041d706):
+// atlantis.exe options menu, OMNI 3D item (FUN_0041d5f4 @ 0x0041d764..
+// 0x0041d794, hover record 5):
 // DAT_004960ac = (DAT_004960ac == 0).  The port steps the toggle to its next
 // option, (selected + 1) % options; with the file's two options this is the
 // same flip.  Returns true when option 1 (inverted look, the original's

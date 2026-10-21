@@ -484,6 +484,11 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 			p += 3;
 			const int y = walkAtoi(t, size, p);
 			p = walkStep(p, y, 2);
+			// FUN_004206c8 reads 0x004965ee[byte] with no bound (bytes < 0x20
+			// and >= 0xa9 read the strings before the table and the FONTMIN
+			// table after it); the port counts them 0, as the pen advance below
+			// (0x004202cc).  Unreachable with the shipped menus: atlantis-re
+			// functions/ui-FUN_0041fb6c.md, Differences from the original.
 			int w = 0;                               // FUN_004206c8
 			for (uint32 q = p; q < size && t[q] != 0x0d; q++)
 				w += (t[q] >= 0x20 && t[q] - 0x20 < (int)ARRAYSIZE(kFontMaxMeasureWidths)) ? kFontMaxMeasureWidths[t[q] - 0x20] : 0;
@@ -546,17 +551,24 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 			const int w = walkAtoi(t, size, p);
 			p = walkStep(p, w, 2);
 			const int h = walkAtoi(t, size, p);
+			// FUN_004207c0 stores the parsed x / y only into a zero field and
+			// otherwise reloads the stored one (x @ 0x00420910, y @
+			// 0x004209b0); the blits take both (0x00420a7f..0x00420a95), so a
+			// slider keeps its knob and the LOAD knob (record 4, written by
+			// FUN_0041cf78) is drawn where it was put.
 			MenuWalkRecord &r = walkSlot(walk, count);
-			int bx = x;
+			int bx = x, by = y;
 			if (r.x == 0)
 				r.x = (int16)x;
 			else
-				bx = r.x;                             // a slider keeps its knob
+				bx = r.x;
 			if (r.y == 0)
 				r.y = (int16)y;
+			else
+				by = r.y;
 			r.w = (int16)w;
 			r.h = (int16)h;
-			MenuWalkOp op = { true, v < 3, false, (int16)bx, (int16)y, idx, line, (int)count };
+			MenuWalkOp op = { true, v < 3, false, (int16)bx, (int16)by, idx, line, (int)count };
 			walk.ops.push_back(op);
 			count++;
 			p = toCr(p) + 1;                          // past the CR
