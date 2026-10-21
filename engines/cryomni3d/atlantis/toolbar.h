@@ -114,10 +114,26 @@ public:
 	// bar must close.  Redraws the frame (presentBarFrame) after a timer
 	// section.
 	bool barTick(const Graphics::Surface *original);
+	// What a bar slide does around the work buffer of each frame.  The
+	// engine's (EngineSlideSink, used by slideIn / slideOut(original)):
+	// shouldAbort before the frame; the screen copy, the port's pace and
+	// pollEvents; then barTick and ambientFrame.  A test passes its own to
+	// run the slide loops and read each frame.
+	class SlideSink {
+	public:
+		virtual ~SlideSink() {}
+		// Before each frame: true ends the slide with no frame drawn.
+		virtual bool stop() = 0;
+		// The frame's work buffer, at the guest y it was drawn with (the
+		// slide-out moves the portraits after this call).
+		virtual void present(const Graphics::ManagedSurface &frame) = 0;
+		// After the frame: true when the bar must close (a timer).
+		virtual bool tick() = 0;
+	};
 	// One frame of a bar slide: the place sprites, the view rendered anew,
 	// the bar at _position (82 = not drawn), then the guest portraits, on the
-	// whole screen.
-	void slideFrame(const Graphics::Surface *original);
+	// whole screen, handed to sink.present.
+	void slideFrame(const Graphics::Surface *original, SlideSink &sink);
 	// The work buffer of slideFrame (640 x 480, without the screen copy):
 	// the place sprites, the view rendered anew (`original` when no view is
 	// loaded), then composeBarFrame.
@@ -129,6 +145,8 @@ public:
 	// FUN_0042c2c4 / FUN_0042c59c; true when a timer closed the bar.
 	bool slideIn(const Graphics::Surface *original);
 	bool slideOut(const Graphics::Surface *original);
+	bool slideIn(const Graphics::Surface *original, SlideSink &sink);
+	bool slideOut(const Graphics::Surface *original, SlideSink &sink);
 	void inventoryChanged(uint newPosition);
 	// FUN_0042de5c (load, game-over reload, new game): first shown record
 	// 0x00496924 = 0, end 0x00496928 = 9 (0x0042e2ec).
@@ -139,6 +157,7 @@ public:
 	int32 guestClicked() const { return _guestClicked; }
 
 private:
+	class EngineSlideSink;
 	typedef uint(Atlantis_Toolbar::*ZoneCallback)(uint dragStatus);
 
 	struct Zone {

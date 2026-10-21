@@ -324,31 +324,58 @@ void Atlantis_Toolbar::composeBarFrame(Graphics::ManagedSurface &frame, const Gr
 	_engine->drawGuests(frame);   // FUN_0042bc58, after the bar
 }
 
-void Atlantis_Toolbar::slideFrame(const Graphics::Surface *original) {
+void Atlantis_Toolbar::slideFrame(const Graphics::Surface *original, SlideSink &sink) {
 	Graphics::ManagedSurface frame;
 	composeSlideFrame(frame, original);
-	g_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
-	g_system->updateScreen();
-	// [UNKNOWN] the slides have no timer of their own; the port's pace.
-	g_system->delayMillis(10);
-	_engine->pollEvents();
+	sink.present(frame);
 }
+
+// The engine's side of a slide frame.
+class Atlantis_Toolbar::EngineSlideSink : public Atlantis_Toolbar::SlideSink {
+public:
+	EngineSlideSink(Atlantis_Toolbar &tb, const Graphics::Surface *original) : _tb(tb), _original(original) {}
+	bool stop() override { return _tb._engine->shouldAbort(); }
+	void present(const Graphics::ManagedSurface &frame) override {
+		g_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
+		g_system->updateScreen();
+		// [UNKNOWN] the slides have no timer of their own; the port's pace.
+		g_system->delayMillis(10);
+		_tb._engine->pollEvents();
+	}
+	bool tick() override {
+		// FUN_0042be3c (timers), then FUN_00432178 when no GameOver / Exit
+		// (FUN_0042c2c4 @ 0x0042c522 / 0x0042c569, FUN_0042c59c @ 0x0042c7ca
+		// / 0x0042c811).
+		if (_tb.barTick(_original))
+			return true;
+		_tb._engine->ambientFrame();
+		return false;
+	}
+
+private:
+	Atlantis_Toolbar &_tb;
+	const Graphics::Surface *_original;
+};
 
 // FUN_0042c2c4: the slots start at y 499 and move up 7 a frame, then are
 // drawn, until 443 (8 frames): the bar's offset from its up position is
 // 49, 42, .. 0.  The guest portraits move up with it.
 bool Atlantis_Toolbar::slideIn(const Graphics::Surface *original) {
+	EngineSlideSink sink(*this, original);
+	return slideIn(original, sink);
+}
+
+bool Atlantis_Toolbar::slideIn(const Graphics::Surface *original, SlideSink &sink) {
 	// slotX[s] = 70 s + 42 for s = 0..8 (0x0042c30f): a pick-up's slot x is
 	// undone.
 	_pickupSlot = -1;
-	for (int slotY = 499 - 7; slotY >= 443 && !_engine->shouldAbort(); slotY -= 7) {
+	for (int slotY = 499 - 7; slotY >= 443 && !sink.stop(); slotY -= 7) {
 		_position = (uint)(slotY - 443);
+		// The guest y -7 before FUN_0042bc58 (0x0042c4a2).
 		_engine->slideGuestPortraits(-7);
-		slideFrame(original);
-		if (barTick(original))
+		slideFrame(original, sink);
+		if (sink.tick())
 			return true;
-		// FUN_00432178 after FUN_0042be3c when no GameOver / Exit (0x0042c569)
-		_engine->ambientFrame();
 	}
 	_position = 0;
 	return false;
@@ -361,18 +388,22 @@ bool Atlantis_Toolbar::slideIn(const Graphics::Surface *original) {
 // records >= 9 (scrolled bar) on every frame.  The portraits go back down
 // to 350.
 bool Atlantis_Toolbar::slideOut(const Graphics::Surface *original) {
+	EngineSlideSink sink(*this, original);
+	return slideOut(original, sink);
+}
+
+bool Atlantis_Toolbar::slideOut(const Graphics::Surface *original, SlideSink &sink) {
 	_slideOutGateFix = _engine->enhancementEnabled(kEnhMinorBugFixes);
-	for (int slotY = 443; slotY < 0x208 && !_engine->shouldAbort(); slotY += 7) {
+	for (int slotY = 443; slotY < 0x208 && !sink.stop(); slotY += 7) {
 		_slideOutSlotY = slotY;
 		_position = (uint)(slotY - 443);
-		slideFrame(original);
+		slideFrame(original, sink);
+		// The guest y +7 after the frame (0x0042c7b4).
 		_engine->slideGuestPortraits(7);
-		if (barTick(original)) {
+		if (sink.tick()) {
 			_slideOutSlotY = 0;
 			return true;
 		}
-		// FUN_00432178 after FUN_0042be3c when no GameOver / Exit (0x0042c811)
-		_engine->ambientFrame();
 	}
 	_slideOutSlotY = 0;
 	_position = _destSurface.h;
