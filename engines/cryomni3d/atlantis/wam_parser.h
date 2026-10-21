@@ -70,7 +70,10 @@ struct AtlantisNPCEntry {
 	int16 rectX = 0, rectY = 0, rectW = 0, rectH = 0;
 	// Views the NPC appears in: block +0x1e, 17 dwords used as a bitmap (bit b
 	// of dword k = view 32 * k + b), in the order atlantis.exe FUN_0045240c
-	// enumerates them.  View 0 is left out: in the original a set view-0
+	// enumerates them.  The enumerator stops at view 0x1ff (0x00452465), so
+	// dword 16 (views 512..543) is copied but never listed; no shipped block
+	// sets it, and place ids are below 512 (the 512-entry place tables).
+	// View 0 is left out: in the original a set view-0
 	// bit ends the list at once (its low word 0 reads as the end), so the
 	// entry has no view, and the enumerator's state then makes the next
 	// entry continue this bitmap; no block of the shipped WAMs sets that
@@ -143,8 +146,9 @@ public:
 	const Common::Array<AtlantisPlace> &getPlaces() const { return _places; }
 	const Common::Array<AtlantisNPCEntry> &getNPCEntries() const { return _npcEntries; }
 	const Common::Array<AtlantisAmbientObject> &getAmbientObjects() const { return _ambientObjects; }
-	// The file references by position (the original reads the centre .vue
-	// as entry 2 whatever its type, FUN_004315b4 @ 0x00431601).
+	// The file references of the WAM last loaded, by position (the original
+	// reads the centre .vue as entry 2 whatever its type, FUN_004315b4 @
+	// 0x00431601).
 	const Common::Array<Common::String> &getFileRefs() const { return _fileRefs; }
 
 	// Sprite and view list filenames embedded in the WAM.

@@ -99,10 +99,16 @@ static void readFixedName13(Common::SeekableReadStream &s, Common::String &out) 
 	out = Common::String(buf);
 }
 
+// FUN_00421ebc overwrites the fixed tables of the previous WAM on every load
+// (file references 0x00768904/0x00768905.., 3D objects 0x0076f6c6/0x0076f6c7..),
+// so a parser holds the last WAM's only: FUN_004315b4 then reads entry 2 of
+// the WAM just loaded and FUN_0043187c binds slot k of its objects.
 void AtlantisWAMParser::clear() {
 	_places.clear();
 	_subWAMs.clear();
 	_npcEntries.clear();
+	_ambientObjects.clear();
+	_fileRefs.clear();
 	spwListFile.clear();
 	spfListFile.clear();
 	centVueFile.clear();
@@ -215,8 +221,12 @@ void AtlantisWAMParser::loadStream(Common::SeekableReadStream &stream) {
 		AtlantisNPCEntry npc;
 		for (uint32 p = 2 + 4 + 13; p < 0x1e; p++)
 			stream.readByte();
+		// FUN_0045240c enumerates views 1..0x1ff: it stops at 0x1ff
+		// (0x00452465), so dword 16 is read but never listed.
 		for (uint k = 0; k < 17; k++) {
 			uint32 bits = stream.readUint32LE();
+			if (k == 16)
+				continue;
 			for (uint b = (k == 0) ? 1 : 0; b < 32; b++)
 				if (bits >> b & 1)
 					npc.vues.push_back((uint16)(32 * k + b));

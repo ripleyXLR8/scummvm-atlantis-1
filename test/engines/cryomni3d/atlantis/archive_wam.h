@@ -219,7 +219,9 @@ public:
 	// The places' ambient sounds (task 20): the objects, the per-place
 	// references, the file reference 2 and the centre .vue tables (FUN_004315b4)
 	// of every WAM that has them, against archive_wam_ambient.txt
-	// (atlantis-re tools/emu/archive_wam_ambient.py --golden).
+	// (atlantis-re tools/emu/archive_wam_ambient.py --golden).  File reference
+	// 2 is also read from one parser reloaded with each WAM in turn, as the
+	// engine's: FUN_00421ebc overwrites the previous WAM's references.
 	void test_data_ambient_sounds() {
 		if (!AtlantisTest::haveData()) {
 			TS_WARN("archive: no game data configured, skipping the ambient-sound data test");
@@ -244,6 +246,7 @@ public:
 			}
 			return wams[path];
 		};
+		CryOmni3D::Atlantis::AtlantisWAMParser reloaded;
 		auto g = [](float v) { return Common::String::format("%.9g", (double)v); };
 		uint lines = 0, bad = 0;
 		while (!gf.eos()) {
@@ -268,6 +271,16 @@ public:
 				got = refs.size() > 2 ? refs[2] : "-";
 				if (got != tok[2])
 					bad++;
+				Common::SeekableReadStream *st = big.createReadStreamForMember(tok[1]);
+				TS_ASSERT(st);
+				if (st)
+					reloaded.loadStream(*st);
+				delete st;
+				const Common::Array<Common::String> &rrefs = reloaded.getFileRefs();
+				if (rrefs.size() != refs.size() || (rrefs.size() > 2 ? rrefs[2] : "-") != tok[2]) {
+					bad++;
+					TS_WARN(("file reference 2 differs after a reload: " + line).c_str());
+				}
 			} else if (tok[0] == "obj") {
 				const Common::Array<CryOmni3D::Atlantis::AtlantisAmbientObject> &objs = wam(tok[1])->getAmbientObjects();
 				bool found = false;
@@ -332,7 +345,9 @@ public:
 	}
 
 	// Every .WAM of the four discs: each section of the parsed tables and the
-	// hit-test results over the point grid must match the original's.
+	// hit-test results over the point grid must match the original's.  One
+	// parser is reloaded with each WAM, as the engine's (FUN_00421ebc
+	// overwrites the previous WAM's tables).
 	void test_data_all_wams() {
 		if (!AtlantisTest::haveData()) {
 			TS_WARN("archive: no game data configured, skipping WAM data test");
@@ -346,6 +361,7 @@ public:
 		for (int d = 1; d <= 4; d++)
 			TS_ASSERT(big.open(Common::Path(Common::String::format("BIGCD%d.BIG", d))));
 		uint wams = 0;
+		CryOmni3D::Atlantis::AtlantisWAMParser w;
 		for (AtlantisTest::Golden::const_iterator it = golden.begin(); it != golden.end(); ++it) {
 			if (!it->_key.hasSuffix("|places"))
 				continue;
@@ -355,7 +371,6 @@ public:
 			TS_ASSERT(s);
 			if (!s)
 				continue;
-			CryOmni3D::Atlantis::AtlantisWAMParser w;
 			w.loadStream(*s);
 			delete s;
 			struct { const char *sec; Common::String text; } secs[] = {

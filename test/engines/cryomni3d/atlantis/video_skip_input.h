@@ -5,12 +5,14 @@
 // atlantis-re/tools/emu/video_skip_input.py (golden video_skip_input.txt,
 // experiment 2026-10-16-06): 7 inputs x 128 flag states, a 10-frame video.
 //
-// Port: videoSkipPoll / videoSkipFades (video_skip.h), as playTransitionVideo
-// runs them once per frame.
+// Port: VideoSkipRun (video_skip.h), the frame control playTransitionVideo
+// runs: framePresented() after each presented frame, poll() after each frame
+// but the last, finish() after the loop.
 
 #include "atlantis_test_helper.h"
 #include "../../../system/null_osystem.h"
 
+#include "cryomni3d/atlantis/bar_session.h"
 #include "cryomni3d/atlantis/menu_layout.h"
 #include "cryomni3d/atlantis/video_skip.h"
 
@@ -45,33 +47,35 @@ public:
 			}
 			rows++;
 			const Common::String in(input);
-			VideoSkipState s;
-			s.bowMode = bow;
-			s.barRequest = bar;
-			s.objectInHand = objet;
-			s.talkingHead = head;
-			s.sectionPlay = section;
-			s.menuRequest = menu;
-			// One poll after each presented frame; the presses come at polls
-			// 2 (and 4 for the second key of rbutton+escape).
-			uint presented = kFrames;
-			bool stop = false;
-			for (uint poll = 1; poll < kFrames && !stop; poll++) {
+			VideoSkipRun run;
+			run.s.bowMode = bow;
+			run.s.barRequest = bar;
+			run.s.objectInHand = objet;
+			run.s.talkingHead = head;
+			run.s.sectionPlay = section;
+			run.s.menuRequest = menu;
+			BarSession barSession;
+			barSession.request = bar;
+			// The presses come at polls 2 (and 4 for the second key of
+			// rbutton+escape); poll k follows frame k - 1.
+			for (uint f = 0; f < kFrames; f++) {
+				if (run.framePresented(f + 1 == kFrames))
+					break;
+				const uint poll = f + 1;
 				const bool left = in == "lbutton" && poll == 2;
 				const bool right = (in == "rbutton" || in == "rbutton+escape") && poll == 2;
 				const bool esc = (in == "escape" && poll == 2) || (in == "rbutton+escape" && poll == 4);
-				if (videoSkipPoll(s, left, right, esc)) {
-					stop = true;
-					presented = poll + 1;   // the frame presented after the loop
-				}
+				run.poll(left, right, esc);
 			}
-			const int gotFade = videoSkipFades(s, cinema != 0) ? 2 : 0;
-			// FUN_0041bc74's end clears these whatever happened.
-			if ((int)presented != frames || (int)stop != ended || gotFade != fade ||
-			        keep != 1 || menuAfter != 0 || barAfter != 0 || click != 0 || skipflag != 0) {
+			const int gotFade = run.finish(cinema != 0, barSession) ? 2 : 0;
+			if ((int)run.presented != frames || (int)run.stopAfterFrame != ended || gotFade != fade ||
+			        (int)run.s.keepRunning != keep || (int)run.s.menuRequest != menuAfter ||
+			        (int)barSession.request != barAfter || (int)run.s.click != click ||
+			        (int)run.s.skipFlag != skipflag) {
 				bad++;
 				if (bad < 10)
-					warning("video skip: %s: port frames %u ended %d fade %d", l.c_str(), presented, stop, gotFade);
+					warning("video skip: %s: port frames %u ended %d fade %d", l.c_str(), run.presented,
+					        (int)run.stopAfterFrame, gotFade);
 			}
 		}
 		TS_ASSERT_EQUALS(rows, 7u * 128u);

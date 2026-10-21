@@ -23,6 +23,8 @@
 
 #include "common/scummsys.h"
 
+#include "cryomni3d/atlantis/bar_session.h"
+
 namespace CryOmni3D {
 namespace Atlantis {
 
@@ -54,6 +56,10 @@ struct VideoSkipState {
 	bool menuRequest = false;  // 0x00496138
 	bool click = false;        // 0x0049611c
 	bool keepRunning = true;   // 0x00496124
+	// 0x00496134, the CON executor's dialog-skip flag (FUN_0042844c @
+	// 0x00428b6d): set by Escape with a talking head, cleared again by the
+	// video's end (0x0041be5f), so no reader sees the video's value.
+	bool skipFlag = false;
 };
 
 // One FUN_0041a298 poll inside FUN_0041bc74; true when the video ends.
@@ -66,6 +72,7 @@ inline bool videoSkipPoll(VideoSkipState &s, bool leftPress, bool rightPress, bo
 		s.barRequest = !s.barRequest;
 	if (escapePress) {
 		if (s.talkingHead) {
+			s.skipFlag = true;
 			s.click = true;
 		} else if (!s.bowMode && !s.barRequest && !s.objectInHand) {
 			s.keepRunning = false;
@@ -79,6 +86,50 @@ inline bool videoSkipPoll(VideoSkipState &s, bool leftPress, bool rightPress, bo
 inline bool videoSkipFades(const VideoSkipState &s, bool cinemaMode) {
 	return cinemaMode && (s.click || s.menuRequest);
 }
+
+// The frame control of FUN_0041bc74.  Each loop pass presents the frame
+// decoded in the pass before (FUN_0041b064 @ 0x0041bdec) and then polls
+// (FUN_0041a298 @ 0x0041bdf7); every loop exit presents one more frame, the
+// last decoded one (0x0041be2e), with no poll after it.  So each frame is
+// shown once, a poll follows every frame but the last, and after the poll
+// that ends the video one more frame is shown.
+struct VideoSkipRun {
+	VideoSkipState s;
+	bool stopAfterFrame = false;   // a poll ended the loop
+	bool done = false;
+	uint presented = 0;            // 0x00496104
+
+	// After each presented frame (lastFrame: the video has no frame after
+	// it, FUN_00448ed8 == 0); true when the loop must break.
+	bool framePresented(bool lastFrame) {
+		presented++;
+		if (stopAfterFrame || lastFrame)
+			done = true;
+		return done;
+	}
+
+	// The poll that follows a presented frame.
+	void poll(bool leftPress, bool rightPress, bool escapePress) {
+		if (done || stopAfterFrame)
+			return;
+		if (videoSkipPoll(s, leftPress, rightPress, escapePress))
+			stopAfterFrame = true;
+	}
+
+	// The end of FUN_0041bc74: the fade decision (0x0041be69..0x0041be9e),
+	// then 0x00496124 = 1, 0x00496134 = 0 (0x0041be55, 0x0041be5f) and the
+	// flag resets of 0x0041bf5b..0x0041bf8d.  True when the sound fades.
+	bool finish(bool cinemaMode, BarSession &bar) {
+		const bool fade = videoSkipFades(s, cinemaMode);
+		s.keepRunning = true;
+		s.skipFlag = false;
+		s.click = false;
+		s.menuRequest = false;
+		s.barRequest = false;
+		BarSessionRules::flagsReset(bar);
+		return fade;
+	}
+};
 
 // The warp loop FUN_0041bfa0 opens the in-game menu FUN_0041c838 after its
 // poll when the menu is requested (0x00496138, set by Escape above), no bar
