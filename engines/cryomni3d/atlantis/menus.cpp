@@ -582,18 +582,6 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 	PlayerScreenState st;
 	MenuDoubleClick dblClick;
 	int  result     = -2;          // -2 running, -1 quit, >=0 chosen player
-	// The commit of a typed name into the New Player row, i.e. the first
-	// free slot (0x0041e3fa..0x0041e436, 0x0041e71c..0x0041e758).
-	auto commitName = [&](const Common::String &name) -> int {
-		for (uint i = 0; i < kMaxPlayers; i++) {
-			if (_players[i].empty()) {
-				_players[i] = name;
-				savePlayers();
-				return (int)i;
-			}
-		}
-		return -2;
-	};
 
 	clearKeys();
 	showMouse(true);
@@ -614,16 +602,7 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 		// listed while a name is typed).
 		Common::Array<Common::String> names;
 		int  rowSlot[kMaxPlayers + 1];
-		for (uint i = 0; i < kMaxPlayers; i++) {
-			if (!_players[i].empty()) {
-				rowSlot[names.size()] = (int)i;
-				names.push_back(_players[i]);
-			}
-		}
-		if (names.size() < kMaxPlayers) {
-			rowSlot[names.size()] = kRowNew;
-			names.push_back(_newPlayerMarker);
-		}
+		playerScreenRows(_players, kMaxPlayers, _newPlayerMarker, kRowNew, names, rowSlot);
 		const int numRows = (int)names.size();
 		if (st.row >= numRows)
 			st.row = -1;
@@ -659,7 +638,7 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 		// Hover state for the interactive SELEMENU labels (records 5 and 6).
 		bool okHover  = (okIdx  >= 0) && decorRects[okIdx].contains(mouse);
 		bool delHover = (delIdx >= 0) && decorRects[delIdx].contains(mouse);
-		const int record = okHover ? 5 : (delHover ? 6 : -1);
+		const int record = okHover ? 5 : (delHover ? 6 : PlayerScreenState::kNoRecord);
 
 		const bool click = getCurrentMouseButton() == 1;
 		if (click) {
@@ -692,21 +671,14 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 		// name entry: what is shown lags the blink by one frame.
 		const Common::String shownField = st.field;
 
-		// Name entry, Enter commit, then the double-click exit (0x0041e4d3);
-		// the OK exit is tested after the frame is drawn (0x0041e5bf).
-		int exitRecord = -1;
-		if (st.nameEntry(names, _newPlayerMarker, _exeBuild->upperCaseNames,
-		                 _exeBuild->nameSwedishLetters)) {
-			const int slot = commitName(st.field);
-			if (slot >= 0) {
-				result = slot;   // the new player becomes current
-				break;
-			}
-		}
-		if (st.dblExit())
-			exitRecord = record;
+		// Name entry, Enter commit, then the double-click exit (0x0041e4d3,
+		// whatever the record); the OK exit is tested after the frame is
+		// drawn (0x0041e5bf).
+		PlayerScreenState::Exit exitKind =
+		    st.exitBeforeDraw(names, _newPlayerMarker, _exeBuild->upperCaseNames,
+		                      _exeBuild->nameSwedishLetters);
 
-		if (exitRecord == -1) {
+		if (exitKind == PlayerScreenState::kExitNone) {
 			// Redraw.  The SELEMENU frame is re-rendered each frame so the
 			// "OK" and "DELETE PLAYER NAME" labels can light up on hover.
 			surf.blitFrom(bg);
@@ -736,27 +708,29 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 
 			// Loop test (0x0041e5bf..0x0041e5f2): a click on OK with a valid
 			// name.
-			if (!st.okExit(click, record))
+			exitKind = st.exitAfterDraw(click, record);
+			if (exitKind == PlayerScreenState::kExitNone)
 				continue;
-			exitRecord = 5;
 		}
 
 		// The exit (0x0041e5f7..): the flag cleared, then the commit test
-		// (0x0041e6af..0x0041e6d4).  On the New Player row it stores the
-		// typed name.  With five players (no New Player row) and the fifth
-		// selected the original runs it too and stores the empty typed name
+		// (0x0041e6af..0x0041e6d4); an Enter commit or the exit commit on
+		// the New Player row stores the typed name (playerScreenExit).  With
+		// five players (no New Player row) and the fifth selected the
+		// original runs the exit commit too and stores the empty typed name
 		// over the fifth name (ui_player_screen.txt five_ok_last); the port,
 		// whose storage has no empty-named player, starts the fifth player
-		// with its name (functions/ui-FUN_0041dea4.md, differences).
-		st.dblFlag = false;
-		if (st.exitCommits(exitRecord, numRows) && rowSlot[st.row] == kRowNew) {
-			st.commitAtExit(numRows);
-			const int slot = commitName(st.field);
-			if (slot >= 0)
-				result = slot;
-		} else if (st.current >= 0 && st.current < numRows && rowSlot[st.current] >= 0) {
-			result = rowSlot[st.current];
-		}
+		// with its name (functions/ui-FUN_0041dea4.md, differences).  An
+		// exit with no player's row current would keep the screen open; it
+		// is not reached: a valid typed name on the New Player row leaves
+		// only with record 5 (a press elsewhere resets the field, a key
+		// clears the double-click flag).
+		const PlayerScreenExitResult end = playerScreenExit(st, exitKind, record, _players, kMaxPlayers,
+		                                                    rowSlot, numRows, kRowNew);
+		if (end.stored)
+			savePlayers();
+		if (end.chosen >= 0)
+			result = end.chosen;
 	}
 
 	clearKeys();

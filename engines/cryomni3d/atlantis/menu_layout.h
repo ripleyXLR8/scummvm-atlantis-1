@@ -386,6 +386,14 @@ int nameEntryChar(uint code, bool upperCase, bool swedishLetters = false);
 // golden ui_player_screen.txt (tools/emu/ui_player_screen.py).
 struct PlayerScreenState {
 	static const uint kNameLen = 16;
+	// The record of a frame whose pointer is on neither OK nor DELETE (the
+	// port hit-tests only those two; the original's FUN_004210c0 gives
+	// another record or 0xff there, which no block tells from each other).
+	static const int kNoRecord = -1;
+
+	// How a frame leaves the loop: no exit, an Enter commit (0x0041e44c),
+	// the double-click exit (0x0041e4fd) or the OK exit (0x0041e5f2).
+	enum Exit { kExitNone, kExitEnter, kExitDouble, kExitOk };
 
 	int row = -1;            // [EBP-8]: the selected row, -1 none
 	Common::String field;    // 0x00612080: the name field, "" at entry
@@ -424,6 +432,28 @@ struct PlayerScreenState {
 	               bool upperCase, bool swedishLetters);
 	bool dblExit() const { return dblFlag && fieldValid(); }
 	bool okExit(bool clicked, int record) const { return clicked && record == 5 && fieldValid(); }
+	// The frame up to the draw: name entry, then the double-click exit test
+	// (0x0041e212..0x0041e4fd).  kExitEnter on an Enter commit, kExitDouble
+	// when the flag is set with a valid name whatever the record
+	// (0x0041e4d3..0x0041e4fd test no record), kExitNone otherwise: the
+	// frame is then drawn and exitAfterDraw tested.
+	Exit exitBeforeDraw(const Common::Array<Common::String> &names, const Common::String &marker,
+	                    bool upperCase, bool swedishLetters);
+	// The loop test after the draw (0x0041e5bf..0x0041e5f2): kExitOk or
+	// kExitNone.
+	Exit exitAfterDraw(bool clicked, int record) const {
+		return okExit(clicked, record) ? kExitOk : kExitNone;
+	}
+	// The record 0x006cd850 the exit's commit test reads: 5 after Enter
+	// (0x0041e442) and OK, the frame's own after a double click.
+	static int exitRecord(Exit e, int record) {
+		return e == kExitDouble ? record : 5;
+	}
+	// The exit (0x0041e5f7..0x0041e6d4): the double-click flag cleared,
+	// then the commit test.  True when the exit stores a typed name into
+	// the last row: after an Enter commit (field holds the name), or when
+	// exitCommits holds (commitAtExit, field then holds the name).
+	bool leave(Exit e, int record, int count);
 	// On any exit: record 5, no pending Enter and the last row selected run
 	// the commit of a typed name (0x0041e6af..0x0041e6d4), whatever that
 	// row holds.
@@ -434,6 +464,34 @@ struct PlayerScreenState {
 	// The exit commit's state change: field = the name, row = count - 1.
 	void commitAtExit(int count);
 };
+
+// The port's side of the player screen's rows: its player slots (empty =
+// unused, kept packed by storePlayerName and removePlayerName) give the rows
+// as the original's table 0x0049657c holds them, the players then marker
+// while there are fewer than n; rowSlot[r] is row r's slot, newRow for the
+// marker's row.
+void playerScreenRows(const Common::String *players, uint n, const Common::String &marker, int newRow,
+                      Common::Array<Common::String> &names, int *rowSlot);
+// A stored name goes into the first free slot, which is the New Player
+// row's (0x0041e3fa..0x0041e436, 0x0041e71c..0x0041e758); -1 when none.
+int storePlayerName(Common::String *players, uint n, const Common::String &name);
+// The names part of FUN_0041e8a8's delete: the later players move up one
+// slot and the last is freed.
+void removePlayerName(Common::String *players, uint n, uint slot);
+// The end of an exit on the port's slots: st.leave (commit: the original
+// stores the typed name into the last row), then the name goes into a free
+// slot when the last row is the New Player row (stored); with five players
+// the original's store of the typed name over the fifth name is left out
+// (no empty-named player, functions/ui-FUN_0041dea4.md differences).
+// chosen: the stored slot, else the current player's, -1 none.
+struct PlayerScreenExitResult {
+	bool commit = false;
+	bool stored = false;
+	int chosen = -1;
+};
+PlayerScreenExitResult playerScreenExit(PlayerScreenState &st, PlayerScreenState::Exit e, int record,
+                                        Common::String *players, uint n, const int *rowSlot,
+                                        int count, int newRow);
 
 } // namespace Atlantis
 } // namespace CryOmni3D

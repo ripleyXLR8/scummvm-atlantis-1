@@ -34,6 +34,7 @@
 #include "cryomni3d/omni3d.h"
 #include "cryomni3d/atlantis/engine.h"
 #include "cryomni3d/atlantis/inventory.h"
+#include "cryomni3d/atlantis/menu_layout.h"
 
 namespace CryOmni3D {
 namespace Atlantis {
@@ -647,10 +648,9 @@ void CryOmni3DEngine_Atlantis::deletePlayer(uint player) {
 			if (saveSlotExists(from))
 				_saveFileMan->renameSavefile(getSaveStateName(from), getSaveStateName(to));
 		}
-		_players[q - 1] = _players[q];
 		_playerChapter[q - 1] = _playerChapter[q];
 	}
-	_players[kMaxPlayers - 1].clear();
+	removePlayerName(_players, kMaxPlayers, player);
 	_playerChapter[kMaxPlayers - 1] = 0;
 }
 

@@ -872,5 +872,74 @@ void PlayerScreenState::commitAtExit(int count) {
 	row = count - 1;
 }
 
+PlayerScreenState::Exit PlayerScreenState::exitBeforeDraw(const Common::Array<Common::String> &names,
+                                                          const Common::String &marker,
+                                                          bool upperCase, bool swedishLetters) {
+	if (nameEntry(names, marker, upperCase, swedishLetters))
+		return kExitEnter;
+	return dblExit() ? kExitDouble : kExitNone;
+}
+
+bool PlayerScreenState::leave(Exit e, int record, int count) {
+	dblFlag = false;                              // 0x0041e5f7
+	if (e == kExitEnter)
+		return true;
+	if (!exitCommits(exitRecord(e, record), count))
+		return false;
+	commitAtExit(count);
+	return true;
+}
+
+void playerScreenRows(const Common::String *players, uint n, const Common::String &marker, int newRow,
+                      Common::Array<Common::String> &names, int *rowSlot) {
+	names.clear();
+	for (uint i = 0; i < n; i++) {
+		if (!players[i].empty()) {
+			rowSlot[names.size()] = (int)i;
+			names.push_back(players[i]);
+		}
+	}
+	if (names.size() < n) {
+		rowSlot[names.size()] = newRow;
+		names.push_back(marker);
+	}
+}
+
+int storePlayerName(Common::String *players, uint n, const Common::String &name) {
+	for (uint i = 0; i < n; i++) {
+		if (players[i].empty()) {
+			players[i] = name;
+			return (int)i;
+		}
+	}
+	return -1;
+}
+
+void removePlayerName(Common::String *players, uint n, uint slot) {
+	if (slot >= n)
+		return;
+	for (uint q = slot + 1; q < n; q++)
+		players[q - 1] = players[q];
+	players[n - 1].clear();
+}
+
+PlayerScreenExitResult playerScreenExit(PlayerScreenState &st, PlayerScreenState::Exit e, int record,
+                                        Common::String *players, uint n, const int *rowSlot,
+                                        int count, int newRow) {
+	PlayerScreenExitResult r;
+	r.commit = st.leave(e, record, count);
+	if (r.commit && count > 0 && rowSlot[count - 1] == newRow) {
+		const int slot = storePlayerName(players, n, st.field);
+		if (slot >= 0) {
+			r.stored = true;
+			r.chosen = slot;
+			return r;
+		}
+	}
+	if (st.current >= 0 && st.current < count && rowSlot[st.current] >= 0)
+		r.chosen = rowSlot[st.current];
+	return r;
+}
+
 } // namespace Atlantis
 } // namespace CryOmni3D

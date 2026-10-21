@@ -1581,20 +1581,30 @@ public:
 	// functions/ui-FUN_0041dea4.md).
 	void test_player_screen_vs_original() {
 		using CryOmni3D::Atlantis::PlayerScreenState;
+		using CryOmni3D::Atlantis::PlayerScreenExitResult;
 		Common::Array<Common::String> lines;
 		if (AtlantisTest::goldenDir().empty() || !AtlantisTest::loadGoldenLines("ui_player_screen.txt", lines)) {
 			TS_WARN("ui_player_screen.txt not found; skipped");
 			return;
 		}
+		// displayPlayerScreen's frame (menus.cpp) without the drawing, the
+		// input and the ARE YOU SURE prompt: the port's rows from its player
+		// slots (playerScreenRows), the click block, the delete
+		// (removePlayerName), exitBeforeDraw, exitAfterDraw and the exit
+		// (playerScreenExit, storePlayerName), in the same order.
 		const Common::String marker("#New Player");
+		const uint kSlots = 5;
+		const int kRowNew = -2;
+		Common::String players[kSlots];
 		PlayerScreenState st;
-		Common::Array<Common::String> names;
-		int frames = 0, scenarios = 0;
+		int frames = 0, scenarios = 0, exits = 0;
 		for (const Common::String &line : lines) {
 			if (line.hasPrefix("S ")) {
 				Common::HashMap<Common::String, Common::String> in, out;
 				tokens("in " + line, in, out);
-				names = splitNames(in["names"]);
+				const Common::Array<Common::String> start = splitNames(in["names"]);
+				for (uint i = 0; i < kSlots; i++)
+					players[i] = i < start.size() && start[i] != marker ? start[i] : Common::String();
 				st = PlayerScreenState();
 				scenarios++;
 				continue;
@@ -1605,53 +1615,57 @@ public:
 			tokens(line, in, out);
 			const Common::String where = line.substr(0, line.find(" in "));
 			frames++;
+			Common::Array<Common::String> names;
+			int rowSlot[kSlots + 1];
+			CryOmni3D::Atlantis::playerScreenRows(players, kSlots, marker, kRowNew, names, rowSlot);
+			const int numRows = (int)names.size();
 			// The window procedure's writes, then the frame.
 			if (in["key"] != "-")
 				st.key = (uint)strtol(in["key"].c_str(), nullptr, 16);
 			if (in["dbl"] == "1")
 				st.dblFlag = true;
 			const bool click = in["click"] == "1";
-			const int record = atoi(in["rec"].c_str());
+			// The port hit-tests OK (5) and DELETE (6) only; the golden's
+			// other records (0xff) are its kNoRecord.
+			const int goldRec = atoi(in["rec"].c_str());
+			const int record = (goldRec == 5 || goldRec == 6) ? goldRec : PlayerScreenState::kNoRecord;
 			const int grid = atoi(in["grid"].c_str());
 			Common::String del = "-";
 			if (st.click(click, record, grid, names, marker)) {
 				del = Common::String::format("%d", st.row);
-				st.deleteDone(in["sure"] == "3");
+				const bool confirmed = in["sure"] == "3";
+				if (confirmed)
+					CryOmni3D::Atlantis::removePlayerName(players, kSlots, (uint)rowSlot[st.row]);
+				st.deleteDone(confirmed);
 			}
 			const Common::String shown = st.field.empty() ? Common::String("-") : escPs(st.field);
-			Common::String exitKind = "-";
-			int exitRecord = -1;
-			bool commit = false;
-			if (st.nameEntry(names, marker, false, false)) {
-				exitKind = "enter";
-				exitRecord = 5;
-				commit = true;
-			} else if (st.dblExit()) {
-				exitKind = "dbl";
-				exitRecord = record;
-			} else if (st.okExit(click, record)) {
-				exitKind = "ok";
-				exitRecord = 5;
+			PlayerScreenState::Exit exitKind = st.exitBeforeDraw(names, marker, false, false);
+			if (exitKind == PlayerScreenState::kExitNone)
+				exitKind = st.exitAfterDraw(click, record);
+			PlayerScreenExitResult end;
+			if (exitKind != PlayerScreenState::kExitNone) {
+				end = CryOmni3D::Atlantis::playerScreenExit(st, exitKind, record, players, kSlots, rowSlot,
+				                                            numRows, kRowNew);
+				exits++;
 			}
-			if (exitKind != "-") {
-				st.dblFlag = false;
-				if (st.exitCommits(exitRecord, names.size())) {
-					st.commitAtExit(names.size());
-					commit = true;
-				}
-				if (commit) {
-					names[names.size() - 1] = st.field;
-					if (names.size() < 5)
-						names.push_back(marker);
-				}
-			}
+			static const char *const kExitNames[] = { "-", "enter", "dbl", "ok" };
+			// full / last / cur are '?' in the golden while the original has
+			// not written them (uninitialised [EBP-0x18], [EBP-4],
+			// 0x00496607): no value to compare.
+			const Common::String full = out["full"] == "?" ? Common::String("?")
+			                          : Common::String::format("%d", st.full ? 1 : 0);
+			const Common::String last = out["last"] == "?" ? Common::String("?")
+			                          : Common::String::format("%02x", (byte)st.lastKey);
+			const Common::String cur = out["cur"] == "?" ? Common::String("?")
+			                         : Common::String::format("%d", st.current);
 			const Common::String port = Common::String::format(
-			    "row=%d len=%u full=%d last=%02x blink=%d cur=%d dbl=%d key=%02x field=%s shown=%s del=%s "
+			    "row=%d len=%u full=%s last=%s blink=%d cur=%s dbl=%d key=%02x field=%s shown=%s del=%s "
 			    "exit=%s commit=%d atl=%d enterdraw=%s",
-			    st.row, st.len, st.full ? 1 : 0, (byte)st.lastKey, st.blinkOn ? 1 : 0, st.current,
+			    st.row, st.len, full.c_str(), last.c_str(), st.blinkOn ? 1 : 0, cur.c_str(),
 			    st.dblFlag ? 1 : 0, st.key, escPs(st.field).c_str(), shown.c_str(), del.c_str(),
-			    exitKind.c_str(), commit ? 1 : 0, exitRecord == 5 ? 1 : 0,
-			    exitKind == "enter" ? escPs(st.field).c_str() : "-");
+			    kExitNames[exitKind], end.commit ? 1 : 0,
+			    exitKind != PlayerScreenState::kExitNone && PlayerScreenState::exitRecord(exitKind, record) == 5 ? 1 : 0,
+			    exitKind == PlayerScreenState::kExitEnter ? escPs(st.field).c_str() : "-");
 			const Common::String orig = Common::String::format(
 			    "row=%s len=%s full=%s last=%s blink=%s cur=%s dbl=%s key=%s field=%s shown=%s del=%s "
 			    "exit=%s commit=%s atl=%s enterdraw=%s",
@@ -1660,16 +1674,31 @@ public:
 			    out["field"].c_str(), out["shown"].c_str(), out["del"].c_str(), out["exit"].c_str(),
 			    out["commit"].c_str(), out["atl"].c_str(), out["enterdraw"].c_str());
 			TSM_ASSERT_EQUALS(where.c_str(), port, orig);
-			// The rows after the frame: the golden's after a delete (the
-			// port's storage is its own), the struct's commit otherwise.
-			const Common::Array<Common::String> after = splitNames(out["names"]);
-			if (del != "-" && in["sure"] == "3")
-				names = after;
-			TSM_ASSERT_EQUALS(where.c_str(), names.size(), after.size());
-			for (uint i = 0; i < names.size() && i < after.size(); i++)
-				TSM_ASSERT_EQUALS(where.c_str(), names[i], after[i]);
+			// The rows after the frame, from the port's slots.  A commit the
+			// port does not store (the fifth row of five) leaves its name
+			// where the original stores the typed one (the struct's field):
+			// functions/ui-FUN_0041dea4.md, differences.
+			Common::Array<Common::String> expected = splitNames(out["names"]);
+			if (end.commit && !end.stored && !expected.empty()) {
+				TSM_ASSERT_EQUALS(where.c_str(), expected.back(), st.field);
+				expected.back() = names.back();
+			}
+			CryOmni3D::Atlantis::playerScreenRows(players, kSlots, marker, kRowNew, names, rowSlot);
+			TSM_ASSERT_EQUALS(where.c_str(), names.size(), expected.size());
+			for (uint i = 0; i < names.size() && i < expected.size(); i++)
+				TSM_ASSERT_EQUALS(where.c_str(), names[i], expected[i]);
+			// The player the exit starts: the original's current row
+			// 0x00496607 after the exit.
+			if (exitKind != PlayerScreenState::kExitNone) {
+				TSM_ASSERT_DIFFERS(where.c_str(), out["cur"], "?");
+				const int origCur = atoi(out["cur"].c_str());
+				TSM_ASSERT(where.c_str(), end.chosen >= 0 && origCur >= 0 && origCur < (int)expected.size());
+				if (end.chosen >= 0 && origCur >= 0 && origCur < (int)expected.size())
+					TSM_ASSERT_EQUALS(where.c_str(), players[end.chosen], expected[origCur]);
+			}
 		}
 		TS_ASSERT(scenarios >= 17);
 		TS_ASSERT(frames >= 150);
+		TS_ASSERT(exits >= 15);
 	}
 };
