@@ -147,6 +147,14 @@ public:
 	bool slideOut(const Graphics::Surface *original);
 	bool slideIn(const Graphics::Surface *original, SlideSink &sink);
 	bool slideOut(const Graphics::Surface *original, SlideSink &sink);
+	// One pass of the pick-up hold loop FUN_0042cc98 after its frame:
+	// `button` / `mouse` as FUN_0041a298 read them (@ 0x0042cf14), then
+	// FUN_00432178 (ambientFrame, @ 0x0042cf19), the edge scroll
+	// (@ 0x0042cf1e..0x0042cf8f, scrollStep at the port's pace, `now` /
+	// `nextScrollMs`), then the loop test on the button edges (@ 0x0042cd05):
+	// 1 on a left press edge, 2 on a right one, else 0.  The pass that reads
+	// the edge runs the ambient sounds and the scroll too.
+	int holdPass(uint button, uint &prevButton, const Common::Point &mouse, uint32 now, uint32 &nextScrollMs);
 	void inventoryChanged(uint newPosition);
 	// FUN_0042de5c (load, game-over reload, new game): first shown record
 	// 0x00496924 = 0, end 0x00496928 = 9 (0x0042e2ec).
