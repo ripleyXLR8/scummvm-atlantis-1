@@ -121,6 +121,14 @@ void CryOmni3DEngine_Atlantis::loadFontMinSprites() {
 	loadFontSpriteSet("FONTMIN2.SPR", _fontMin2Sprites, true);
 }
 
+// The original loads CREDBLAN / CREDBLEU at the start of each credits run
+// (FUN_0041a72c @ 0x0041a77e / 0x0041a7e4) and SPRMENU on each entry to
+// FUN_0041c838 @ 0x0041c8b4, FUN_0041dea4 @ 0x0041dfc7, FUN_0041eda8 @
+// 0x0041ee20, FUN_0041f1d0 @ 0x0041f22e and FUN_0042d6b8 @ 0x0042d73f,
+// each time from the archive open then, the current disc's.  The port loads
+// them once from disc 1: every shipped build has one copy of each on all
+// four discs (atlantis-re per-disc md5 scan, Fable pass 2
+// opus-gap3-boot-archives#1), so nothing shown differs.
 void CryOmni3DEngine_Atlantis::loadCreditFontSprites() {
 	// Two glyph banks for the credits roll (same SPR format as FONTMAX).
 	loadFontSpriteSet("CREDBLAN.SPR", _creditBlanSprites);
@@ -130,7 +138,8 @@ void CryOmni3DEngine_Atlantis::loadCreditFontSprites() {
 }
 
 void CryOmni3DEngine_Atlantis::loadMenuSprites() {
-	// SPRMENU.SPR: sparse golden-filigree overlays for the toolbar and menus.
+	// SPRMENU.SPR: sparse golden-filigree overlays for the toolbar and menus
+	// (loaded once from disc 1, see loadCreditFontSprites).
 	loadFontSpriteSet("SPRMENU.SPR", _menuSprites);
 	debugC(1, kDebugScript, "loadMenuSprites: %u sprites from SPRMENU.SPR", _menuSprites.size());
 }
@@ -178,7 +187,8 @@ void CryOmni3DEngine_Atlantis::drawInventoryIcon(Graphics::ManagedSurface &dst,
 	// Centre the icon on the slot; clip ONLY to the surface (OBJETS1 icons run
 	// up to 60x60, larger than the 50x40 slot, so per-slot clipping would trim
 	// them — the 70px column spacing leaves room).
-	drawSprite(dst, spr, (r.left + r.right) / 2, (r.top + r.bottom) / 2);
+	const Common::Point h = Atlantis_Toolbar::iconHotspot(r, 0);   // r already slid
+	drawSprite(dst, spr, h.x, h.y);
 }
 
 void CryOmni3DEngine_Atlantis::drawSprite(Graphics::ManagedSurface &dst, const SubjSprite &spr,
@@ -259,6 +269,13 @@ void CryOmni3DEngine_Atlantis::loadSpritePlaceList() {
 			eol++;
 		Common::String line(p, (uint32)(eol - p));
 		p = eol;
+		// FUN_00424a20 stops at the first line that starts with "FIN"
+		// (3-byte FUN_0044a83f compare, atlantis-cd-en-714240 @ 0x00424a69
+		// and at the loop tail); every shipped SPW list ends with it.
+		if (line.hasPrefix("FIN"))
+			break;
+		// The original knows only '#'; ';' and blank lines never occur in the
+		// 36 shipped lists.
 		if (line.empty() || line[0] == '#' || line[0] == ';')
 			continue;
 
@@ -443,7 +460,9 @@ void CryOmni3DEngine_Atlantis::animateSprites() {
 	// ticks apart (70 ms; experiments/2026-10-14-13).  Here a frame waits for
 	// the vertical sync (16.7 ms), which put every step at 16 ticks: the
 	// test is run for each tick elapsed since the last call instead (at most
-	// 2 s, e.g. after a video).
+	// 2 s, e.g. after a video).  The original's interval depends on its
+	// unpaced frame rate (atlantis-re decision 0013); this replays the law
+	// measured under Wine, a host-pace item of decision 0016 R4 (class none).
 	const uint32 now = g_system->getMillis() / kSpriteTickMs;
 	uint32 t = (_spriteAnimTick && now - _spriteAnimTick <= 400) ? _spriteAnimTick + 1 : now;
 	bool changed = false;

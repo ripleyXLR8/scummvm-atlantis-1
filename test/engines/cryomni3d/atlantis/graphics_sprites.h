@@ -13,7 +13,9 @@
 //
 // Port code exercised directly: blendSprPixel565, blendSpwPixel565
 // (sprite_blend.h), readSprFile, decodeSprRows, drawSprSprite, compositeSpfFrame /
-// decodeSPWPixels (sprite_decode.cpp) and BigFileArchive (bigfile.cpp).
+// decodeSPWPixels (sprite_decode.cpp), loadPuzzleSpr / blitFrame
+// (puzzle_assets.cpp, the puzzle units' SPR path) and BigFileArchive
+// (bigfile.cpp).
 
 #include "atlantis_test_helper.h"
 
@@ -27,6 +29,7 @@
 #include "graphics/pixelformat.h"
 #include "graphics/surface.h"
 
+#include "cryomni3d/atlantis/puzzle_assets.h"
 #include "cryomni3d/atlantis/sprite_blend.h"
 #include "cryomni3d/atlantis/sprite_decode.h"
 
@@ -321,7 +324,9 @@ public:
 	}
 
 	// Every sprite of every SPR file, three blit positions each, versus the
-	// original blit (golden graphics_spr.txt).
+	// original blit (golden graphics_spr.txt), through readSprFile /
+	// drawSprSprite.  The PUZZLES\ groups also go through the puzzle units'
+	// loadPuzzleSpr / blitFrame in test_spr_puzzle_files.
 	void test_spr_all_files() {
 		using namespace GraphicsSpritesTest;
 		if (!AtlantisTest::haveData()) {
@@ -379,6 +384,73 @@ public:
 		TS_ASSERT_EQUALS(bad, 0u);
 	}
 
+	// The puzzle units do not use readSprFile / drawSprSprite by name: they
+	// load with loadPuzzleSpr and draw with blitFrame (puzzle_assets.cpp) onto
+	// a ManagedSurface.  Every PUZZLES\ key of the same golden through that
+	// path; the original draws these banks with the same FUN_00410430
+	// (puzzle callers FUN_0043b49c, FUN_0043e5a4, FUN_0043f4d4, FUN_00445c00,
+	// ...).  Until 2026-10-21 (Fable pass 2 r1:sprites#0/#1) this path drew a
+	// colour-table 0x0001 as 0x0000 and was not compared.
+	void test_spr_puzzle_files() {
+		using namespace GraphicsSpritesTest;
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("graphics_sprites: no atlantis_test.cfg, data test skipped");
+			return;
+		}
+		AtlantisTest::Golden golden;
+		TS_ASSERT(AtlantisTest::loadGolden("graphics_spr.txt", golden));
+		Common::Array<KeyGroup> groups;
+		groupKeys(golden, groups);
+		Big big;
+		Graphics::ManagedSurface fb(kFbW, kFbH, Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0));
+		uint16 *p = (uint16 *)fb.getPixels();
+		uint total = 0, bad = 0, keys = 0;
+		for (uint gi = 0; gi < groups.size(); gi++) {
+			if (!groups[gi].file.hasPrefix("PUZZLES\\"))
+				continue;
+			keys += groups[gi].keys.size();
+			Common::ScopedPtr<Common::SeekableReadStream> s(big.open(groups[gi].file));
+			TS_ASSERT(s);
+			if (!s)
+				continue;
+			Common::Array<CryOmni3D::Atlantis::PuzzleSpr> frames;
+			TS_ASSERT(CryOmni3D::Atlantis::loadPuzzleSpr(*s, frames));
+			uint fileBad = 0;
+			for (uint k = 0; k < groups[gi].keys.size(); k++) {
+				const Common::String &key = groups[gi].keys[k];
+				uint hash = key.findLastOf('#'), at = key.findLastOf('@');
+				uint idx = atoi(key.substr(hash + 1, at - hash - 1).c_str());
+				Common::String tag = key.substr(at + 1);
+				TS_ASSERT(idx < frames.size());
+				if (idx >= frames.size())
+					continue;
+				const CryOmni3D::Atlantis::PuzzleSpr &spr = frames[idx];
+				int x = spr.xoff, y = spr.yoff;
+				if (tag == "clipA") {
+					x = spr.xoff - spr.w / 3;
+					y = spr.yoff - spr.h / 3;
+				} else if (tag == "clipB") {
+					x = spr.xoff + kFbW - (2 * spr.w) / 3;
+					y = spr.yoff + kFbH - (2 * spr.h) / 3;
+				}
+				fillBackground(p, kFbW * kFbH);
+				CryOmni3D::Atlantis::blitFrame(fb, spr, x, y);
+				total++;
+				if (md5Of(p, kFbW * kFbH) != golden[key]) {
+					bad++;
+					fileBad++;
+				}
+			}
+			if (fileBad)
+				TS_WARN(Common::String::format("puzzle SPR %s: %u/%u blits differ from the original",
+				                               groups[gi].file.c_str(), fileBad, groups[gi].keys.size()).c_str());
+		}
+		TS_WARN(Common::String::format("puzzle SPR: %u blits compared, %u differ", total, bad).c_str());
+		TS_ASSERT(keys > 0);
+		TS_ASSERT_EQUALS(total, keys);
+		TS_ASSERT_EQUALS(bad, 0u);
+	}
+
 	void spwFiles(const char *goldenName, int w, int h) {
 		using namespace GraphicsSpritesTest;
 		AtlantisTest::Golden golden;
@@ -417,8 +489,8 @@ public:
 	// SPF frame index past the end.  Original transition overlay
 	// (atlantis-cd-en-714240 FUN_004256e8 @ 0x004257b6..0x004257be) draws an
 	// SPF only while the frame counter DAT_00496104 < (byte)numFrames; past
-	// the end nothing is drawn.  No shipped SPF has more than 139 frames, so
-	// the byte compare equals the port's full count.
+	// the end nothing is drawn.  compositeSpfFrame reads the same byte; no
+	// shipped SPF has more than 139 frames, so the byte equals the full count.
 	void test_spf_index_past_end() {
 		using namespace GraphicsSpritesTest;
 		Common::Array<byte> d = syntheticSpw();   // 1 frame

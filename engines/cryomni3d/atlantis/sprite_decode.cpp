@@ -298,9 +298,10 @@ void drawSprSprite(Graphics::Surface &dst, const SprSprite &spr, int x, int y) {
 void compositeSpfFrame(Common::SeekableReadStream *spf, uint frameIdx, Graphics::Surface &dst) {
 	if (!spf) return;
 
-	// Header[0x04] = num_frames.
+	// Header[0x04] = num_frames, a u32 of which FUN_004256e8 reads only the
+	// low byte (atlantis-cd-en-714240 @ 0x00425764).
 	if (!spf->seek(4)) return;
-	uint32 numFrames = spf->readUint32LE();
+	uint numFrames = spf->readByte();
 	if (frameIdx >= numFrames) return;
 
 	decodeSPWPixels(spf, dst, frameIdx);

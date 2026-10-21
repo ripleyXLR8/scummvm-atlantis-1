@@ -29,6 +29,8 @@ namespace Atlantis {
 
 // The C rand of atlantis.exe (Watcom, @ 0x00453cd1).  srand (0x00453cf5)
 // has no caller, so the seed starts at 1 at every launch.
+static const uint32 kCrtRandStartSeed = 1;   // srand (atlantis-cd-en-714240 @ 0x00453cf5) has no caller
+
 inline int crtRandNext(uint32 &seed) {
 	seed = seed * 1103515245u + 12345u;
 	return (int)((seed >> 16) & 0x7fff);

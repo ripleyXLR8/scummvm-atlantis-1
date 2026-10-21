@@ -76,7 +76,8 @@ uint32 readSPWFrameOffset(Common::SeekableReadStream *s, uint frameIdx = 0);
 void decodeSPWPixels(Common::SeekableReadStream *spw, Graphics::Surface &surf, uint frameIdx = 0);
 
 // Composite frame frameIdx of an SPF onto dst.  Like FUN_004256e8 (test at
-// 0x004257b6), nothing is drawn once frameIdx reaches the frame count.
+// 0x004257b6), nothing is drawn once frameIdx reaches the low byte of the
+// frame count (byte load @ 0x00425764).
 void compositeSpfFrame(Common::SeekableReadStream *spf, uint frameIdx, Graphics::Surface &dst);
 
 } // End of namespace Atlantis
