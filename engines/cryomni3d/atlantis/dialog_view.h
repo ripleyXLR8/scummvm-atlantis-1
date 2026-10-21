@@ -23,6 +23,7 @@
 #define CRYOMNI3D_ATLANTIS_DIALOG_VIEW_H
 
 #include "common/scummsys.h"
+#include "common/str.h"
 
 namespace CryOmni3D {
 namespace Atlantis {
@@ -47,6 +48,8 @@ struct Line {
 	Angles view;          // the panorama behind the talking head
 	Angles kept;          // 0x00bcb59c / 0x00bcb598 during and after the line
 	bool entryUpdate;     // the section-end angles become `kept` before the line
+	bool camFov;          // the camera's FOV is set (FUN_0045179a(FOV[cam])); else
+	                      // the FOV of the last reset (75.137) stays
 };
 
 // What FUN_0042844c carries along one walk, through /go targets too
@@ -93,16 +96,21 @@ inline Line lineView(const Angles &kept, bool sethPath, int clicPerso,
 	l.view = kept;
 	l.kept = kept;
 	l.entryUpdate = false;
+	l.camFov = false;
 	if (sethPath) {
-		// 0x004289ef..0x00428a75: entry angles := globals; FOV of the cam;
-		// grid at (alpha + pi, 0).
+		// 0x004289ef..0x00428a75: entry angles := globals; FOV of the cam
+		// (0x004289ff..0x00428a14); grid at (alpha + pi, 0).
 		l.entryUpdate = true;
+		l.camFov = true;
 		l.view.alpha = wrapAlpha(kept.alpha + M_PI);
 		l.view.beta = 0.0;
 	} else if (clicPerso >= 0x200) {
 		// 0x00428a9d..0x00428ae7 (off lines too): entry angles := globals;
-		// grid at (alpha, 0).
+		// FOV 75.137 then the cam's (0x00428ab6..0x00428ada); grid at
+		// (alpha, 0).  Below 0x200 (JL 0x00428afc) none of this runs: no
+		// FOV call.
 		l.entryUpdate = true;
+		l.camFov = true;
 		l.view.beta = 0.0;
 	}
 	if (hasAngle) {
@@ -114,24 +122,36 @@ inline Line lineView(const Angles &kept, bool sethPath, int clicPerso,
 	return l;
 }
 
-// A talking-head line (not voice-only) whose row has no INITDIAL record:
-// its UBB name is empty, so FUN_0042ee88 opens "dialog\perso\" (FUN_00434814
-// @ 0x0042f005, cryo.dll _GL_CreateFile@28 -> _GL_FileOpen@8, mode 1).  With
-// the modes WinMain sets (_GL_SetErrorMode(3) @ 0x00418f1e,
-// _SetBigFileDebug(1) @ 0x00418f30) the open returns -1 without quitting;
-// FUN_0042ee88 shows error dialog 0x65 code 0xc ("Fichier introuvable : ")
-// and returns before the subtitle and the voice (0x0042f00f..0x0042f056);
-// FUN_0042844c ignores the result and goes on with the next line.
-inline bool headOpenFails(bool voiceOnly, bool haveRecord) {
-	return !voiceOnly && !haveRecord;
+// A talking-head line (not voice-only) whose UBB does not open.  A row with
+// no INITDIAL record has an empty UBB name, so FUN_0042ee88 opens
+// "dialog\perso\" (FUN_00434814 @ 0x0042f005, cryo.dll _GL_CreateFile@28 ->
+// _GL_FileOpen@8, mode 1); an explicit camN whose INITDIAL UBB is "none"
+// (FUN_0042844c keeps it: the draw loops are skipped, 0x004287cf) has the
+// name "none.ubb", which no archive holds.  With the modes WinMain sets
+// (_GL_SetErrorMode(3) @ 0x00418f1e, _SetBigFileDebug(1) @ 0x00418f30) the
+// open returns -1 without quitting; FUN_0042ee88 shows error dialog 0x65
+// code 0xc ("Fichier introuvable : ") and returns before the subtitle and
+// the voice (0x0042f00f..0x0042f056); FUN_0042844c ignores the result and
+// goes on with the next line, the letter counted (0x00428b21).  camUBB: the
+// record's name for the line's cam (the port's parser keeps "none" there).
+// No line of the shipped CON files takes the "none" case (0 of 248
+// explicit-cam lines land on a "none" cam).
+inline bool headOpenFails(bool voiceOnly, bool haveRecord, const Common::String &camUBB) {
+	return !voiceOnly && (!haveRecord || camUBB.empty() || camUBB.equalsIgnoreCase("none"));
 }
 
 // The text of that error box: the procedure 0x00419808 of dialog 0x65
 // builds, for code 0xc (@ 0x004199e9), "Fichier introuvable : " (0x004bbf18)
 // + the path 0x006cd9d0, copied from 0x006cd8c0 = the string 0x0049619f
-// (empty: never written) + "dialog\perso\" (0x004bbbfc) + the empty UBB
-// name (FUN_0042ee88 @ 0x0042ef9d..0x0042f031).  The box has an OK button.
+// (empty: never written) + "dialog\perso\" (0x004bbbfc) + the UBB name
+// (FUN_0042ee88 @ 0x0042ef9d..0x0042f031).  The box has an OK button.
 static const char *const kHeadOpenFailText = "Fichier introuvable : dialog\\perso\\";
+
+// The box text for the UBB name the original appends: "" without a
+// record, "none.ubb" for a "none" cam (the parser appends ".ubb").
+inline Common::String headOpenFailText(const Common::String &ubbName) {
+	return Common::String(kHeadOpenFailText) + ubbName;
+}
 
 } // End of namespace DialogView
 

@@ -49,11 +49,14 @@ int subtitleLineY(uint i, uint n);
 // and back (b) for a space (a CR stops the scan one byte further) and
 // breaks at the nearer one, the forward one when f < b: the row is the 75
 // + f or 75 - b bytes up to the space, the space starts the next row; the
-// last row (75 bytes or fewer left) is the rest.  The buffer ends with a
-// NUL then a CR, as the emulation of the original saw it (atlantis-re
-// tools/emu/video_subtitles_en688128.py), which ends the forward scan at
-// the text's end.  Rows of 85 bytes or more overrun their buffer (see the
-// code).
+// last row (75 bytes or fewer left) is the rest.  The original stores only
+// the NUL after the text (atlantis-cd-en-688128 @ 0x00427722, 0x00425a50);
+// the bytes after it are zeros or stale text of earlier lines, never a CR,
+// so a forward scan past the end depends on what was shown before
+// [UNKNOWN].  The port stops as if a CR followed the NUL, the input the
+// emulation harnesses plant (atlantis-re tools/emu/video_subtitles_en688128.py),
+// a named difference (see the code).  Rows of 85 bytes or more overrun
+// their buffer (see the code).
 // backOnly: the Swedish build's FUN_0042ea7c (atlantis-cd-sv-688128,
 // exe_build.h subtitleBreakBackOnly, decision 0023 D): every row ends at
 // the last space at or before the window end (75 - b bytes), so no row is

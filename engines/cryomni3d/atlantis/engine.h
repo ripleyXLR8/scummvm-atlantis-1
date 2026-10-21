@@ -456,8 +456,8 @@ private:
 	// panorama (or just the panorama when off-camera), play the matching APC
 	// speech track and overlay the subtitle.  `spfBaseName` names the per-cam
 	// DIALOG\PERSO\<base>.SPF mouth/veil overlay composited onto every UBB
-	// frame (empty = mouth baked into the UBB).  `camNum` (2..5) selects the
-	// per-cam zoom; `hasAngle`/angleX/angleY rotate the panorama under the
+	// frame (empty = mouth baked into the UBB).  `camNum` (2..5) selects the head's camera (the
+	// caller sets the per-cam FOV: playConSection, FUN_0042844c); `hasAngle`/angleX/angleY rotate the panorama under the
 	// head; `interactiveDialog` is reserved for the sprite-hiding the NPC
 	// layer adds later.  `dialRow` is the INITDIAL row of the speaker: its 3D
 	// head (DialogHead, the animated mouth) is drawn over every UBB frame
@@ -801,9 +801,11 @@ private:
 	uint8 _subtitleToggleCount = 0;
 	// The subtitle font: atlantis.exe FUN_0041ae20 creates GDI Arial, cell
 	// height 16 (CreateFontA(16, ..., FW_DONTCARE, DEFAULT_CHARSET, ...,
-	// "Arial"), called at 0x00418f7e).  The port uses the metric-compatible
-	// Liberation Sans from fonts.dat (as other engines do for Arial), falling
-	// back to the built-in GUI font without FreeType.
+	// "Arial"), called at 0x00418f7e).  The port uses the player's arial.ttf
+	// when it is found with the game files, else the metric-compatible
+	// Liberation Sans from fonts.dat, at 13 px monochrome (Windows 98 renders
+	// cell 16 at 13 ppem without smoothing), falling back to the built-in GUI
+	// font without FreeType.
 	Graphics::Font *_subtitleTTF = nullptr;
 	bool _subtitleFontTried = false;
 	const Graphics::Font *subtitleFont();

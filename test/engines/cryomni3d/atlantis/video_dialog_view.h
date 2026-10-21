@@ -120,4 +120,25 @@ public:
 		TS_ASSERT_EQUALS(dialRow(true, 520, 2), 514);
 		TS_ASSERT_EQUALS(dialRow(false, 0, 0), 512);
 	}
+
+	// The camera's FOV is set only on the Seth path (0x004289ff) and for
+	// ClicPerso >= 0x200 (0x00428a9d; JL 0x00428afc skips the two FOV calls
+	// below it).  FOV in effect at the call of FUN_0042ee88 (0x00428b1c),
+	// ORIGINAL emulated 2026-10-21 (tools/emu/video_dialog_line_view.py's
+	// LineView with a hook there, player at 30/5; Fable pass 2 r1:dialog#3):
+	// CHAPI056 /744 A [Anna] (ClicPerso 329): no FOV call since the last
+	// reset; CHAPI065 /901 A [Sorciere] (ClicPerso 323): 75.137, the last
+	// reset's; CHAPI003 /40 A [Lascoyt,269,0,cam2] (521): 20.68, cam 2's;
+	// CHAPI056 /747 A [Seth] (514): 48.0, cam 4's; /747 B [Anna] (663):
+	// 20.68, cam 2's.
+	void test_cam_fov() {
+		using namespace CryOmni3D::Atlantis;
+		const DialogView::Angles kept = {rad(30), rad(5)};
+		const double vmax = rad(50) * 0.9;
+		TS_ASSERT(!DialogView::lineView(kept, false, 329, false, 0, 0, vmax).camFov);
+		TS_ASSERT(!DialogView::lineView(kept, false, 323, false, 0, 0, vmax).camFov);
+		TS_ASSERT(DialogView::lineView(kept, false, 521, true, rad(269), 0, vmax).camFov);
+		TS_ASSERT(DialogView::lineView(kept, true, 514, false, 0, 0, vmax).camFov);
+		TS_ASSERT(DialogView::lineView(kept, false, 663, false, 0, 0, vmax).camFov);
+	}
 };

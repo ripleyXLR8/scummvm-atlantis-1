@@ -57,6 +57,7 @@
 #include "cryomni3d/atlantis/subject_menu.h"
 #include "cryomni3d/atlantis/subtitle_layout.h"
 #include "cryomni3d/atlantis/sprite_blend.h"
+#include "cryomni3d/atlantis/video_skip.h"
 
 namespace CryOmni3D {
 namespace Atlantis {
@@ -100,10 +101,6 @@ void CryOmni3DEngine_Atlantis::loadDialInitData() {
 		int persoId = atoi(tok[0].c_str());
 		if (persoId <= 0) continue;
 
-		// The player character ("hero") is detected by the s3d field.
-		if (tok[5].equalsIgnoreCase("hero"))
-			_heroPersoId = persoId;
-
 		DialInitEntry entry;
 		for (int i = 0; i < 4; i++)
 			entry.camUBB[i] = tok[6 + i];      // cam2..cam5 basenames
@@ -111,10 +108,10 @@ void CryOmni3DEngine_Atlantis::loadDialInitData() {
 		// Column 4 = animM basename (mouth vertex animation, DIALOG\PERSO\<base>.3DA).
 		if (!tok[4].equalsIgnoreCase("none"))
 			entry.animMBase = tok[4];
-		// Column 5 = s3d basename (scene-graph mesh, DIALOG\PERSO\<base>.S3D).
+		// Column 5 = s3d basename (lip-sync and camera set-up, DIALOG\PERSO\<base>.S3D).
 		if (!tok[5].equalsIgnoreCase("none"))
 			entry.s3dBase = tok[5];
-		// Column 2 = anim3DC basename (body mesh, DIALOG\PERSO\<base>.3DC).
+		// Column 2 = anim3DC basename (head mesh, type-1 F3DC, DIALOG\PERSO\<base>.3DC).
 		if (!tok[2].equalsIgnoreCase("none"))
 			entry.anim3DCBase = tok[2];
 		// Column 3 = head animation (DIALOG\PERSO\<base>.3DA, FUN_00468990).
@@ -129,15 +126,14 @@ void CryOmni3DEngine_Atlantis::loadDialInitData() {
 		_dialInitData[persoId] = entry;
 	}
 
-	debugC(1, kDebugScript, "loadDialInitData: %u entries from INITDIAL.TXT, heroPersoId=%d",
-	      _dialInitData.size(), _heroPersoId);
+	debugC(1, kDebugScript, "loadDialInitData: %u entries from INITDIAL.TXT", _dialInitData.size());
 }
 
 // Per-line camera picker.  Re-implements the random-cam loop from atlantis.exe
-// FUN_0042844c (lines 22460-22470):
+// FUN_0042844c (atlantis-cd-en-714240 @ 0x00428852..0x004289de):
 //
 //   while (cam == prevCam || INITDIAL[persoId].camUBB[cam-2] is "none")
-//       cam = (rand() & 3) + 2;          // 2..5
+//       cam = (clock() & 3) + 2;         // 2..5, clock = FUN_00451d0c (timeGetTime), not rand
 //
 // An explicit `camN` from the header is used as is (clamped to 2 when out of
 // 2..5), even when that cam's INITDIAL UBB is "none"; only lines without
@@ -160,7 +156,10 @@ int CryOmni3DEngine_Atlantis::pickDialCam(int persoId, int explicitCam, bool set
 	// a millisecond between draws (64 draws all within one millisecond gave
 	// the same rejected cam, e.g. garde17's cam 2 "none": no character, no
 	// head).  With fewer than two usable cams the original would loop
-	// forever; the port stops after 64 draws.
+	// forever; the port stops after 64 draws and keeps the last drawn cam
+	// (kEnhGameBreakingBugFixes: hang guard, unreachable with the shipped
+	// INITDIAL, whose rows all have two usable cams or more; atlantis-re
+	// functions/scripts-FUN_0042844c.md, Former gaps).
 	Common::HashMap<int, DialInitEntry>::const_iterator it = _dialInitData.find(persoId);
 	auto usable = [&](int cam) {
 		if (it == _dialInitData.end())
@@ -171,7 +170,7 @@ int CryOmni3DEngine_Atlantis::pickDialCam(int persoId, int explicitCam, bool set
 	auto draw = [&](int last) {
 		int cam = 2;
 		for (int tries = 0; tries < 64; tries++) {
-			cam = (int)(g_system->getMillis() & 3) + 2;
+			cam = (int)(gameClockMs() & 3) + 2;   // FUN_00451d0c
 			if (cam != last && usable(cam))
 				return cam;
 			g_system->delayMillis(1);
@@ -301,6 +300,9 @@ int CryOmni3DEngine_Atlantis::showSubjectMenu(const Common::Array<int> &sujIds) 
 			              ? (uint)sujId : 0;
 			drawSubjectSprite(*rawPtr, sprIdx, il.bx + kIconDX, il.by + kIconDY);
 		}
+		// FUN_004261a0 @ 0x00426393: FUN_0042bc58, the followers not hidden
+		// (FUN_00425828 hides all but the clicked one for a follower).
+		drawGuests(frame);
 
 		g_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, kScreenW, kScreenH);
 		g_system->updateScreen();
@@ -345,11 +347,6 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 	// chapter so the loop stops the instant that happens.
 	const uint entryChapter = _currentCONChapter;
 	int lineIdx = 0;
-	// FUN_0042844c: a body that starts with a dialog line lowers the music
-	// when no fade runs (@ 0x004284e8); every section ends by raising it
-	// (@ 0x00428d8b, on the only exit).
-	if (!sec.items.empty() && !sec.items[0].isSet)
-		musicDuck(true);
 	// FUN_0042844c saves ClicPerso at entry (0x004284c2) and restores it at
 	// the end (0x00428cb2); in between it is cleared after every dialog line
 	// (0x00428b39), so only the first line of a section entered with a
@@ -416,6 +413,12 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 			continue;
 		}
 
+		// FUN_0042844c: every dialog line lowers the music when no fade runs
+		// (0x004284e8..0x004284f1, at the head of the per-line loop, so also
+		// a line after /set commands); the walk ends by raising it
+		// (0x00428d8b, on the only exit).
+		musicDuck(true);
+
 		// Dialog line — resolve the on-screen speaker and the talking-head shot.
 		// FUN_00428f58 runs only when ClicPerso is 0 (0x00428689) and writes
 		// its result there; the camera choice then reads ClicPerso (0x004287bf).
@@ -453,8 +456,15 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 		const bool isOffCam = offFlag;
 		// off0 (FUN_004305e8): the subtitle is drawn over the screen as it
 		// stands, with no view redraw and no FOV reset.  off1 (FUN_00430884)
-		// is not used by any shipped CON file.
-		_dialKeepScreen = tailIs("off0", 4);
+		// does the same over the screen buffer 0x004960d4 (the first IX
+		// buffer), which it first copies to the back buffer and the surface
+		// (0x00430a96..), with no sprite pass (FUN_00425304), no panorama
+		// redraw (FUN_00451d8b) and no FOV reset (FUN_0045179a): below, the
+		// screen is set from _ixVideoBuffers and the line then plays as off0.
+		// The reference's CON files have no off1 header; the GOG.com
+		// release's have 30 (CHAPI031, 036, 048, 058, 062).
+		const bool off1 = tailIs("off1", 4);
+		_dialKeepScreen = tailIs("off0", 4) || off1;
 
 		Common::String vid;
 		Common::String spfBase;
@@ -476,9 +486,11 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 			noSyc = !syc;
 		}
 		const bool voiceOnly = isOffCam || noSyc;
-		// A row without its INITDIAL record leaves an empty UBB name: the
-		// original's open fails: an error box, then the line is not played
-		// (DialogView::headOpenFails; atlantis-re experiment 2026-10-16-15).
+		// A row without its INITDIAL record leaves an empty UBB name, and an
+		// explicit camN whose INITDIAL UBB is "none" the name "none.ubb"
+		// (pickDialCam keeps that cam): the original's open fails: an error
+		// box, then the line is not played (DialogView::headOpenFails;
+		// atlantis-re experiment 2026-10-16-15).
 		// [UNKNOWN] for atlantis-cd-fr-688640: its own May CRYO.DLL returns 0,
 		// not -1, for the failed open (its _GL_CreateFile @ 0x004159a6), so
 		// FUN_00433038 does not see the failure and the UBB2 header reader
@@ -486,12 +498,18 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 		// (atlantis-re experiment 2026-10-18-04 E3).  The port keeps the
 		// behaviour below for this build too (decision 0020 D).
 		bool headFails = false;
+		// The name FUN_0042ee88 appends to "dialog\perso\" (0x0042ef9d..
+		// 0x0042effb): the parser's name + ".ubb", empty without a record.
+		Common::String ubbName;
 		if (!voiceOnly) {
 			Common::HashMap<int, DialInitEntry>::const_iterator it =
 			    _dialInitData.find(dialRow);
-			headFails = DialogView::headOpenFails(voiceOnly, it != _dialInitData.end());
-			if (it != _dialInitData.end()) {
-				Common::String fn = it->_value.camUBB[camNum - 2];
+			const bool haveRecord = it != _dialInitData.end();
+			const Common::String camUBB = haveRecord ? it->_value.camUBB[camNum - 2] : Common::String();
+			headFails = DialogView::headOpenFails(voiceOnly, haveRecord, camUBB);
+			if (haveRecord) {
+				ubbName = camUBB + ".ubb";
+				Common::String fn = camUBB;
 				if (!fn.empty() && !fn.equalsIgnoreCase("none")) {
 					fn.toUppercase();
 					vid = Common::String("PERSO\\") + fn + ".UBB";
@@ -523,8 +541,7 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 			_omni3dMan.setAlpha(shown.alpha);
 			_omni3dMan.setBeta(shown.beta);
 		}
-		// camNum=0 lands outside playSingleConLine's 2..5 range, so the FOV
-		// change is skipped while the line still plays as voiceover.
+		// camNum=0: the line plays as voiceover (no UBB, no head).
 		const int effCamNum = voiceOnly ? 0 : camNum;
 		_dialVoiceOff = voiceOnly && !_dialKeepScreen;
 		debugC(2, kDebugScript, "playConSection: speaker='%s' params='%s' persoId=%d "
@@ -537,21 +554,45 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 			// FUN_0042ee88 @ 0x0042f036..0x0042f048: the modal error box
 			// (dialog 0x65, code 0xc), then nothing of the line; the letter
 			// still counts (0x00428b21).
-			debugC(1, kDebugScript, "playConSection: section %d line %c: no INITDIAL row %d",
-			      sec.id, conTrackLetter(lineIdx), dialRow);
+			debugC(1, kDebugScript, "playConSection: section %d line %c: row %d cam %d, no UBB '%s'",
+			      sec.id, conTrackLetter(lineIdx), dialRow, camNum, ubbName.c_str());
 			// Not shown with the UI/UX enhancements (atlantis-re
 			// decisions/0016, row 7); the line is skipped either way.
 			if (!enhancementEnabled(kEnhUIUX)) {
-				GUI::MessageDialog box(Common::String(DialogView::kHeadOpenFailText), Common::String("OK"));
+				GUI::MessageDialog box(DialogView::headOpenFailText(ubbName), Common::String("OK"));
 				runDialog(box);
 			}
 			lineIdx++;
 		} else {
+			// The camera's FOV (kDialogCamFovDeg) is set only on the Seth path
+			// (0x004289ff..0x00428a14) and for ClicPerso >= 0x200
+			// (0x00428a9d..0x00428ada); a talking head with ClicPerso below
+			// 0x200 (CHAPI056 /744 A [Anna], ClicPerso 329) keeps the FOV of
+			// the last reset, 75.137 (DialogView::Line::camFov).  The
+			// voice-only players draw at 75.137 whatever was set (FUN_00430258
+			// @ 0x0043044c) or do not redraw the view (off0, off1).
+			const double savedHFov = _omni3dMan.getHFov();
+			const bool fovChanged = _warpLoaded && !voiceOnly && view.camFov;
+			if (fovChanged)
+				_omni3dMan.setHFov((double)kDialogCamFovDeg[camNum - 2] * M_PI / 180.0);
+			// off1: FUN_00430884 shows the screen buffer before the subtitle,
+			// once the voice has loaded (0x00430a12..0x00430ab8).
+			if (off1 && _ixVideoBuffers) {
+				Common::ScopedPtr<Common::SeekableReadStream> apc(openBigFileStream(kFileTypeSound,
+				    Common::String::format("ATA%04d%c.APC", sec.id, conTrackLetter(lineIdx))));
+				if (apc && g_system->getScreenFormat().bytesPerPixel == 2 &&
+				        g_system->getWidth() == 640 && g_system->getHeight() == 480) {
+					g_system->copyRectToScreen(_ixVideoBuffers, 640 * 2, 0, 0, 640, 480);
+					g_system->updateScreen();
+				}
+			}
 			playSingleConLine(sec.id, conTrackLetter(lineIdx++), item.line.text, vid,
 			                  spfBase,
 			                  /*hasAngle=*/false, 0, 0, effCamNum,
 			                  /*interactiveDialog=*/sec.isCon,
 			                  (!voiceOnly && !vid.empty()) ? dialRow : -1);
+			if (fovChanged)
+				_omni3dMan.setHFov(savedHFov);
 		}
 		_dialVoiceOff = false;
 		_gameVars["clicperso"] = 0;   // after every line (0x00428b39)
@@ -596,8 +637,12 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 	// of the walk, with its ClicPerso and angle restores, comes after it.
 	const bool chainGo = _currentCONChapter == entryChapter && sec.gotoId > 0 && !shouldAbort() &&
 	                     pendingGameOver == 0 && _abortCommand == kAbortNoAbort;
-	if (!chainGo)
+	if (!chainGo) {
+		// The given-object icon (0x0049619c) ends with the walk, whatever
+		// ran the section (0x00428c92, after the game-over call).
+		_dialogGivenObjSprite = -1;
 		_gameVars["clicperso"] = walk.clicPerso;   // 0x00428cb2
+	}
 	// The view goes back to the entry angles, except an axis whose
 	// ANGLEWARPX / ANGLEWARPY is non-zero: that one keeps the current angle
 	// and the variable is cleared (0x00428ccc..0x00428d68).  The warp loop
@@ -642,6 +687,7 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 			}
 			playConSection(target, &walk);
 		} else {
+			_dialogGivenObjSprite = -1;   // 0x00428c92
 			_gameVars["clicperso"] = walk.clicPerso;
 			restoreEntry();
 		}
@@ -699,14 +745,8 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 	const int screenW = (int)g_system->getWidth();
 	const int screenH = (int)g_system->getHeight();
 
-	// Per-cam FOV (zoom, kDialogCamFovDeg).  Save the current FOV so the
-	// panorama restores to its navigation default after the line.
-	const double savedHFov = _omni3dMan.getHFov();
-	bool fovChanged = false;
-	if (_warpLoaded && camNum >= 2 && camNum <= 5) {
-		_omni3dMan.setHFov((double)kDialogCamFovDeg[camNum - 2] * M_PI / 180.0);
-		fovChanged = true;
-	}
+	// The per-cam FOV (kDialogCamFovDeg) is the caller's: FUN_0042844c sets
+	// it before FUN_0042ee88, only on some paths (playConSection).
 
 	// Per-line panorama angle (data-driven; degrees → radians).
 	if (_warpLoaded && hasAngle) {
@@ -880,6 +920,11 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 	bool headTimeStarted = false, headEnded = false;
 	uint32 headTime0 = 0;
 #endif
+	// The voice has been started (FUN_0042ee88: 0x006ce108 != 0 once it is).
+	bool voiceStarted = false;
+	// The lip-sync ended (or failed) before the voice started: FUN_0042ee88
+	// leaves its loop before drawing (0x0042f47b..0x0042f48c -> 0x0042f6e3).
+	bool headCut = false;
 	if (talkingHead) {
 		_spritesHideNpcs = true;
 		recompositeSpriteLayer();
@@ -984,6 +1029,15 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 					// elapsed time is a multiple of 5
 					else if (head->lipsync((int32)((now - headTime0) / 5 * 5)) < 0)
 						headEnded = true;
+					// A negative lip-sync result (kept once it went
+					// negative) while the sample status 0x006ce108 is still
+					// 0, i.e. before the voice starts, ends the line with
+					// nothing drawn (0x0042f47b..0x0042f48c).  No shipped
+					// .syc ends that early.
+					if (headEnded && !voiceStarted) {
+						headCut = true;
+						return;
+					}
 					head->transform();
 					head->render((uint16 *)ubbConvFrame.getPixels(), ubbConvFrame.pitch / 2);
 				}
@@ -1081,11 +1135,22 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 
 	// The line lasts as long as its sound (atlantis.exe FUN_0042ee88 /
 	// FUN_00430258): it ends when the sample is done or on a left click
-	// (0x0049611c).  A line with a talking head runs with 0x00496188 set, so
-	// Escape also ends it (FUN_0041a298 @ 0x0041a3c0); the voice-only path
-	// FUN_00430258 clears that flag first.  Without its APC the original
-	// shows nothing and moves on (FUN_00430258 returns 0).
-	const bool escapeSkips = (camNum != 0);
+	// (0x0049611c).  Escape is read by FUN_0041a298 (videoSkipPoll): a line
+	// with a talking head runs with 0x00496188 set, so Escape ends it and
+	// sets the dialog-skip flag 0x00496134 (0x0041a3d2); the voice-only
+	// players (off, off0, off1, no .syc) clear 0x00496188 first, so Escape
+	// ends the line only when bow mode, the bar request and OBJETENMAIN are
+	// all 0 (0x00496124 = 0, 0x0041a419; their loops test it, e.g.
+	// 0x00430586), without the skip flag: the following lines play, and the
+	// players put 0x00496124 and 0x00496138 back (0x004305b7, 0x004305c1),
+	// so no menu opens.  Without its APC the original shows nothing and
+	// moves on (FUN_00430258 returns 0).
+	VideoSkipState escapePoll;
+	escapePoll.talkingHead = (camNum != 0);
+	escapePoll.bowMode = _bowMode;
+	escapePoll.objectInHand = _inventory.selectedObject() != nullptr ||
+	                          _gameVars.getValOrDefault("objetenmain", 0) != 0;
+	escapePoll.sectionPlay = _sectionPlay;
 
 	// One click/key skips only one line: drain a still-held skip from the
 	// previous line so this one watches for a fresh press.
@@ -1115,7 +1180,6 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 			// 0x0042f6a7; every shipped UBB has 10 frames or more, so the
 			// index gets there before a rewind).  The voice-only players
 			// start it at once.
-			bool voiceStarted = false;
 			auto startVoice = [&]() {
 				_mixer->playStream(Audio::Mixer::kSpeechSoundType, &handle, apc);
 				voiceStarted = true;
@@ -1132,6 +1196,8 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 			uint prevButton = getCurrentMouseButton();
 			while (!shouldAbort() && (!voiceStarted || _mixer->isSoundHandleActive(handle))) {
 				drawFrame();
+				if (headCut)
+					break;
 				if (!voiceStarted && ubbFramesShown >= 2)
 					startVoice();
 				pollEvents();
@@ -1141,11 +1207,16 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 				if (button == 2 && prevButton != 2)
 					BarSessionRules::rightPressed(_barSession, _sectionPlay, false);
 				prevButton = button;
-				const bool escape = escapeSkips && checkKeysPressed(1, Common::KEYCODE_ESCAPE);
+				// The bar request as the right presses left it.
+				escapePoll.barRequest = _barSession.request;
+				bool escape = false;
+				if (checkKeysPressed(1, Common::KEYCODE_ESCAPE))
+					escape = videoSkipPoll(escapePoll, false, false, true);
 				if (escape || getCurrentMouseButton() == 1) {
-					// Escape also sets the dialog-skip flag 0x00496134 that
-					// FUN_0042844c reads after the line (conEscapeSkip).
-					if (escape)
+					// With a talking head Escape also sets the dialog-skip
+					// flag 0x00496134 that FUN_0042844c reads after the
+					// line (conEscapeSkip).
+					if (escape && escapePoll.talkingHead)
 						_dialEscapeSkip = true;
 					if (voiceStarted)
 						_mixer->stopHandle(handle);
@@ -1174,8 +1245,6 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 		_spritesHideNpcs = false;
 		recompositeSpriteLayer();
 	}
-	if (fovChanged)
-		_omni3dMan.setHFov(savedHFov);
 }
 
 } // End of namespace Atlantis

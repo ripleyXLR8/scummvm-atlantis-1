@@ -11,7 +11,11 @@
 // Harness: atlantis-re/tools/emu/video_subtitles_en688128.py, golden
 // evidence/golden/video_subtitles_en688128.txt / .png (the original code run
 // under Unicorn on synthetic texts, on the 2540 dialog lines of the CON
-// files, and one subtitle rendered on a grey screen).
+// files, and one subtitle rendered on a grey screen).  The harness writes
+// " " + text + NUL + CR; the original stores only the NUL, the bytes after it
+// being zeros or stale text (subtitle_layout.cpp), so these goldens hold the
+// rows for that CR input, the port's model, not the history-dependent rows
+// of a played game (Fable pass 2 opus-gap3-builds-1997-en-fr#0).
 //
 // Port code exercised directly: splitSubtitleBitmap, subtitleLineYBitmap,
 // drawSubtitleBitmapRow (subtitle_layout.cpp).

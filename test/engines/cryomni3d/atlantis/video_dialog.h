@@ -4,7 +4,7 @@
 // Verifier "video", element 3: dialogs.
 //
 // Original code (atlantis-cd-en-714240):
-//   FUN_00428f58  speaker -> persoId chain (memcmp chain, last hit wins)
+//   FUN_00428f58  speaker -> persoId chain (strncmp FUN_0044a83f chain, last hit wins)
 //   FUN_0042844c  dialog line player: camera choice, Seth reverse shot
 //   FUN_0042ea18  DIALOG\INITDIAL.TXT parser
 //   FUN_0042ffe8  subtitle line breaker (100 characters), FUN_00430178 draw
@@ -72,7 +72,10 @@ namespace VideoDialogTest {
 // Value written to CLICPERSO by the ORIGINAL FUN_00428f58 for "[<token><suffix>",
 // emulated (tools/emu/video_dialog_speakers.py). Tokens are synthetic, built
 // from the literals of the chain; the suffix (']' or ',off]') does not change
-// the result for any of them.
+// the result for any of them.  The second block is the 29 chain literals no
+// other token reaches, each as a token (emulated 2026-10-21 with the
+// harness's make_emu / original, Fable pass 2 opus-gap3-dialog-data#3), so a
+// wrong literal, length or id in any of the 67 entries fails.
 struct SpeakerCase { const char *token; int original; };
 static const SpeakerCase kSpeakerCases[] = {
 	{ "Reinem", 561 }, { "Reinep", 562 }, { "Reine", 560 },
@@ -83,6 +86,14 @@ static const SpeakerCase kSpeakerCases[] = {
 	{ "Lona", 576 }, { "Agat", 520 }, { "Agatha", 520 }, { "Xyz", 0 },
 	{ "Anna", 663 }, { "Servante", 609 }, { "Servage", 582 }, { "JPil", 571 },
 	{ "jpil", 571 }, { "Garc", 526 }, { "Gardx", 604 }, { "Carv", 602 },
+	{ "agat", 520 }, { "lasc", 521 }, { "melj", 522 }, { "sorc", 567 },
+	{ "Pech", 524 }, { "pech", 524 }, { "acty", 524 }, { "creo", 525 },
+	{ "chas", 540 }, { "passant9", 602 }, { "carv", 602 }, { "passant6", 601 },
+	{ "passante7", 606 }, { "hect", 543 }, { "cuis", 551 }, { "rein", 560 },
+	{ "reinem", 561 }, { "reinep", 562 }, { "garc", 526 }, { "servan", 609 },
+	{ "servag", 582 }, { "chie", 650 }, { "anna", 663 }, { "escl", 597 },
+	{ "hona", 682 }, { "sama", 683 }, { "naka", 684 }, { "lona", 576 },
+	{ "gimb", 563 },
 };
 
 // ORIGINAL FUN_0042ffe8 line split of " " + input (the byte after ']' is kept),
@@ -106,16 +117,14 @@ public:
 	void tearDown() { Common::uninstall_null_g_system(); }
 
 	// Self-contained: synthetic speaker tokens, port's real
-	// resolveSpeakerPersoId with _heroPersoId = 512 (the value the port's
-	// loadDialInitData derives from the shipped INITDIAL.TXT, row "hero").
+	// resolveSpeakerPersoId.
 	// Expected: the ORIGINAL's result. The port's resolveSpeakerPersoId
 	// (con_exec.cpp, since ScummVM 7496685ded5) runs the original
-	// FUN_00428f58 chain in code order, memcmp case-sensitive, last hit wins,
-	// so Reinem -> 561, Reinep -> 562, Seth -> 514, and SOLD/sold/enne/GARD/
-	// SETH -> 0 as in the original; no case may differ.
+	// FUN_00428f58 chain in code order, strncmp (FUN_0044a83f) case-sensitive,
+	// last hit wins, so Reinem -> 561, Reinep -> 562, Seth -> 514, and
+	// SOLD/sold/enne/GARD/SETH -> 0 as in the original; no case may differ.
 	void test_speaker_synthetic_vs_original() {
 		VideoPeek::Eng *e = VideoPeek::rawEngine();
-		e->_heroPersoId = 512;
 		int diffs = 0;
 		for (uint i = 0; i < ARRAYSIZE(VideoDialogTest::kSpeakerCases); i++) {
 			const VideoDialogTest::SpeakerCase &c = VideoDialogTest::kSpeakerCases[i];
@@ -141,7 +150,6 @@ public:
 		VideoTest::Big big;
 		TS_ASSERT(!big.empty());
 		VideoPeek::Eng *e = VideoPeek::rawEngine();
-		e->_heroPersoId = 512;
 		Common::Array<Common::String> cons = big.names(".CON");
 		TS_ASSERT_EQUALS(cons.size(), 76u);
 		Common::HashMap<Common::String, bool> seen;
@@ -206,7 +214,6 @@ public:
 		TS_ASSERT_EQUALS(mounted, 4);
 		e->loadDialInitData();
 		TS_ASSERT_EQUALS(e->_dialInitData.size(), 67u);
-		TS_ASSERT_EQUALS(e->_heroPersoId, 512);
 
 		auto norm = [](const Common::String &s, const char *ext) {
 			Common::String r = s.empty() ? Common::String("none") : s;
@@ -250,10 +257,10 @@ public:
 	// nothing of the line; every other talking-head line opens its UBB.
 	// Golden video_dialog_line_view.txt (the ORIGINAL FUN_0042844c on every
 	// dialog line, atlantis-re tools/emu/video_dialog_line_view.py): its
-	// "orig head row R" lines must have a record in the port's real
-	// loadDialInitData, its "orig UBB open fails (row R" lines none, and
-	// DialogView::headOpenFails must pick exactly the latter (atlantis-re
-	// experiment 2026-10-16-15).
+	// "orig head row R camC" lines must have a record in the port's real
+	// loadDialInitData with a UBB for cam C, its "orig UBB open fails (row R"
+	// lines none, and DialogView::headOpenFails must pick exactly the latter
+	// (atlantis-re experiment 2026-10-16-15).
 	void test_head_open_fails_vs_original() {
 		using namespace CryOmni3D::Atlantis;
 		if (!AtlantisTest::haveData()) {
@@ -270,26 +277,92 @@ public:
 			e->_bigFile.open(Common::Path(Common::String::format("BIGCD%d.BIG", cd)));
 		e->loadDialInitData();
 		TS_ASSERT_EQUALS(e->_dialInitData.size(), 67u);
+		auto camUBB = [&](int row, int cam) {
+			return e->_dialInitData.contains(row) && cam >= 2 && cam <= 5
+			    ? e->_dialInitData[row].camUBB[cam - 2] : Common::String();
+		};
 		uint heads = 0, fails = 0, bad = 0;
 		for (uint g = 0; g < golden.size(); g++) {
 			const char *l = golden[g].c_str();
 			const char *h = strstr(l, "orig head row ");
 			const char *f = strstr(l, "orig UBB open fails (row ");
-			int row = 0;
-			if (h && sscanf(h, "orig head row %d", &row) == 1) {
+			int row = 0, cam = 0;
+			if (h && sscanf(h, "orig head row %d cam%d", &row, &cam) == 2) {
 				heads++;
-				if (DialogView::headOpenFails(false, e->_dialInitData.contains(row)))
+				if (DialogView::headOpenFails(false, e->_dialInitData.contains(row), camUBB(row, cam)))
 					bad++;
 			} else if (f && sscanf(f, "orig UBB open fails (row %d", &row) == 1) {
 				fails++;
-				if (!DialogView::headOpenFails(false, e->_dialInitData.contains(row)))
+				if (!DialogView::headOpenFails(false, e->_dialInitData.contains(row), Common::String()))
 					bad++;
 			}
 		}
 		TS_ASSERT_EQUALS(heads, 2048u);
 		TS_ASSERT_EQUALS(fails, 7u);
 		TS_ASSERT_EQUALS(bad, 0u);
-		TS_ASSERT(!DialogView::headOpenFails(true, false));   // voice-only: no UBB opened
+		// voice-only: no UBB opened
+		TS_ASSERT(!DialogView::headOpenFails(true, false, Common::String()));
+	}
+
+	// An explicit camN on a row whose INITDIAL UBB for that cam is "none":
+	// FUN_0042844c keeps the cam (0x004287cf skips the draw loops) and
+	// FUN_0042ee88 opens "dialog\perso\" + the stored name, which the
+	// ORIGINAL parser stores as "none.ubb" (golden video_dialog_initdial.txt,
+	// tools/emu/video_dialog_initdial.py); no archive member has that name,
+	// so the open fails as for a row without a record: error box, line not
+	// played, letter counted (0x0042f00f..0x0042f056, 0x00428b21).  Checked
+	// on every (row, cam) of the golden through the port's real
+	// loadDialInitData: a "none.ubb" cam fails, the others open a member of
+	// the archives.  No shipped explicit-cam line lands on a "none" cam.
+	void test_head_open_fails_on_none_cam() {
+		using namespace CryOmni3D::Atlantis;
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("no game data configured; skipping");
+			return;
+		}
+		AtlantisTest::Golden golden;
+		TS_ASSERT(AtlantisTest::loadGolden("video_dialog_initdial.txt", golden));
+		VideoPeek::Eng *e = VideoPeek::rawEngine();
+		new (&e->_bigFile) CryOmni3D::Atlantis::BigFileArchive();
+		new (&e->_dialInitData) Common::HashMap<int, VideoPeek::Eng::DialInitEntry>();
+		VideoPeek::addDataDirToSearchMan();
+		for (int cd = 1; cd <= 4; cd++)
+			e->_bigFile.open(Common::Path(Common::String::format("BIGCD%d.BIG", cd)));
+		e->loadDialInitData();
+		TS_ASSERT_EQUALS(e->_dialInitData.size(), 67u);
+		VideoTest::Big big;
+		uint noneCams = 0, bad = 0;
+		for (Common::HashMap<int, VideoPeek::Eng::DialInitEntry>::const_iterator it =
+		         e->_dialInitData.begin(); it != e->_dialInitData.end(); ++it) {
+			for (int cam = 2; cam <= 5; cam++) {
+				const Common::String key = Common::String::format("%d.ubb%d", it->_key, cam);
+				if (!golden.contains(key)) {
+					bad++;
+					continue;
+				}
+				const Common::String &orig = golden[key];   // the original's stored name
+				Common::String member = "DIALOG\\PERSO\\" + orig;
+				member.toUppercase();
+				uint32 size = 0;
+				byte *b = big.get(member, size);
+				const bool opens = b != nullptr;
+				delete[] b;
+				const bool fails = DialogView::headOpenFails(false, true, it->_value.camUBB[cam - 2]);
+				if (orig == "none.ubb")
+					noneCams++;
+				if (fails == opens) {
+					bad++;
+					TS_WARN((key + ": " + orig).c_str());
+				}
+				if (fails && DialogView::headOpenFailText(it->_value.camUBB[cam - 2] + ".ubb") !=
+				        Common::String(DialogView::kHeadOpenFailText) + orig)
+					bad++;
+			}
+		}
+		TS_ASSERT_EQUALS(noneCams, 16u);   // 16 of the golden's 268 cams
+		TS_ASSERT_EQUALS(bad, 0u);
+		// The box of a row without a record names "dialog\perso\" alone.
+		TS_ASSERT_EQUALS(DialogView::headOpenFailText(""), Common::String(DialogView::kHeadOpenFailText));
 	}
 
 	// The text of the error box shown for those lines, against the strings
@@ -410,10 +483,13 @@ public:
 		d.camUBB[3] = "pecan2c5";
 		e->_dialInitData[524] = d;
 		// Original and port (since ScummVM 7496685ded5): explicit cam2 is
-		// used as is, even though INITDIAL's UBB for cam2 is "none" (the
-		// original's load of "none.ubb" then fails).
+		// used as is, even though INITDIAL's UBB for cam2 is "none".  The
+		// original's load of "none.ubb" then fails: error box, nothing of
+		// the line, letter counted; the port does the same
+		// (DialogView::headOpenFails, test_head_open_fails_on_none_cam).
 		int cam = e->pickDialCam(524, 2);
 		TS_ASSERT_EQUALS(cam, 2);
+		TS_ASSERT(CryOmni3D::Atlantis::DialogView::headOpenFails(false, true, d.camUBB[cam - 2]));
 	}
 
 	void test_reine_forced_cam2() {

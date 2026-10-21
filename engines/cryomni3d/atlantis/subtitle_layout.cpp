@@ -68,7 +68,17 @@ void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::Strin
 	lines.clear();
 	// The buffer at 0x00603d68 (atlantis-cd-en-688128; atlantis-cd-fr-688640
 	// FUN_0042eab4, the same code, 0x00603ac0, emulated equal on its 2540
-	// French lines): the byte after ']' (a space), the text, then NUL and CR.
+	// French lines): the byte after ']' (a space), the text, then a NUL.
+	// The original stores only the NUL (atlantis-cd-en-688128 @
+	// 0x00427707..0x00427722, the executor; 0x00425a35..0x00425a50, the
+	// game-over text); the bytes after it are zeros (FUN_00422bd0's clear @
+	// 0x00422c58) or stale text of earlier, longer lines, never a CR.  So a
+	// forward scan that runs past the NUL depends on what was shown before
+	// [UNKNOWN] per line (about 32 of the 2540 English lines change rows).
+	// The port stops it as if a CR followed the NUL, as the emulation
+	// harnesses planted it (atlantis-re tools/emu/video_subtitles_en688128.py,
+	// video_subtitles_fr688640.py), and the goldens assume the same: a named
+	// difference (atlantis-re experiments 2026-10-18-01 and 2026-10-18-04).
 	const Common::String b = " " + text;
 	const int len = (int)b.size();
 	auto at = [&](int i) -> int {
@@ -112,12 +122,19 @@ void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::Strin
 			if (n <= 0) {
 				// No space after the row's first byte within the window:
 				// the original copies 0 bytes, keeps the remaining length
-				// and loops, writing NULs 0x55 bytes apart until it
-				// faults (emulated: atlantis-re
-				// evidence/golden/video_subtitles_sv688128.txt); what a
-				// real machine does is [UNKNOWN].  Not met by the shipped
-				// texts (the 2539 Swedish dialog lines).  The port cuts
-				// the run at the window end (decision 0023 D2).
+				// and loops, writing a NUL at each next row's start (0x55
+				// bytes apart).  Under emulation (atlantis-re
+				// evidence/golden/video_subtitles_sv688128.txt) it faults.
+				// When the row starts at the text's leading space (len 75,
+				// 81), the 9th NUL (row 8 = 0x00603f68) erases it, the
+				// backward scan runs below the text and strncpy gets a
+				// count 75 - b < 0 (fault in the harness's strncpy stub).
+				// When the row starts at a later space (len 86), the NULs
+				// go on until the write @ 0x0042eb78 faults.  What a real
+				// machine does is [UNKNOWN].  Not met by the shipped texts
+				// (the 2539 Swedish dialog lines).  The port cuts the run
+				// at the window end: kEnhGameBreakingBugFixes (undefined
+				// behaviour, decision 0016 R3 and row 26; decision 0023 D2).
 				n = 0x4b;
 				lines.push_back(b.substr(start, n));
 				start = p;
@@ -129,11 +146,18 @@ void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::Strin
 			}
 		} else if (f < k || 0x4b - k <= 0) {
 			// 0x0042ea4c: strncpy of 75 + f bytes (it stops at the NUL).
-			// The second test is the port's: with no space after the row's
-			// first byte and none within 75 bytes forward, the original
-			// copies 0 bytes and loops forever; not met by the shipped texts
-			// (atlantis-re experiment 2026-10-18-01, the scan of the 2540
-			// dialog lines).
+			// The second test is the port's: with b = 75 and f >= 75 the
+			// original copies 0 bytes and keeps start and the remaining
+			// length, but the row index grows (atlantis-cd-en-688128 @
+			// 0x0042eb06), so each pass stores a NUL at 0x00603ac0 + i *
+			// 0x55; the ninth pass NULs the text's first byte (0x00603d68)
+			// and the backward scan then runs below the buffer, an outcome
+			// that depends on memory [UNKNOWN] (emulated on 150 'x': 10
+			// rows, all empty).  The shipped texts never reach this case
+			// (the longest space-free run of the 2540 dialog lines is 16
+			// bytes; atlantis-re experiment 2026-10-18-01).  The port cuts
+			// at the forward space (75 + f), the choice decision 0023 D2
+			// made for the Swedish breaker.
 			n = 0x4b + f;
 			lines.push_back(b.substr(start, MIN(n, len - start)));
 			start = p + f;
@@ -147,12 +171,16 @@ void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::Strin
 		}
 		remaining -= n;
 	}
-	// The rows are stored 0x55 bytes apart (0x00603ac0 + i * 0x55) with no
-	// bound on their length: a row of 85 bytes or more runs into the next
-	// row's buffer, which the next row then overwrites, so it is drawn (up
-	// to the NUL) as its first 85 bytes followed by the next row.  The
-	// shipped rows are at most 81 bytes long; past 8 rows the buffers would
-	// overwrite the text itself (at most 5 in the data), not reproduced.
+	// The rows are stored 0x55 bytes apart (atlantis-cd-en-688128 @
+	// 0x00603ac0 + i * 0x55, atlantis-cd-fr-688640 @ 0x00603fc0 + i * 0x55)
+	// with no bound on their length: a row of 85 bytes or more runs into the
+	// next row's buffer, which the next row then overwrites, so it is drawn
+	// (up to the NUL) as its first 85 bytes followed by the next row.  The
+	// shipped rows are at most 81 bytes long.  Past 8 rows the buffers would
+	// overwrite the text itself in atlantis-cd-en-688128 and
+	// atlantis-cd-sv-688128 (text 0x2a8 bytes after the first row), or run
+	// past the end of the 0x500-byte text buffer in atlantis-cd-fr-688640
+	// (rows after the text); at most 5 rows in the data, not reproduced.
 	for (int i = (int)lines.size() - 2; i >= 0; i--)
 		if (lines[i].size() > 0x54)
 			lines[i] = lines[i].substr(0, 0x55) + lines[i + 1];
