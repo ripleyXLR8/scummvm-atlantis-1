@@ -125,10 +125,11 @@ const Graphics::Font *CryOmni3DEngine_Atlantis::subtitleFont() {
 	if (!_subtitleFontTried) {
 		_subtitleFontTried = true;
 		// The Chinese builds' "MingLi" font (subtitle_font.h): the player's
-		// MingLiU / SimSun, else Noto Serif or Noto Sans TC / SC, at 16
-		// pixels per em; drawSubtitleRows moves a Noto row by
-		// _subtitleYShift to put its ideographs where MingLiU's are.
-		// Without any, the GUI font below (Arial cannot draw them).
+		// MingLiU / SimSun, else Noto Serif (the player's, else the subset
+		// of fonts-atlantis.dat) or Noto Sans TC / SC, at 16 pixels per em;
+		// drawSubtitleRows moves a Noto row by _subtitleYShift to put its
+		// ideographs where MingLiU's are.  Without any, the GUI font below
+		// (Arial cannot draw them).
 		if (cjkSubtitleFaces(_exeBuild->conCodePage)) {
 			CjkSubtitleFontSource source;
 			_subtitleTTF = loadCjkSubtitleFont(_exeBuild->conCodePage, source);
@@ -138,7 +139,8 @@ const Graphics::Font *CryOmni3DEngine_Atlantis::subtitleFont() {
 				       _subtitleYShift);
 			} else {
 				warning("subtitleFont: no Chinese font (mingliu.ttc / simsun.ttc or Noto Serif TC / SC "
-				        "beside the game files, or fonts-cjk.dat): using the GUI font");
+				        "beside the game files, fonts-atlantis.dat or fonts-cjk.dat, with FreeType): "
+				        "using the GUI font");
 			}
 		} else {
 #ifdef USE_FREETYPE2

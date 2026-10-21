@@ -50,12 +50,18 @@ namespace Atlantis {
 //  1. the player's own font beside the game files (decision 0025 C1), its
 //     face of that family in the collection (sfntFaceIndex);
 //  2. Noto Serif TC / SC Regular (SIL OFL 1.1, the Ming / Song style of
-//     MingLiU / SimSun, the owner's fallback of decision 0025 C2), a file
-//     the player adds beside the game files (ScummVM does not ship it), or
-//     from the fonts archives should they ever hold it;
+//     MingLiU / SimSun, the owner's fallback of decision 0025 C2): the
+//     whole font if the player adds it beside the game files (or the fonts
+//     archives hold it), else the subset ScummVM ships in fonts-atlantis.dat
+//     (kCjkSubtitleBundledArchive: Noto Serif TC / SC 2.003 cut down to the
+//     characters the Chinese CDs' subtitle rows draw, the font Atlantis
+//     Native bundles; listed in engine_data.mk with the engine, so present
+//     wherever the engine is, unlike fonts-cjk.dat);
 //  3. Noto Sans TC / SC Regular from fonts-cjk.dat (ScummVM's CJK fonts,
 //     shipped where engine_data_big.mk is used).
-// All at 16 pixels per em, monochrome.
+// All at 16 pixels per em, monochrome.  Every source is an outline font:
+// a build without FreeType draws none of them (the GUI font then, which
+// has no CJK glyph).
 enum CjkSubtitleFontSource {
 	kCjkSubtitleFontNone = 0,
 	kCjkSubtitleFontPlayer,     // mingliu.ttc / simsun.ttc
@@ -67,8 +73,13 @@ struct CjkSubtitleFaces {
 	const char *playerFile;     // beside the game files
 	const char *playerFamily;   // its face in the collection
 	const char *serifFiles[2];  // Noto Serif, OpenType / TrueType outlines
+	const char *bundledFile;    // the Noto Serif subset in fonts-atlantis.dat
 	const char *sansFile;       // in fonts-cjk.dat
 };
+
+// The archive (a zip, found as the fonts archives are: the extra path, then
+// SearchMan) holding the bundled Noto Serif subsets.
+static const char *const kCjkSubtitleBundledArchive = "fonts-atlantis.dat";
 
 // The faces of a double-byte code page (kWindows950, kWindows936), null
 // for every other.

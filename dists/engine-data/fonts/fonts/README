@@ -1,9 +1,12 @@
-These are fonts used in ScummVM, and are included in the fonts.dat, fonts-cjk.dat and fonts-imgui.dat packages.
+These are fonts used in ScummVM, and are included in the fonts.dat, fonts-cjk.dat, fonts-imgui.dat and fonts-atlantis.dat packages.
 
 The Go Mono fonts (https://github.com/golang/image/blob/master/font/gofont/ttfs/README) are distributed under the license in COPYING.BSD.
 The Liberation fonts (https://github.com/liberationfonts) are distributed under the SIL Open Font License.
 The Material Design Icons (https://github.com/google/material-design-icons) files are distributed under the Apache 2.0 license.
 The Noto fonts (https://notofonts.github.io) are distributed under the SIL Open Font License.
+The fonts-atlantis files NotoSerifTC-Subset.otf and NotoSerifSC-Subset.otf are Noto Serif TC / SC Regular 2.003
+(https://github.com/notofonts/noto-cjk, release Serif2.003) subset to the characters of the Chinese Atlantis: The Lost
+Tales subtitles by Atlantis Native's assets/fonts/make_cjk_subset.py (https://github.com/ripleyXLR8/atlantis-native).
 The Source Code Variable font (https://fonts.adobe.com/fonts/source-code-variable) is distributed under the SIL Open Font License.
 The VL Gothic font (https://vlgothic.dicey.org)...
 The Wine fonts (https://gitlab.winehq.org/wine/wine/-/tree/master/fonts?ref_type=heads) are distributed under the GNU Lesser General Public License version 2.1 or later.

@@ -53,6 +53,7 @@ fonts.dat:
 	$(srcdir)/devtools/make-fonts-archive.py $(srcdir)/dists/engine-data/fonts/fonts $(srcdir)/dists/engine-data/fonts.dat
 	$(srcdir)/devtools/make-fonts-archive.py $(srcdir)/dists/engine-data/fonts/fonts-cjk $(srcdir)/dists/engine-data/fonts-cjk.dat
 	$(srcdir)/devtools/make-fonts-archive.py $(srcdir)/dists/engine-data/fonts/fonts-imgui $(srcdir)/dists/engine-data/fonts-imgui.dat
+	$(srcdir)/devtools/make-fonts-archive.py $(srcdir)/dists/engine-data/fonts/fonts-atlantis $(srcdir)/dists/engine-data/fonts-atlantis.dat
 
 #
 # Rules to explicitly rebuild the credits / MD5 tables.

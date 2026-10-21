@@ -49,6 +49,11 @@ This file contains set of free CJK fonts (or other big ones), used in our GUI an
 some engines. This file is intended to be big, thus, not suitable for ports with
 memory constraints.
 
+fonts-atlantis.dat:
+This file contains the subtitle fonts of the Chinese releases of Atlantis: The Lost
+Tales (cryomni3d engine): Noto Serif TC and SC Regular cut down to the characters
+those releases' subtitles draw, about 1 MB in all.
+
 fonts-imgui.dat:
 This file contains set of free symbol fonts (or other big ones), used by ImGui with
 some engines. This file is intended to be big, thus, not suitable for ports with

@@ -10,6 +10,9 @@ endif
 ifdef ENABLE_CRYOMNI3D
 DIST_FILES_LIST += dists/engine-data/cryomni3d.dat
 endif
+ifdef ENABLE_ATLANTIS
+DIST_FILES_LIST += dists/engine-data/fonts-atlantis.dat
+endif
 ifdef ENABLE_DARKSEED
 DIST_FILES_LIST += dists/engine-data/darkseed.dat
 endif

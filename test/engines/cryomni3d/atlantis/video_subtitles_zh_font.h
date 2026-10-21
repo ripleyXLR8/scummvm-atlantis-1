@@ -12,9 +12,13 @@
 //     0xffffff at (5, y), y = 0x1ce - (n - i + 1) x 18;
 //   - the port's font for code page 950 / 936 (subtitle_font.h): the
 //     player's mingliu.ttc / simsun.ttc face MingLiU / SimSun first, else
-//     Noto Serif TC / SC, else Noto Sans TC / SC from fonts-cjk.dat, at 16
+//     Noto Serif TC / SC (the player's file, else the subset shipped in
+//     fonts-atlantis.dat), else Noto Sans TC / SC from fonts-cjk.dat, at 16
 //     pixels per em, the Noto faces' ideographs in the 16-pixel cell under
 //     the row's y; every other build keeps Arial and its 14-px rows;
+//   - the subset has a glyph for every character of every row the
+//     breakers cut from the discs' dialog lines, with and without the minor
+//     bug fixes;
 //   - drawSubtitleRows of a zh-tw / zh-cn engine on the rows of the goldens
 //     (evidence/golden/video_subtitles_zh_tw.txt / zh_cn.txt, CHAPI001's
 //     first line, emulated): white and black only (monochrome), the shadow
@@ -25,13 +29,15 @@
 // cjkSubtitleYShift (subtitle_font.cpp), subtitleLineY (subtitle_layout.cpp),
 // CryOmni3DEngine_Atlantis::subtitleFont / subtitleRowY / subtitleRowStep /
 // drawSubtitleRows (engine.cpp) on zero-filled engine storage.  Fonts:
-// `src` in atlantis_test.cfg (dists/engine-data/fonts.dat, fonts-cjk.dat);
-// the player's face is a copy of Liberation Sans renamed MingLiU / SimSun
-// (no MingLiU / SimSun file is at hand), the player's Noto Serif a copy of
-// Noto Sans under Noto Serif's file name.  Real files: `zhtw`, `zhcn` for
+// `src` in atlantis_test.cfg (dists/engine-data/fonts.dat, fonts-cjk.dat,
+// fonts-atlantis.dat); the player's face is a copy of Liberation Sans
+// renamed MingLiU / SimSun (no MingLiU / SimSun file is at hand), the
+// player's whole Noto Serif a copy of Noto Sans under Noto Serif's file
+// name.  Real files: `zhtw`, `zhcn` for
 // the code bytes; `golden`.  Skipped where absent.
 
 #include "atlantis_test_helper.h"
+#include "ui_zh_breakers.h"
 #include "../../../system/null_osystem.h"
 
 #include "common/archive.h"
@@ -121,15 +127,20 @@ private:
 	Common::Array<Common::Array<byte> > _data;
 };
 
-inline bool engineDataInSearchMan() {
+inline Common::FSNode engineDataDir() {
 	const Common::String src = AtlantisTest::configValue("src");
-	if (src.empty())
+	return Common::FSNode(Common::Path(src.empty() ? Common::String("/nonexistent") : src + "/dists/engine-data", '/'));
+}
+
+// dists/engine-data in SearchMan: fonts.dat, fonts-cjk.dat and the bundled
+// fonts-atlantis.dat.
+inline bool engineDataInSearchMan() {
+	const Common::FSNode dir = engineDataDir();
+	if (!dir.getChild("fonts.dat").exists() || !dir.getChild("fonts-cjk.dat").exists() ||
+	        !dir.getChild(kCjkSubtitleBundledArchive).exists())
 		return false;
-	Common::FSNode dir(Common::Path(src + "/dists/engine-data", '/'));
-	if (!dir.getChild("fonts.dat").exists() || !dir.getChild("fonts-cjk.dat").exists())
-		return false;
-	if (!SearchMan.hasArchive("zh_font_engine_data"))
-		SearchMan.addDirectory("zh_font_engine_data", dir);
+	SearchMan.remove("zh_font_engine_data");
+	SearchMan.addDirectory("zh_font_engine_data", dir);
 	return true;
 }
 
@@ -145,6 +156,29 @@ inline Common::Array<byte> datMember(const char *dat, const char *name) {
 	out.resize((uint)s->size());
 	s->read(out.data(), out.size());
 	return out;
+}
+
+// fonts.dat and fonts-cjk.dat alone in SearchMan, as on a system with the
+// big engine data but without fonts-atlantis.dat.
+inline bool engineDataWithoutBundled(MemArchive *&out) {
+	out = nullptr;
+	const Common::FSNode dir = engineDataDir();
+	MemArchive *a = new MemArchive();
+	const char *const files[2] = { "fonts.dat", "fonts-cjk.dat" };
+	for (uint i = 0; i < 2; i++) {
+		Common::File f;
+		if (!f.open(dir.getChild(files[i]))) {
+			delete a;
+			return false;
+		}
+		Common::Array<byte> data((uint)f.size());
+		f.read(data.data(), data.size());
+		a->add(files[i], data);
+	}
+	SearchMan.remove("zh_font_engine_data");
+	SearchMan.add("zh_font_engine_data", a);
+	out = a;
+	return true;
 }
 
 inline uint16 be16(const Common::Array<byte> &b, uint32 o) { return (uint16)(b[o] << 8 | b[o + 1]); }
@@ -292,11 +326,14 @@ public:
 		TS_ASSERT_EQUALS(Common::String(tc->playerFile), "mingliu.ttc");
 		TS_ASSERT_EQUALS(Common::String(tc->playerFamily), "MingLiU");
 		TS_ASSERT_EQUALS(Common::String(tc->serifFiles[0]), "NotoSerifTC-Regular.otf");
+		TS_ASSERT_EQUALS(Common::String(tc->bundledFile), "NotoSerifTC-Subset.otf");
 		TS_ASSERT_EQUALS(Common::String(tc->sansFile), "NotoSansTC-Regular.otf");
 		TS_ASSERT_EQUALS(Common::String(sc->playerFile), "simsun.ttc");
 		TS_ASSERT_EQUALS(Common::String(sc->playerFamily), "SimSun");
 		TS_ASSERT_EQUALS(Common::String(sc->serifFiles[0]), "NotoSerifSC-Regular.otf");
+		TS_ASSERT_EQUALS(Common::String(sc->bundledFile), "NotoSerifSC-Subset.otf");
 		TS_ASSERT_EQUALS(Common::String(sc->sansFile), "NotoSansSC-Regular.otf");
+		TS_ASSERT_EQUALS(Common::String(kCjkSubtitleBundledArchive), "fonts-atlantis.dat");
 		TS_ASSERT(!cjkSubtitleFaces(Common::kWindows1252));
 		TS_ASSERT(!cjkSubtitleFaces(Common::kDos850));
 		for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++) {
@@ -370,6 +407,8 @@ public:
 		const char *const families[2] = { "MingLiU", "SimSun" };
 		const char *const serifs[2] = { "NotoSerifTC-Regular.otf", "NotoSerifSC-Regular.otf" };
 		const char *const sans[2] = { "NotoSansTC-Regular.otf", "NotoSansSC-Regular.otf" };
+		const char *const bundled[2] = { "NotoSerifTC-Subset.otf", "NotoSerifSC-Subset.otf" };
+		const char *const serifFamilies[2] = { "Noto Serif TC", "Noto Serif SC" };
 		const Common::Array<byte> liberation = datMember("fonts.dat", "LiberationSans-Regular.ttf");
 		const Common::Array<byte> mono = datMember("fonts.dat", "LiberationMono-Regular.ttf");
 		TS_ASSERT(!liberation.empty() && !mono.empty());
@@ -377,9 +416,39 @@ public:
 			const Common::Array<byte> noto = datMember("fonts-cjk.dat", sans[k]);
 			TS_ASSERT(!noto.empty());
 			CjkSubtitleFontSource source;
-			// fonts-cjk.dat alone: Noto Sans, ascent ceil(1160 x 16 / 1000) = 19,
-			// its ideographs moved 5 px up
+			// The engine data as shipped: the Noto Serif subset of
+			// fonts-atlantis.dat (the font itself, its family Noto Serif
+			// TC / SC), ascent ceil(1151 x 16 / 1000) = 19, its ideographs
+			// moved 5 px up, 16 px per em
+			TS_ASSERT(engineDataInSearchMan());
+			const Common::Array<byte> subset = datMember(kCjkSubtitleBundledArchive, bundled[k]);
+			TS_ASSERT_EQUALS(sfntFaceIndex(subset.data(), subset.size(), serifFamilies[k]), 0);
 			Common::ScopedPtr<Graphics::Font> f(loadCjkSubtitleFont(pages[k], source));
+			TS_ASSERT(f);
+			TS_ASSERT_EQUALS(source, kCjkSubtitleFontSerif);
+			if (f) {
+				TS_ASSERT_EQUALS(f->getFontAscent(), 19);
+				TS_ASSERT_EQUALS(cjkSubtitleYShift(*f, source), -5);
+				TS_ASSERT_EQUALS(f->getCharWidth(0x6211), 16);
+				// a character no subtitle row draws is not in the subset
+				TS_ASSERT_EQUALS(f->getCharWidth(0x0416), 0);
+			}
+			// a whole Noto Serif beside the game files before the subset
+			// (here Noto Sans under its name: it has the Cyrillic Zhe)
+			{
+				MemArchive *player = new MemArchive();
+				player->add(serifs[k], noto);
+				SearchMan.add("zh_font_player", player);
+				f.reset(loadCjkSubtitleFont(pages[k], source));
+				TS_ASSERT_EQUALS(source, kCjkSubtitleFontSerif);
+				TS_ASSERT(f && f->getCharWidth(0x0416) > 0);
+				SearchMan.remove("zh_font_player");
+			}
+			// fonts-cjk.dat without fonts-atlantis.dat: Noto Sans, ascent
+			// ceil(1160 x 16 / 1000) = 19, its ideographs moved 5 px up
+			MemArchive *data = nullptr;
+			TS_ASSERT(engineDataWithoutBundled(data));
+			f.reset(loadCjkSubtitleFont(pages[k], source));
 			TS_ASSERT(f);
 			TS_ASSERT_EQUALS(source, kCjkSubtitleFontSans);
 			if (f) {
@@ -476,7 +545,9 @@ public:
 			dst.fillRect(Common::Rect(640, 480), bg);
 			e->drawSubtitleRows(dst, rows, 0, 630);
 			TS_ASSERT(e->_subtitleTTF);
-			TS_ASSERT_EQUALS(e->_subtitleYShift, -5);   // Noto Sans from fonts-cjk.dat
+			// the Noto Serif subset of fonts-atlantis.dat
+			TS_ASSERT(e->_subtitleTTF && e->_subtitleYShift == kCjkSubtitleNotoAscent - e->_subtitleTTF->getFontAscent());
+			TS_ASSERT_EQUALS(e->_subtitleYShift, -5);
 			const uint n = rows.size();
 			uint whites = 0;
 			bool onlyThree = true, shadowed = true;
@@ -492,11 +563,13 @@ public:
 						onlyThree = false;
 						continue;
 					}
-					// which row's cell (y .. y + 15, its shadow one lower)
+					// which row's cell (y .. y + 15, its shadow one lower;
+					// Noto Serif SC's full-width comma reaches one pixel
+					// under the em box: y + 17, short of the next row's y + 18)
 					int row = -1;
 					for (uint r = 0; r < n; r++) {
 						const int top = 0x1ce - (int)(n - r + 1) * 18;
-						if (y >= top && y <= top + 16)
+						if (y >= top && y <= top + 17)
 							row = (int)r;
 					}
 					if (row < 0) {
@@ -523,6 +596,63 @@ public:
 			for (uint r = 0; r < n; r++)
 				TSM_ASSERT(goldens[k], rowMaxX[r] > 5 + 16 * ((int)chars[r] - 1) && rowMaxX[r] < 5 + 16 * (int)chars[r]);
 			freeEngine(e);
+		}
+	}
+
+	// The bundled subset draws every character of every row the engine cuts
+	// from the discs' dialog lines (splitSubtitleCjk, with and without the
+	// minor bug fixes, zh-cn's out-of-step rows included): no character the
+	// code page decodes lacks a glyph.
+	void test_bundled_subset_covers_every_row() {
+		using namespace ZhFont;
+		if (!engineDataInSearchMan()) { TS_WARN("src (dists/engine-data) not configured; skipped"); return; }
+		const char *const keys[2] = { "zhtw", "zhcn" };
+		const CjkBreaker breakers[2] = { kCjkBreakerBig5, kCjkBreakerGb2312 };
+		const Common::CodePage pages[2] = { Common::kWindows950, Common::kWindows936 };
+		for (uint k = 0; k < 2; k++) {
+			const Common::String dir = AtlantisTest::configValue(keys[k]);
+			if (dir.empty()) { TS_WARN(Common::String::format("%s not configured; skipped", keys[k]).c_str()); continue; }
+			CjkSubtitleFontSource source;
+			Common::ScopedPtr<Graphics::Font> f(loadCjkSubtitleFont(pages[k], source));
+			TS_ASSERT(f);
+			TS_ASSERT_EQUALS(source, kCjkSubtitleFontSerif);
+			if (!f)
+				continue;
+			VideoTest::Big big(dir);
+			TS_ASSERT(!big.empty());
+			Common::Array<Common::String> cons = big.names(".CON");
+			uint lines = 0, chars = 0, missing = 0;
+			Common::String firstMissing;
+			for (uint c = 0; c < cons.size(); c++) {
+				uint32 size = 0;
+				byte *b = big.get(cons[c], size);
+				if (!b)
+					continue;
+				Common::Array<Common::String> texts;
+				VideoSubEn1997::conDialogTexts(b, size, texts);
+				delete[] b;
+				for (uint t = 0; t < texts.size(); t++, lines++) {
+					for (int fixes = 0; fixes < 2; fixes++) {
+						Common::Array<Common::String> rows;
+						UiZhBreakers::engineRows(texts[t], breakers[k], fixes, rows);
+						for (uint r = 0; r < rows.size(); r++) {
+							const Common::U32String u(rows[r], pages[k]);
+							for (uint i = 0; i < u.size(); i++) {
+								if (u[i] == 0xfffd)
+									continue;   // a byte that does not decode
+								chars++;
+								if (f->getCharWidth(u[i]) <= 0) {
+									if (!missing++)
+										firstMissing = Common::String::format("%s U+%04X", cons[c].c_str(), (uint)u[i]);
+								}
+							}
+						}
+					}
+				}
+			}
+			TS_ASSERT_EQUALS(lines, 2542u);
+			TS_ASSERT(chars > 100000);
+			TSM_ASSERT_EQUALS(firstMissing.c_str(), missing, 0u);
 		}
 	}
 

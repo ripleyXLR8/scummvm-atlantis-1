@@ -23,9 +23,13 @@
 
 #include "common/archive.h"
 #include "common/array.h"
+#include "common/compression/unzip.h"
+#include "common/config-manager.h"
 #include "common/endian.h"
+#include "common/fs.h"
 #include "common/memstream.h"
 #include "common/path.h"
+#include "common/ptr.h"
 #include "common/stream.h"
 #include "common/ustr.h"
 #include "common/util.h"
@@ -40,11 +44,13 @@ const CjkSubtitleFaces *cjkSubtitleFaces(Common::CodePage codePage) {
 	static const CjkSubtitleFaces kTraditional = {
 		"mingliu.ttc", "MingLiU",
 		{ "NotoSerifTC-Regular.otf", "NotoSerifTC-Regular.ttf" },
+		"NotoSerifTC-Subset.otf",
 		"NotoSansTC-Regular.otf"
 	};
 	static const CjkSubtitleFaces kSimplified = {
 		"simsun.ttc", "SimSun",
 		{ "NotoSerifSC-Regular.otf", "NotoSerifSC-Regular.ttf" },
+		"NotoSerifSC-Subset.otf",
 		"NotoSansSC-Regular.otf"
 	};
 	switch (codePage) {
@@ -165,6 +171,35 @@ byte *sfntFace(const byte *data, uint32 size, uint index, uint32 &outSize) {
 	return out;
 }
 
+#ifdef USE_FREETYPE2
+// The member `name` of the zip `archiveName` as a font: the archive from the
+// extra path first, then SearchMan, as Graphics::loadTTFFontFromArchive
+// finds fonts.dat; the member read whole, so the archive is closed here.
+static Graphics::Font *loadFontFromZip(const char *archiveName, const char *name) {
+	Common::SeekableReadStream *zipStream = nullptr;
+	if (ConfMan.hasKey("extrapath")) {
+		Common::FSDirectory extrapath(ConfMan.getPath("extrapath"));
+		zipStream = extrapath.createReadStreamForMember(Common::Path(archiveName));
+	}
+	if (!zipStream)
+		zipStream = SearchMan.createReadStreamForMember(Common::Path(archiveName));
+	Common::ScopedPtr<Common::Archive> zip(Common::makeZipArchive(zipStream));
+	if (!zip)
+		return nullptr;
+	Common::ScopedPtr<Common::SeekableReadStream> member(
+	    zip->createReadStreamForMember(Common::Path(name, Common::Path::kNoSeparator)));
+	if (!member)
+		return nullptr;
+	Common::SeekableReadStream *copy = member->readStream((uint32)member->size());
+	if (!copy || copy->size() != member->size()) {
+		delete copy;
+		return nullptr;
+	}
+	return Graphics::loadTTFFont(copy, DisposeAfterUse::YES, kCjkSubtitleEmPx, Graphics::kTTFSizeModeCharacter,
+	                             0, 0, Graphics::kTTFRenderModeMonochrome);
+}
+#endif
+
 Graphics::Font *loadCjkSubtitleFont(Common::CodePage codePage, CjkSubtitleFontSource &source) {
 	source = kCjkSubtitleFontNone;
 	const CjkSubtitleFaces *faces = cjkSubtitleFaces(codePage);
@@ -191,7 +226,8 @@ Graphics::Font *loadCjkSubtitleFont(Common::CodePage codePage, CjkSubtitleFontSo
 			return font;
 		}
 	}
-	// 2. Noto Serif beside the game files, then in the fonts archives.
+	// 2. Noto Serif beside the game files, then in the fonts archives, then
+	// the subset in fonts-atlantis.dat.
 	for (uint i = 0; i < ARRAYSIZE(faces->serifFiles) && !font; i++) {
 		if (Common::SeekableReadStream *s = SearchMan.createReadStreamForMember(Common::Path(faces->serifFiles[i])))
 			font = Graphics::loadTTFFont(s, DisposeAfterUse::YES, kCjkSubtitleEmPx, Graphics::kTTFSizeModeCharacter,
@@ -201,6 +237,8 @@ Graphics::Font *loadCjkSubtitleFont(Common::CodePage codePage, CjkSubtitleFontSo
 		font = Graphics::loadTTFFontFromArchive(faces->serifFiles[i], kCjkSubtitleEmPx,
 		                                        Graphics::kTTFSizeModeCharacter, 0, 0,
 		                                        Graphics::kTTFRenderModeMonochrome);
+	if (!font)
+		font = loadFontFromZip(kCjkSubtitleBundledArchive, faces->bundledFile);
 	if (font) {
 		source = kCjkSubtitleFontSerif;
 		return font;
