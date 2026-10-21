@@ -48,13 +48,14 @@ Common::String epiEpisodeName(const byte *text, uint32 size, uint chapter);
 // and 5 in the 1997 builds, whose marker is "New Player" or its translation,
 // exe_build.h, and whose rows end at the marker only, an empty name being a
 // row: emptyNameEndsRows false, exe_build.h emptyNameEndsPlayerRows); 114
-// bytes in the Chinese builds (a 102-byte names block, 6 and 6).  An
-// empty-named row read that way is left empty here, the port's absent
+// bytes in the Chinese builds (namesBlock 102, exe_build.h
+// playersNamesBlock: a 102-byte names block, 6 and 6), only those there.
+// An empty-named row read that way is left empty here, the port's absent
 // player.  Returns false for neither.
 bool readPlayersFile(Common::SeekableReadStream &in, Common::String players[kSaveMaxPlayers],
                      int chapters[kSaveMaxPlayers],
                      const Common::String &newPlayerMarker = "#New Player",
-                     bool emptyNameEndsRows = true);
+                     bool emptyNameEndsRows = true, uint namesBlock = 85);
 // Write the port's own players file.
 void writePlayersFile(Common::WriteStream &out, const Common::String players[kSaveMaxPlayers],
                       const int chapters[kSaveMaxPlayers]);
@@ -67,7 +68,7 @@ bool checkpointWritten(uint chapter);
 // The save-file letters of an original players.atl (`p<letter><N>.gam`).
 bool readOriginalPlayersLetters(Common::SeekableReadStream &in, char letters[kSaveMaxPlayers],
                                 const Common::String &newPlayerMarker = "#New Player",
-                                bool emptyNameEndsRows = true);
+                                bool emptyNameEndsRows = true, uint namesBlock = 85);
 
 // An original checkpoint p<L><N>.gam (atlantis-re formats/ui-gam.md, checked
 // on 74 real files): the fields the port restores.

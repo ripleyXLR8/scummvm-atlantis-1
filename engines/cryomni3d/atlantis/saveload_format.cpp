@@ -46,8 +46,18 @@ static const uint32 kOrigPlayersSizeFr = 95;   // 1997 builds: 5 and 5 (the Engl
 static const uint32 kOrigPlayersSizeZh = 114;
 static const uint32 kOrigPlayersNamesZh = 102;
 
-static bool isOriginalPlayersSize(uint32 size) {
-	return size == kOrigPlayersSize || size == kOrigPlayersSizeFr || size == kOrigPlayersSizeZh;
+// The sizes an original players.atl of a build with a names block of
+// `namesBlock` bytes is read at.  Each build's WinMain reads its own layout
+// whatever the file's size (the reference 85 + 6 + 6, atlantis-cd-en-714240
+// `push 0x55` @ 0x00419219, then 6 and 6 bytes @ 0x00419236, 0x00419253;
+// zh-tw 0x66 + 6 + 6, `push 0x66` @ 0x0041921a,
+// then 6 bytes into 0x006be142 @ 0x00419237 and 6 into 0x006be148 @
+// 0x00419254); the port tells the 2001 and 1997 layouts apart by size, as
+// before, and reads the Chinese one only in the Chinese builds.
+static bool isOriginalPlayersSize(uint32 size, uint namesBlock) {
+	if (namesBlock == kOrigPlayersNamesZh)
+		return size == kOrigPlayersSizeZh;
+	return size == kOrigPlayersSize || size == kOrigPlayersSizeFr;
 }
 
 Common::String epiEpisodeName(const byte *text, uint32 size, uint chapter) {
@@ -77,10 +87,11 @@ Common::String epiEpisodeName(const byte *text, uint32 size, uint chapter) {
 
 static bool readOriginalPlayersAtl(Common::SeekableReadStream &in, Common::String players[kSaveMaxPlayers],
                                    int chapters[kSaveMaxPlayers], char letters[kSaveMaxPlayers],
-                                   const Common::String &newPlayerMarker, bool emptyNameEndsRows) {
+                                   const Common::String &newPlayerMarker, bool emptyNameEndsRows,
+                                   uint namesBlock) {
 	byte b[kOrigPlayersSizeZh];
 	const uint32 size = (uint32)(in.size() - in.pos());
-	if (!isOriginalPlayersSize(size))
+	if (!isOriginalPlayersSize(size, namesBlock))
 		return false;
 	if (in.read(b, size) != size)
 		return false;
@@ -113,7 +124,7 @@ static bool readOriginalPlayersAtl(Common::SeekableReadStream &in, Common::Strin
 
 bool readPlayersFile(Common::SeekableReadStream &in, Common::String players[kSaveMaxPlayers],
                      int chapters[kSaveMaxPlayers], const Common::String &newPlayerMarker,
-                     bool emptyNameEndsRows) {
+                     bool emptyNameEndsRows, uint namesBlock) {
 	for (uint i = 0; i < kSaveMaxPlayers; i++) {
 		players[i].clear();
 		chapters[i] = 0;
@@ -136,9 +147,9 @@ bool readPlayersFile(Common::SeekableReadStream &in, Common::String players[kSav
 		}
 		return true;
 	}
-	if (!isOriginalPlayersSize((uint32)(in.size() - start)) || !in.seek(start))
+	if (!isOriginalPlayersSize((uint32)(in.size() - start), namesBlock) || !in.seek(start))
 		return false;
-	return readOriginalPlayersAtl(in, players, chapters, nullptr, newPlayerMarker, emptyNameEndsRows);
+	return readOriginalPlayersAtl(in, players, chapters, nullptr, newPlayerMarker, emptyNameEndsRows, namesBlock);
 }
 
 void writePlayersFile(Common::WriteStream &out, const Common::String players[kSaveMaxPlayers],
@@ -159,10 +170,11 @@ bool checkpointWritten(uint chapter) {
 }
 
 bool readOriginalPlayersLetters(Common::SeekableReadStream &in, char letters[kSaveMaxPlayers],
-                                const Common::String &newPlayerMarker, bool emptyNameEndsRows) {
+                                const Common::String &newPlayerMarker, bool emptyNameEndsRows,
+                                uint namesBlock) {
 	Common::String players[kSaveMaxPlayers];
 	int chapters[kSaveMaxPlayers];
-	return readOriginalPlayersAtl(in, players, chapters, letters, newPlayerMarker, emptyNameEndsRows);
+	return readOriginalPlayersAtl(in, players, chapters, letters, newPlayerMarker, emptyNameEndsRows, namesBlock);
 }
 
 bool parseOriginalCheckpoint(const byte *b, uint32 size, OrigCheckpoint &cp) {

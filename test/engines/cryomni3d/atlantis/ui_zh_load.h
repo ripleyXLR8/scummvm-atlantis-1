@@ -357,19 +357,57 @@ public:
 				Common::String names[5];
 				int chapters[5];
 				Common::MemoryReadStream in(blob, sizeof(blob));
-				TS_ASSERT(readPlayersFile(in, names, chapters, "New Player", tw.emptyNameEndsPlayerRows));
+				TS_ASSERT(readPlayersFile(in, names, chapters, "New Player", tw.emptyNameEndsPlayerRows,
+				                          tw.playersNamesBlock));
 				for (uint p = 0; p < 5 && rows.size() == 6 && goldChapters.size() == 6; p++) {
 					TS_ASSERT_EQUALS(names[p], p < players ? rows[p] : Common::String());
 					TS_ASSERT_EQUALS(chapters[p], p < players ? goldChapters[p] : 0);
 				}
 				char letters[5];
 				Common::MemoryReadStream in2(blob, sizeof(blob));
-				TS_ASSERT(readOriginalPlayersLetters(in2, letters, "New Player", tw.emptyNameEndsPlayerRows));
+				TS_ASSERT(readOriginalPlayersLetters(in2, letters, "New Player", tw.emptyNameEndsPlayerRows,
+				                                     tw.playersNamesBlock));
 				for (uint p = 0; p < 5; p++)
 					TS_ASSERT_EQUALS(letters[p], kCases[c].letters[p]);
 			}
+			// Every other build (names block 85) refuses the 114-byte file,
+			// as before the Chinese builds: its WinMain would read it as 85 +
+			// 6 + 6 bytes, not this layout.
+			for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++) {
+				const AtlantisExeBuild &b = kAtlantisExeBuilds[i];
+				if (b.playersNamesBlock == tw.playersNamesBlock)
+					continue;
+				Common::String names[5];
+				int chapters[5];
+				char letters[5];
+				Common::MemoryReadStream in(blob, sizeof(blob)), in2(blob, sizeof(blob));
+				TSM_ASSERT(b.name, !readPlayersFile(in, names, chapters, "New Player", b.emptyNameEndsPlayerRows,
+				                                    b.playersNamesBlock));
+				TSM_ASSERT(b.name, !readOriginalPlayersLetters(in2, letters, "New Player", b.emptyNameEndsPlayerRows,
+				                                               b.playersNamesBlock));
+			}
 		}
 		TS_ASSERT_EQUALS(found, 3u);
+		// The Chinese builds read only that layout: a 97-byte (2001) or
+		// 95-byte (1997) file is refused there (zh-tw's WinMain would read
+		// its chapters and letters from past the file's end), and still read
+		// by a build with the 85-byte block.
+		const uint sizes[2] = { 97, 95 };
+		for (uint k = 0; k < 2; k++) {
+			byte blob[97];
+			memset(blob, 0, sizeof(blob));
+			memcpy(blob, "Alice", 5);
+			memcpy(blob + 17, "New Player", 10);
+			blob[85] = 4;
+			Common::String names[5];
+			int chapters[5];
+			Common::MemoryReadStream in(blob, sizes[k]), in2(blob, sizes[k]);
+			TS_ASSERT(!readPlayersFile(in, names, chapters, "New Player", tw.emptyNameEndsPlayerRows,
+			                           tw.playersNamesBlock));
+			TS_ASSERT(readPlayersFile(in2, names, chapters, "New Player", tw.emptyNameEndsPlayerRows, 85));
+			TS_ASSERT_EQUALS(names[0], "Alice");
+			TS_ASSERT_EQUALS(chapters[0], 4);
+		}
 	}
 };
 

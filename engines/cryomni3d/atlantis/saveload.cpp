@@ -235,7 +235,8 @@ void CryOmni3DEngine_Atlantis::importOriginalSaves() {
 		if (!orig)
 			return;
 		const bool ok = readOriginalPlayersLetters(*orig, letters, _newPlayerMarker,
-		                                           _exeBuild->emptyNameEndsPlayerRows);
+		                                           _exeBuild->emptyNameEndsPlayerRows,
+		                                           _exeBuild->playersNamesBlock);
 		delete orig;
 		if (!ok)
 			return;
@@ -612,7 +613,8 @@ void CryOmni3DEngine_Atlantis::loadPlayers() {
 		in = _saveFileMan->openForLoading(kOrigPlayersFile);
 	if (!in)
 		return;
-	if (!readPlayersFile(*in, _players, _playerChapter, _newPlayerMarker, _exeBuild->emptyNameEndsPlayerRows))
+	if (!readPlayersFile(*in, _players, _playerChapter, _newPlayerMarker, _exeBuild->emptyNameEndsPlayerRows,
+	                     _exeBuild->playersNamesBlock))
 		warning("loadPlayers: unrecognised players file");
 	delete in;
 }
