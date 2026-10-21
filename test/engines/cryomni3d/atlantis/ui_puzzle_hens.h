@@ -285,6 +285,57 @@ public:
 			TS_ASSERT_EQUALS(out[i], want[i]);
 	}
 
+	// The marks across two runs: FUN_004441e8's set-up writes only their
+	// first short, so a second run keeps the last run's x / y, and the drop
+	// animation of the next win moves mark 0 from there.  Expected: the
+	// original under emulation (atlantis-re tools/emu/ui_puzzle1_hens.py
+	// --marks -> golden ui_puzzle1_hens_marks.txt).
+	void test_marks_carry_over() {
+		using namespace UiHens;
+		if (AtlantisTest::goldenDir().empty()) {
+			TS_WARN("ui_puzzle_hens: no golden directory configured, skipped");
+			return;
+		}
+		Common::Array<Common::String> golden;
+		TS_ASSERT(AtlantisTest::loadGoldenLines("ui_puzzle1_hens_marks.txt", golden));
+		Common::String wantMarks, wantDrop;
+		for (uint i = 0; i < golden.size(); i++) {
+			if (golden[i].hasPrefix("second run marks: "))
+				wantMarks = golden[i].substr(18);
+			else if (golden[i].hasPrefix("second run drop x: "))
+				wantDrop = golden[i].substr(19);
+		}
+		TS_ASSERT(!wantMarks.empty() && !wantDrop.empty());
+		Rules r;
+		for (int i = 0; i < Rules::kNumMarks; i++) {
+			r.marks[i].shown = 1;
+			r.marks[i].x = (int16)(262 + 20 * i);
+			r.marks[i].y = 457;
+		}
+		r.reset();
+		Common::String marks;
+		for (int i = 0; i < Rules::kNumMarks; i++)
+			marks += Common::String::format("%s(%d,%d,%d)", i ? " " : "", r.marks[i].shown, r.marks[i].x, r.marks[i].y);
+		TS_ASSERT_EQUALS(marks, wantMarks);
+		struct DropLog : Rules::Animator {
+			Rules *r;
+			Common::String xs;
+			void frame(int a, int b, int c) override {
+				if (b == 0 && c == 0 && r->marks[0].y >= 397 && r->marks[0].y <= 412)
+					xs += Common::String::format("%s%d", xs.empty() ? "" : " ", r->marks[0].x);
+			}
+		} log;
+		log.r = &r;
+		r.animator = &log;
+		for (int n = 2; n < 9; n++)
+			r.hens[n].target = n;
+		Rules::Sound snd[2];
+		r.click(420, 360, snd);
+		TS_ASSERT_EQUALS(snd[0], Rules::kSoundWin);
+		TS_ASSERT_EQUALS(log.xs, wantDrop);
+		r.animator = nullptr;
+	}
+
 	// The only solution (hen n on target n, second button) weighed four
 	// times solves the puzzle; a corner click asks to leave.
 	void test_solve_and_leave() {

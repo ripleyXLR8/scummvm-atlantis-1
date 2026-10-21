@@ -33,6 +33,14 @@ namespace Atlantis {
 static const int kScreenW = 640;
 static const int kScreenH = 480;
 
+// FUN_004441e8 clears only the marks' shown shorts (0x0044425a..0x00444275):
+// their x and y (0x00496e92 / 0x00496e94 + 6i, image 307, 399) carry over
+// from the last run in the process, as in the exe's memory.  A won weighing
+// draws its mark's drop at the x left there.
+static HensRules::Mark g_lastMarks[HensRules::kNumMarks] = {
+	{ 0, 307, 399 }, { 0, 307, 399 }, { 0, 307, 399 }, { 0, 307, 399 }
+};
+
 HensPuzzle::HensPuzzle(CryOmni3DEngine_Atlantis *engine)
 	: _engine(engine), _working(nullptr), _loaded(false) {
 	bool ok = loadPuzzleTGA(engine, "PUZPOUL1.TGA", _bgPixels);
@@ -40,6 +48,10 @@ HensPuzzle::HensPuzzle(CryOmni3DEngine_Atlantis *engine)
 	ok = loadPuzzleSpr(engine, "PUZPOUL1.SPR", _spr1) && ok;
 	ok = loadPuzzleSpr(engine, "PUZPOUL2.SPR", _spr2) && ok;
 	_loaded = ok;
+	for (int i = 0; i < HensRules::kNumMarks; i++) {
+		_rules.marks[i].x = g_lastMarks[i].x;
+		_rules.marks[i].y = g_lastMarks[i].y;
+	}
 	_rules.animator = this;
 }
 
@@ -134,6 +146,11 @@ int HensPuzzle::run() {
 	g_system->lockMouse(false);
 	_engine->showMouse(false);   // the cursor is drawn into the frame
 
+	// kSoundLose plays 0x007739e8, which this puzzle never loads: nothing.
+	// If puzzle 4 ran earlier in the process the record still points at
+	// flip7.wav's pool buffer, overwritten by PUZPOUL2.SPR, and the exe
+	// decodes sprite bytes as sound (a stale pointer, undefined behaviour,
+	// not reproduced; atlantis-re functions/puzzles-FUN_004441e8.md).
 	static const char *const kSounds[] = { nullptr, "POULE1", "POULE2", "POULE3", "POULE4", "POULE5", nullptr };
 	int result = 0;
 	bool prevButton = (_engine->getCurrentMouseButton() != 0);
@@ -163,6 +180,8 @@ int HensPuzzle::run() {
 			result = 255;
 	}
 	_engine->showMouse(true);
+	for (int i = 0; i < HensRules::kNumMarks; i++)
+		g_lastMarks[i] = _rules.marks[i];
 	return result;
 }
 

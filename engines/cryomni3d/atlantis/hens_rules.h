@@ -59,9 +59,20 @@ public:
 	int16 marked;         // 0x00496d1a: the loop ends at 4
 	bool leave;           // 0x004974c0 = 1
 
-	HensRules() : animator(nullptr) { reset(); }
+	HensRules() : animator(nullptr) {
+		// The marks' x and y are static data that no set-up writes: the
+		// image values 307, 399 (bytes 33 01 8f 01 at 0x00496e92 + 6i).
+		for (int i = 0; i < kNumMarks; i++) {
+			marks[i].x = 307;
+			marks[i].y = 399;
+		}
+		reset();
+	}
 
-	// FUN_004441e8's set-up, with the records of the image.
+	// FUN_004441e8's set-up (0x00444200..0x00444287), with the records of
+	// the image.  It writes only the first short of each record: the marks
+	// keep their x and y, in the exe the last run's (HensPuzzle carries
+	// them over).
 	void reset() {
 		static const Hen kHens[kNumHens] = {
 			{ 0, 0, 0, 0, 0 }, { 1, 41, 0, 0, 0 }, { 0, 20, 163, 447, 0 },
@@ -71,11 +82,8 @@ public:
 		};
 		for (int n = 0; n < kNumHens; n++)
 			hens[n] = kHens[n];
-		for (int i = 0; i < kNumMarks; i++) {
-			marks[i].shown = 0;
-			marks[i].x = 307;
-			marks[i].y = 399;
-		}
+		for (int i = 0; i < kNumMarks; i++)
+			marks[i].shown = 0;   // 0x0044425a..0x00444275
 		carried = 0;
 		won = 0;
 		marked = 0;

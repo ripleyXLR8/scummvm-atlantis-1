@@ -43,8 +43,9 @@ public:
 	explicit HensPuzzle(CryOmni3DEngine_Atlantis *engine);
 	~HensPuzzle() override;
 
-	// 255 when solved, 2 when the player leaves (DAT_00496d14 / 00496d10),
-	// 1 when an asset is missing (DAT_00496d0c).
+	// 255 when solved, 2 when the player leaves (DAT_00496d14 / 00496d10).
+	// Port only: 1 when an asset is missing; FUN_004441e8 tests none of its
+	// loads (0x0044429a..0x0044431c; FUN_0043c8d8 always returns 1).
 	int run();
 
 private:

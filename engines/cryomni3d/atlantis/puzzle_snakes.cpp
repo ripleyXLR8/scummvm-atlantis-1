@@ -43,7 +43,7 @@ SnakesPuzzle::SnakesPuzzle(CryOmni3DEngine_Atlantis *engine)
 	: _engine(engine), _loaded(false) {
 	bool ok = loadPuzzleTGA(engine, "LABBASE4.TGA", _bgPixels);
 	ok = loadPuzzleSpr(engine, "SERPNEW.SPR", _frames) && ok;
-	// FUN_0043a53c opens <root>puzzles\chemin00.PCX with cryo.dll's
+	// FUN_0043a53c opens puzzles\chemin00.PCX with cryo.dll's
 	// _GL_CreateFile, which serves it from the BIG files.
 	Common::ScopedPtr<Common::SeekableReadStream> pcx(
 	    engine->openBigFileStream(kFileTypePuzzles, "CHEMIN00.PCX"));
@@ -84,7 +84,8 @@ void SnakesPuzzle::drawCursor(Graphics::ManagedSurface &out, int mouseX, int mou
 
 // FUN_0043c114: 20 steps of 100 ticks of the 200 Hz timer 0x006ce118
 // (500 ms), the pieces shown every other step (from the second), drawn
-// before the snakes; no cursor.
+// before the snakes; no cursor in the 20 steps (the entry adds it once
+// after them, see run()).
 void SnakesPuzzle::winAnimation(Graphics::ManagedSurface &out) {
 	bool hidden = true;
 	for (int step = 0x14; step != 0 && !_engine->shouldAbort(); step--) {
@@ -125,8 +126,12 @@ void SnakesPuzzle::playSound(SnakesRules::Sound s) {
 // then phase 2 (FUN_0043c6bc); each frame FUN_0043bebc then the cursor
 // FUN_0043c7e8.  A leave click ends phase 2 before the frame (the result
 // test at 0x0043b392 follows FUN_0043c6bc), phase 1 after it: its loop
-// draws, presents and polls the input before testing the result at
-// 0x0043b34e.
+// draws, presents and polls the input (0x0043b344) before testing the
+// result at 0x0043b34e, and leaves through the phase-2 loop head
+// (0x0043b384), which runs FUN_0043c6bc on a press taken by that poll
+// before the result is returned (0x0043b392).  A win (FUN_0043c114 inside
+// FUN_0043bebc) is followed by the cursor and one more present in both
+// loops.
 int SnakesPuzzle::run() {
 	if (!_loaded)
 		return 1;
@@ -154,14 +159,31 @@ int SnakesPuzzle::run() {
 		if (_rules.frame(m.x, m.y)) {
 			playSound(SnakesRules::kSoundWin);
 			winAnimation(working);
-			break;
+			// FUN_0043bebc returns after FUN_0043c114 and the entry goes on
+			// with the cursor (FUN_0043c7e8, 0x0043b28c / 0x0043b3b2) drawn
+			// onto the 20th step still in the back buffer, then presents it
+			// (0x0043b33f / 0x0043b465) before its result test.  Not render():
+			// the 20th step draws the pieces before the snakes.
+			drawCursor(working, m.x, m.y);
+		} else {
+			render(working);
+			drawCursor(working, m.x, m.y);
 		}
-		render(working);
-		drawCursor(working, m.x, m.y);
 		g_system->copyRectToScreen(working.getPixels(), working.pitch, 0, 0, kScreenW, kScreenH);
 		g_system->updateScreen();
-		if (_rules.result != 0)
-			break;   // phase 1 leaves after the frame
+		if (_rules.result != 0) {
+			if (phase1) {
+				// The poll at 0x0043b344 precedes the test at 0x0043b34e,
+				// whose exit goes through the phase-2 loop head: a new press
+				// is run by FUN_0043c6bc (0x0043b384..0x0043b38d) before the
+				// result is returned (0x0043b392).
+				_engine->pollEvents();
+				const Common::Point m2 = _engine->getMousePos();
+				if (_engine->getCurrentMouseButton() == 1 && !prevButton)
+					playSound(_rules.steer(m2.x, m2.y));
+			}
+			break;   // phase 1 leaves after the frame, a win after its last frame
+		}
 		g_system->delayMillis(15);
 	}
 	_engine->showMouse(true);

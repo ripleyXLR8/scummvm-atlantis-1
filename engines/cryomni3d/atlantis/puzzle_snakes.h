@@ -42,8 +42,10 @@ class SnakesPuzzle {
 public:
 	explicit SnakesPuzzle(CryOmni3DEngine_Atlantis *engine);
 
-	// 255 when solved, 1 when the player leaves (DAT_00496d14 / 00496d0c),
-	// 1 when an asset is missing.
+	// 255 when solved, 1 when the player leaves (DAT_00496d14 / 00496d0c).
+	// Port only: 1 when an asset is missing; the entry's one load test
+	// (FUN_0043a53c, 0x0043b200..0x0043b210) never fails, FUN_0043a53c
+	// always returning 1.
 	int run();
 
 private:
