@@ -50,6 +50,7 @@
 #include "cryomni3d/atlantis/engine.h"
 #include "cryomni3d/atlantis/omni3d.h"
 #include "cryomni3d/atlantis/place_loop_vars.h"
+#include "cryomni3d/atlantis/subtitle_font.h"
 #include "cryomni3d/atlantis/subtitle_layout.h"
 #include "cryomni3d/atlantis/video_skip.h"
 
@@ -123,6 +124,23 @@ CryOmni3DEngine_Atlantis::CryOmni3DEngine_Atlantis(OSystem *syst,
 const Graphics::Font *CryOmni3DEngine_Atlantis::subtitleFont() {
 	if (!_subtitleFontTried) {
 		_subtitleFontTried = true;
+		// The Chinese builds' "MingLi" font (subtitle_font.h): the player's
+		// MingLiU / SimSun, else Noto Serif or Noto Sans TC / SC, at 16
+		// pixels per em; drawSubtitleRows moves a Noto row by
+		// _subtitleYShift to put its ideographs where MingLiU's are.
+		// Without any, the GUI font below (Arial cannot draw them).
+		if (cjkSubtitleFaces(_exeBuild->conCodePage)) {
+			CjkSubtitleFontSource source;
+			_subtitleTTF = loadCjkSubtitleFont(_exeBuild->conCodePage, source);
+			if (_subtitleTTF) {
+				_subtitleYShift = cjkSubtitleYShift(*_subtitleTTF, source);
+				debugC(1, kDebugScript, "subtitleFont: CJK font from source %d, y shift %d", (int)source,
+				       _subtitleYShift);
+			} else {
+				warning("subtitleFont: no Chinese font (mingliu.ttc / simsun.ttc or Noto Serif TC / SC "
+				        "beside the game files, or fonts-cjk.dat): using the GUI font");
+			}
+		}
 #ifdef USE_FREETYPE2
 		// atlantis.exe FUN_0041ae20: CreateFontA(16, ..., "Arial"), a cell height
 		// of 16, which Windows 98 renders at 13 pixels per em without smoothing
@@ -131,14 +149,16 @@ const Graphics::Font *CryOmni3DEngine_Atlantis::subtitleFont() {
 		// would compute 14.  Arial is the player's own (arial.ttf with the game
 		// files, as the Buried and ZVision engines do); otherwise Liberation Sans,
 		// metric-compatible with it.
-		if (Common::SeekableReadStream *arial = SearchMan.createReadStreamForMember("arial.ttf"))
-			_subtitleTTF = Graphics::loadTTFFont(arial, DisposeAfterUse::YES, 13,
-			                                     Graphics::kTTFSizeModeCharacter, 0, 0,
-			                                     Graphics::kTTFRenderModeMonochrome);
-		if (!_subtitleTTF)
-			_subtitleTTF = Graphics::loadTTFFontFromArchive("LiberationSans-Regular.ttf", 13,
-			                                                 Graphics::kTTFSizeModeCharacter, 0, 0,
-			                                                 Graphics::kTTFRenderModeMonochrome);
+		else {
+			if (Common::SeekableReadStream *arial = SearchMan.createReadStreamForMember("arial.ttf"))
+				_subtitleTTF = Graphics::loadTTFFont(arial, DisposeAfterUse::YES, 13,
+				                                     Graphics::kTTFSizeModeCharacter, 0, 0,
+				                                     Graphics::kTTFRenderModeMonochrome);
+			if (!_subtitleTTF)
+				_subtitleTTF = Graphics::loadTTFFontFromArchive("LiberationSans-Regular.ttf", 13,
+				                                                 Graphics::kTTFSizeModeCharacter, 0, 0,
+				                                                 Graphics::kTTFRenderModeMonochrome);
+		}
 #endif
 		if (!_subtitleTTF)
 			debugC(1, kDebugScript, "subtitleFont: LiberationSans unavailable, using the GUI font");
@@ -160,11 +180,13 @@ void CryOmni3DEngine_Atlantis::subtitleRows(const Common::String &text, Common::
 }
 
 int CryOmni3DEngine_Atlantis::subtitleRowY(uint i, uint n) const {
-	return _exeBuild->bitmapSubtitles ? subtitleLineYBitmap(i, n) : subtitleLineY(i, n);
+	return _exeBuild->bitmapSubtitles ? subtitleLineYBitmap(i, n) : subtitleLineY(i, n, subtitleRowStep());
 }
 
 int CryOmni3DEngine_Atlantis::subtitleRowStep() const {
-	return _exeBuild->bitmapSubtitles ? kSubtitleBitmapRowStep : 14;
+	// FUN_00430178 14; atlantis-cd-zh-tw-696832 FUN_0042f798 and
+	// atlantis-cd-zh-cn-692736 FUN_0042f774 18 (exe_build.h subtitleRowStep)
+	return _exeBuild->bitmapSubtitles ? kSubtitleBitmapRowStep : _exeBuild->subtitleRowStep;
 }
 
 bool CryOmni3DEngine_Atlantis::subtitleFontReady() {
@@ -212,11 +234,17 @@ void CryOmni3DEngine_Atlantis::drawSubtitleRows(Graphics::ManagedSurface &dst,
 	// rows are decoded with the build's CON code page (exe_build.h
 	// conCodePage), never Windows-1252 for the DOS code page texts of
 	// atlantis-cd-fr-688640 (decision 0020 A1), should they reach this path.
+	// The Chinese builds draw the same way (atlantis-cd-zh-tw-696832
+	// FUN_0042f798: black at (6, y + 1) @ 0x0042f7e2..0x0042f80a, white
+	// 0xffffff at (5, y) @ 0x0042f80f..0x0042f835; atlantis-cd-zh-cn-692736
+	// FUN_0042f774 @ 0x0042f7be..0x0042f811), rows 18 px apart, the bytes in
+	// code page 950 / 936 drawn as Unicode with the CJK font (subtitleFont,
+	// _subtitleYShift).
 	const Graphics::Font *font = subtitleFont();
 	if (!font)
 		return;
 	for (uint i = 0; i < rows.size(); i++) {
-		const int y = subtitleLineY(i, rows.size()) + offY;
+		const int y = subtitleRowY(i, rows.size()) + offY + _subtitleYShift;
 		const Common::U32String row(rows[i], _exeBuild->conCodePage);
 		font->drawString(&dst, row, kSubtitleX + 1, y + 1, widthBudget, black, Graphics::kTextAlignLeft);
 		font->drawString(&dst, row, kSubtitleX, y, widthBudget, white, Graphics::kTextAlignLeft);

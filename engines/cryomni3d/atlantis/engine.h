@@ -849,8 +849,12 @@ private:
 	// Liberation Sans from fonts.dat, at 13 px monochrome (Windows 98 renders
 	// cell 16 at 13 ppem without smoothing), falling back to the built-in GUI
 	// font without FreeType.
+	// The Chinese builds (exe_build.h conCodePage 950 / 936) take the CJK
+	// font of subtitle_font.h instead; a Noto face's rows are drawn
+	// _subtitleYShift pixels lower (cjkSubtitleYShift; 0 otherwise).
 	Graphics::Font *_subtitleTTF = nullptr;
 	bool _subtitleFontTried = false;
+	int _subtitleYShift = 0;
 	const Graphics::Font *subtitleFont();
 	// The 1997 build's subtitle font DIALOG\FONTS.BIN (exe_build.h
 	// bitmapSubtitles; atlantis-cd-en-688128 loads it at start-up,

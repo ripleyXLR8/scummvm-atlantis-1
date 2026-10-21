@@ -82,6 +82,7 @@ MODULE_OBJS += \
 	atlantis/sprite_anim.o \
 	atlantis/sprite_decode.o \
 	atlantis/sprite_renderer.o \
+	atlantis/subtitle_font.o \
 	atlantis/subtitle_layout.o \
 	atlantis/toolbar.o \
 	atlantis/wam_parser.o \

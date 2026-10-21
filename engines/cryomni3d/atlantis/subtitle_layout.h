@@ -37,9 +37,10 @@ namespace Atlantis {
 void splitSubtitle(const Common::String &text, Common::Array<Common::String> &lines);
 
 // atlantis.exe FUN_00430178: line i of n is drawn at x = 5,
-// y = 0x1ce - (n - i + 1) * 14 (white, black shadow at +1, +1).
+// y = 0x1ce - (n - i + 1) * 14 (white, black shadow at +1, +1); `step` 18
+// in the Chinese builds (exe_build.h subtitleRowStep).
 static const int kSubtitleX = 5;
-int subtitleLineY(uint i, uint n);
+int subtitleLineY(uint i, uint n, int step = 14);
 
 // The subtitle text buffer of the bitmap-subtitle builds of 1997
 // (exe_build.h bitmapSubtitles): atlantis-cd-en-688128 0x00603d68,

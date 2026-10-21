@@ -60,8 +60,8 @@ void splitSubtitle(const Common::String &text, Common::Array<Common::String> &li
 	} while (remaining > 0);
 }
 
-int subtitleLineY(uint i, uint n) {
-	return 0x1ce - (int)(n - i + 1) * 14;
+int subtitleLineY(uint i, uint n, int step) {
+	return 0x1ce - (int)(n - i + 1) * step;
 }
 
 void SubtitleTextBuffer::clear() {
