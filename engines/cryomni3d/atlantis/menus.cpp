@@ -45,6 +45,7 @@
 #include "cryomni3d/atlantis/ambient_output.h"
 #include "cryomni3d/atlantis/engine.h"
 #include "cryomni3d/atlantis/gameover.h"
+#include "cryomni3d/atlantis/load_list.h"
 #include "cryomni3d/atlantis/sprite_blend.h"
 
 namespace CryOmni3D {
@@ -772,6 +773,20 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 	(void)outSaveName;
 	// FUN_0041cf78 step 1: FONTMIN / FONTMIN2 loaded from the current disc.
 	loadFontMinSprites();
+	// The sprite-row builds load EPICHI1 / EPICHI2 after them, from the same
+	// disc, and leave the picker with 0 when one is missing
+	// (atlantis-cd-zh-tw-696832 FUN_0041ce00 @ 0x0041cefb..0x0041cfdc;
+	// exe_build.h loadList).  Every disc of both releases holds the same
+	// two files.
+	const bool spriteRows = _exeBuild->loadList.mode == kLoadListSprites;
+	Common::Array<SubjSprite> rowBanks[2];
+	if (spriteRows) {
+		for (uint b = 0; b < 2; b++) {
+			loadFontSpriteSet(_exeBuild->loadList.banks[b], rowBanks[b], true);
+			if (rowBanks[b].empty())
+				return 0;
+		}
+	}
 
 	// FUN_00420b48: rows at x 55 (0x37), baseline 130 (0x82) + 22 i; the hit
 	// grid is FUN_004211f0 with FUN_0041cf78's arguments (0x0041d362): cell
@@ -841,8 +856,16 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 	// stores the current chapter in it again.
 	// See atlantis-re: functions/ui-FUN_0041cf78.md.
 	const bool havePlayer = _currentPlayer >= 0 && _currentPlayer < (int)kMaxPlayers;
+	// The sprite-row builds store the chapter table's byte of the list
+	// entry instead, whatever the file (load_list.h loadListChapter): a row
+	// loads its own checkpoint only while the player's checkpoints are the
+	// table's first chapters without a gap.
 	auto chooseRow = [&](int entry) {
-		if (havePlayer)
+		if (!havePlayer)
+			return;
+		if (spriteRows)
+			_playerChapter[_currentPlayer] = loadListChapter((uint)entry, _loadListChapters, _loadListWidths);
+		else
 			_playerChapter[_currentPlayer] = saves[entry].localSlot;
 	};
 	auto byteSlot = [&]() -> uint {
@@ -877,6 +900,10 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 	// (0x0041d431..0x0041d44d, 0x0041d4a8).
 	Common::String title;
 	int titleX = 0;
+	// The sprite-row builds draw the chosen entry's EPICHI2 frame instead
+	// (loadListTitleBlit), under the same test of the EPI.TXT line
+	// (0x0041d452..0x0041d476).
+	int titleEntry = -1;
 
 	Graphics::ManagedSurface surf(640, 480, fmt);
 	Common::Array<Common::Rect> hitRects;
@@ -913,6 +940,7 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 		}
 		if (selected >= 0 && (k.keycode == Common::KEYCODE_UP || k.keycode == Common::KEYCODE_DOWN)) {
 			title = saves[selected].name;
+			titleEntry = selected;
 			titleX = (640 - fontMinLoadListWidth(title, _creditCharWidths, enhancementEnabled(kEnhMinorBugFixes))) / 2;
 		}
 
@@ -958,6 +986,7 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 			selected = rowHover;
 			chooseRow(selected);
 			title = saves[selected].name;
+			titleEntry = selected;
 			titleX = (640 - fontMinLoadListWidth(title, _creditCharWidths, enhancementEnabled(kEnhMinorBugFixes))) / 2;
 		}
 		// 0x0041d4ad: once a title is shown, the double-click flag ends the
@@ -1016,13 +1045,27 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 
 		surf.blitFrom(bg);
 		renderMenuLayout(surf, layout, btnHover, hitRects);
-		for (int i = 0; i + scroll < (int)saves.size() && i < kVisible; i++) {
-			int entry = scroll + i;
-			drawPlayerText(surf, saves[entry].name, kListX, kListY0 + i * kRowStep,
-			               entry == rowHover, kFontMinLoadList);
+		if (spriteRows) {
+			// FUN_004205a4 and FUN_004208bc mode 1 (load_list.h); the blit
+			// draws nothing past a bank's frames (0x00410462).
+			Common::Array<LoadListBlit> blits;
+			loadListRowBlits((uint)saves.size(), (uint)scroll, rowHover >= 0 ? rowHover - scroll : -1, blits);
+			LoadListBlit t;
+			if (!title.empty() && titleEntry >= 0 && loadListTitleBlit((uint)titleEntry, _loadListWidths, t))
+				blits.push_back(t);
+			for (const LoadListBlit &b : blits) {
+				if (b.frame < rowBanks[b.bank].size())
+					drawSprite(surf, rowBanks[b.bank][b.frame], b.x, b.y);
+			}
+		} else {
+			for (int i = 0; i + scroll < (int)saves.size() && i < kVisible; i++) {
+				int entry = scroll + i;
+				drawPlayerText(surf, saves[entry].name, kListX, kListY0 + i * kRowStep,
+				               entry == rowHover, kFontMinLoadList);
+			}
+			if (!title.empty())
+				drawPlayerText(surf, title, titleX, 0x50, true, kFontMinNameField);
 		}
-		if (!title.empty())
-			drawPlayerText(surf, title, titleX, 0x50, true, kFontMinNameField);
 		g_system->copyRectToScreen(surf.getPixels(), surf.pitch, 0, 0, 640, 480);
 		g_system->updateScreen();
 		g_system->delayMillis(10);

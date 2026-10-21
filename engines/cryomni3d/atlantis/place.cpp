@@ -51,6 +51,7 @@
 #include "cryomni3d/atlantis/video_skip.h"
 #include "cryomni3d/atlantis/engine.h"
 #include "cryomni3d/atlantis/inventory.h"
+#include "cryomni3d/atlantis/load_list.h"
 
 namespace CryOmni3D {
 namespace Atlantis {
@@ -406,6 +407,10 @@ void CryOmni3DEngine_Atlantis::playTransitionVideo(const Common::String &videoNa
 	}
 
 	decoder->start();
+	// The video loop stores the tick counter as the video's start
+	// (atlantis-cd-zh-tw-696832 0x004865a4 @ 0x0041bdc0), which the CINEMA
+	// captions are timed from (cinemaCaptionFrame).
+	const uint32 videoStartMs = g_system->getMillis();
 
 	// FUN_0043259c between the HNM open (FUN_00448c70) and the play loop,
 	// for a move (FUN_00423ad8); a cinematic keeps the last steps.
@@ -444,6 +449,20 @@ void CryOmni3DEngine_Atlantis::playTransitionVideo(const Common::String &videoNa
 	uint spfFrameIdx = 0;
 	bool firstFrame = true;
 	Graphics::ManagedSurface composite;  // per-frame scratch when sprites are active
+	// The CINEMA captions (exe_build.h cinemaCaptions): drawn by the frame
+	// presenter atlantis-cd-zh-tw-696832 FUN_0041afa0 on its 16-bit path
+	// while the last CINEMA= value 0x004865a1 is the build's cinema
+	// (@ 0x0041b105), after the frame's copy to the surface (@ 0x0041b100),
+	// so not into the frame's buffer: a copy of their own here.  The bank is
+	// loaded only around the CINEMA command's video (con_exec.cpp).  In the
+	// original a later video, with the value still set, would blit from the
+	// freed bank (0x006bd868 = 0) once 6 s into it; whether one lasts that
+	// long is [UNKNOWN]; nothing is drawn here then.
+	const AtlantisCinemaCaptions &captions = _exeBuild->cinemaCaptions;
+	const bool captionsOn = captions.cinema != 0 && _cinemaCaptionValue == captions.cinema &&
+	                        !_cinemaCaptionSprites.empty() && fmt.bytesPerPixel == 2;
+	uint8 captionFrame = 0;   // 0x004865a0, 0 at the CINEMA= command (@ 0x00429fbe)
+	Graphics::ManagedSurface captioned;
 	// FUN_0041bc74's frame control (video_skip.h VideoSkipRun): a poll after
 	// each presented frame but the last; after the poll that ends the video
 	// the next frame is still presented.  Space is not read.
@@ -539,6 +558,19 @@ void CryOmni3DEngine_Atlantis::playTransitionVideo(const Common::String &videoNa
 					}
 				}
 
+				uint captionDrawn = 0;
+				if (captionsOn && cinemaCaptionFrame(captions, (g_system->getMillis() - videoStartMs) / 5,
+				                                     captionFrame, captionDrawn) &&
+				        captionDrawn < _cinemaCaptionSprites.size()) {
+					if (captioned.w != toBlit->w || captioned.h != toBlit->h || captioned.format != fmt) {
+						captioned.free();
+						captioned.create(toBlit->w, toBlit->h, fmt);
+					}
+					captioned.blitFrom(*toBlit);
+					drawSprite(captioned, _cinemaCaptionSprites[captionDrawn], captions.x, captions.y);
+					toBlit = captioned.surfacePtr();
+				}
+
 				g_system->copyRectToScreen(toBlit->getPixels(), toBlit->pitch,
 				                           0, 0, toBlit->w, toBlit->h);
 				g_system->updateScreen();
@@ -577,6 +609,7 @@ void CryOmni3DEngine_Atlantis::playTransitionVideo(const Common::String &videoNa
 	for (Common::SeekableReadStream *spf : spfStreams)
 		delete spf;
 	composite.free();
+	captioned.free();
 #else
 	debugC(1, kDebugScript, "playTransitionVideo: %s (HNM not compiled)", videoName.c_str());
 #endif

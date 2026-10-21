@@ -650,6 +650,12 @@ Common::Error CryOmni3DEngine_Atlantis::run() {
 	loadAtlantisExeTables();
 	// The build's menu bank (SPRCHI1 / SPRCHI2 of the Chinese CDs).
 	loadMenuWordSprites();
+	// The Chinese builds turn SUBTITLES on at every start-up
+	// (atlantis-cd-zh-tw-696832 WinMain `mov dword [0x4860a8],1` @
+	// 0x0041971f; exe_build.h subtitlesOnAtStart); the others keep the
+	// configuration's (decision 0012).
+	if (_exeBuild->subtitlesOnAtStart)
+		ConfMan.setBool("subtitles", true);
 
 	// Episode checkpoint names + player profiles (per-episode save backend).
 	loadEpisodeNames();

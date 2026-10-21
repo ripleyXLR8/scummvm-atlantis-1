@@ -968,6 +968,12 @@ private:
 	// 0x00486619, 0x00486663, 74 bytes each), read by
 	// loadAtlantisExeTables; empty for the other builds.
 	Common::Array<byte> _loadListChapters, _loadListWidths;
+	// AtlantisExeBuild::cinemaCaptions: the last CON `CINEMA=` value
+	// (0x004865a1, atlantis-cd-zh-tw-696832 @ 0x00429fc8) and the caption
+	// bank, loaded by that command for the build's cinema and freed after
+	// its video (0x006bd868 @ 0x00429fe9..0x0042a011, 0x0042a224..0x0042a235).
+	int _cinemaCaptionValue = 0;
+	Common::Array<SubjSprite> _cinemaCaptionSprites;
 	Common::Array<SubjSprite> _menuSprites;
 	Common::Array<SubjSprite> _menuWordSprites[2];
 

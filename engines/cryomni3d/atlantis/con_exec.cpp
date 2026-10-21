@@ -589,7 +589,20 @@ void CryOmni3DEngine_Atlantis::execConSetCommand(const Common::String &cmd, int3
 	if (key == "cinema") {
 		Common::String hnm = Common::String::format("CINEM%03d.HNM", value);
 		debugC(1, kDebugScript, "execConSetCommand: cinema=%d -> %s", value, hnm.c_str());
+		// The captions of the Chinese builds (exe_build.h cinemaCaptions):
+		// the value kept in 0x004865a1 (@ 0x00429fc8), the caption bank
+		// loaded for the build's cinema (`cmp byte [0x4865a1],0x14` @
+		// 0x00429fcd; `sprite\2d\subchine.spr` @ 0x00429fe9..0x0042a011)
+		// and freed after the video (@ 0x0042a224..0x0042a235); the frame
+		// presenter draws them (playTransitionVideo).  The original leaves
+		// the script when the bank does not load (@ 0x0042a01d); every
+		// disc of both releases holds it.
+		const AtlantisCinemaCaptions &captions = _exeBuild->cinemaCaptions;
+		_cinemaCaptionValue = value;
+		if (captions.cinema != 0 && value == captions.cinema)
+			loadFontSpriteSet(captions.bank, _cinemaCaptionSprites, true);
 		playTransitionVideo(hnm, uint(-1), uint(-1), kCinemaFrameMs);
+		_cinemaCaptionSprites.clear();
 		return;
 	}
 

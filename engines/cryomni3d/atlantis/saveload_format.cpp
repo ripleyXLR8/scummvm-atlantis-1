@@ -36,6 +36,19 @@ static const uint32 kOrigPlayersSizeFr = 95;   // 1997 builds: 5 and 5 (the Engl
                                                // @ 0x00418d29..0x00418d86, writers FUN_0041d45c /
                                                // FUN_0041dda0 / FUN_0042bf74;
                                                // atlantis-re formats/ui-players-atl.md)
+// The Chinese builds: a names block of 0x66 = 102 bytes (6 rows of 17; the
+// row count still stops at 5), then 6 chapter and 6 letter bytes: reader
+// atlantis-cd-zh-tw-696832 WinMain @ 0x0041921a..0x00419262 (into
+// 0x004865b3, 0x006be142, 0x006be148), writers FUN_0041dd14 @
+// 0x0041e574..0x0041e5bc, FUN_0041e65c @ 0x0041e9b0, FUN_0042cb1c @
+// 0x0042d147 (the same in atlantis-cd-zh-cn-692736; exe_build.h
+// playersNamesBlock).
+static const uint32 kOrigPlayersSizeZh = 114;
+static const uint32 kOrigPlayersNamesZh = 102;
+
+static bool isOriginalPlayersSize(uint32 size) {
+	return size == kOrigPlayersSize || size == kOrigPlayersSizeFr || size == kOrigPlayersSizeZh;
+}
 
 Common::String epiEpisodeName(const byte *text, uint32 size, uint chapter) {
 	// For chapter 1 the original scan only stops if the file does not start
@@ -65,15 +78,18 @@ Common::String epiEpisodeName(const byte *text, uint32 size, uint chapter) {
 static bool readOriginalPlayersAtl(Common::SeekableReadStream &in, Common::String players[kSaveMaxPlayers],
                                    int chapters[kSaveMaxPlayers], char letters[kSaveMaxPlayers],
                                    const Common::String &newPlayerMarker, bool emptyNameEndsRows) {
-	byte b[kOrigPlayersSize];
+	byte b[kOrigPlayersSizeZh];
 	const uint32 size = (uint32)(in.size() - in.pos());
-	if (size != kOrigPlayersSize && size != kOrigPlayersSizeFr)
+	if (!isOriginalPlayersSize(size))
 		return false;
 	if (in.read(b, size) != size)
 		return false;
-	// names 5 x 17, then the chapters, then the save-file letters (one array
-	// of 6 bytes each in the 2001 build, of 5 in the 1997 ones)
-	const uint letterBase = (size == kOrigPlayersSize) ? 0x5b : 0x5a;
+	// names 5 x 17 (6 x 17 in the Chinese builds), then the chapters, then
+	// the save-file letters (one array of 6 bytes each in the 2001 build and
+	// the Chinese ones, of 5 in the 1997 ones)
+	const uint chapterBase = (size == kOrigPlayersSizeZh) ? kOrigPlayersNamesZh : 85;
+	const uint letterBase = (size == kOrigPlayersSizeZh) ? kOrigPlayersNamesZh + 6 :
+	                        (size == kOrigPlayersSize) ? 0x5b : 0x5a;
 	if (letters) {
 		for (uint i = 0; i < kSaveMaxPlayers; i++)
 			letters[i] = (char)b[letterBase + i];
@@ -90,7 +106,7 @@ static bool readOriginalPlayersAtl(Common::SeekableReadStream &in, Common::Strin
 		if (name == newPlayerMarker || (emptyNameEndsRows && name.empty()))
 			break;
 		players[i] = name;
-		chapters[i] = b[85 + i];
+		chapters[i] = b[chapterBase + i];
 	}
 	return true;
 }
@@ -120,7 +136,7 @@ bool readPlayersFile(Common::SeekableReadStream &in, Common::String players[kSav
 		}
 		return true;
 	}
-	if ((in.size() - start != kOrigPlayersSize && in.size() - start != kOrigPlayersSizeFr) || !in.seek(start))
+	if (!isOriginalPlayersSize((uint32)(in.size() - start)) || !in.seek(start))
 		return false;
 	return readOriginalPlayersAtl(in, players, chapters, nullptr, newPlayerMarker, emptyNameEndsRows);
 }
