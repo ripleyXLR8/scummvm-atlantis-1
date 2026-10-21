@@ -109,7 +109,7 @@ void AtlantisAmbientOutput::start(uint slot, uint object, uint variant, bool loo
 	Audio::SeekableAudioStream *raw = Audio::makeRawStream(copy, pcm.size(), 22050,
 	                                  Audio::FLAG_16BITS | Audio::FLAG_LITTLE_ENDIAN, DisposeAfterUse::YES);
 	Audio::AudioStream *s = loopForever ? (Audio::AudioStream *)Audio::makeLoopingAudioStream(raw, 0) : raw;
-	_mixer->playStream(Audio::Mixer::kSFXSoundType, &_handles[slot], s, -1,
+	_mixer->playStream(Audio::Mixer::kPlainSoundType, &_handles[slot], s, -1,
 	                   (byte)(_volume[slot] * Audio::Mixer::kMaxChannelVolume / 127),
 	                   milesPanBalance(_pan[slot]));
 	debugC(1, kDebugMusic, "ambient: slot %u plays object %u variant %u%s", slot, object, variant,
@@ -121,9 +121,10 @@ void AtlantisAmbientOutput::stop(uint slot) {
 	_mixer->stopHandle(_handles[slot]);
 }
 
-void AtlantisAmbientOutput::playOn(uint slot, Audio::AudioStream *s, byte mixerVolume, int8 balance) {
+void AtlantisAmbientOutput::playOn(uint slot, Audio::AudioStream *s, byte mixerVolume, int8 balance,
+                                   Audio::Mixer::SoundType type) {
 	_mixer->stopHandle(_handles[slot]);
-	_mixer->playStream(Audio::Mixer::kSFXSoundType, &_handles[slot], s, -1, mixerVolume, balance);
+	_mixer->playStream(type, &_handles[slot], s, -1, mixerVolume, balance);
 	_miles.started(slot);
 }
 

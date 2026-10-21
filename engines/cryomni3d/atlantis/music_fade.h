@@ -63,9 +63,13 @@ struct AtlantisMusicFade {
 		Common::StackLock lock(mutex);
 		ticks++;
 		// FUN_0042f7a8: the target is computed on the first tick; already
-		// reached, the fade ends without a step.
+		// reached, the fade ends without a step and the function returns
+		// (@ 0x0042f832..0x0042f843, jump to the epilogue 0x0042f96b), so the
+		// NewSound fade-out below is not processed on that tick.
+		// FUN_0042f974 (the fade up) is a separate call of FUN_00431150
+		// (@ 0x0043117d) and still runs.
+		bool done = false;
 		if (mode == 2) {
-			bool done = false;
 			if (downTarget == -1) {
 				upTarget = vol;
 				downTarget = (int32)vol - (int32)vol * percent / 100;
@@ -88,7 +92,8 @@ struct AtlantisMusicFade {
 				}
 			}
 		}
-		if (sfxMode == 2) {
+		// The NewSound fade-out (@ 0x0042f89d..0x0042f961).
+		if (!done && sfxMode == 2) {
 			if (ticks - sfxLast > 4) {
 				sfxLast = ticks;
 				sfxVol -= 2;

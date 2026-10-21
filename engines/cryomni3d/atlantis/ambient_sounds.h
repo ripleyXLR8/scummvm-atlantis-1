@@ -52,6 +52,12 @@ struct AmbientGains {
 AmbientGains ambientGains(const float pos[3], float loudness, const AtlantisCentrePos &cam,
                           const AtlantisAmbientRef &ref, float alpha, float beta, float ear = 0.65f);
 
+// One glide step of FUN_0043259c: (target - last) / frames, as fild int32,
+// fsub float, fild int32 0x00896c50, fdivp, fstp float at the game's 53-bit
+// x87 precision (@ 0x004326cf..0x004326ec pan, 0x00432724..0x00432741
+// volume).
+float ambientGlideStep(int32 target, float last, int32 frames);
+
 // The six Miles sample handles of the original (0x006cc560..0x006cc574).
 class AmbientSampleOutput {
 public:

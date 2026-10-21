@@ -24,7 +24,6 @@
 #include "audio/decoders/raw.h"
 #include "audio/mixer.h"
 #include "common/config-manager.h"
-#include "common/events.h"
 #include "common/mutex.h"
 #include "common/memstream.h"
 #include "common/scummsys.h"
@@ -203,13 +202,18 @@ void CryOmni3DEngine_Atlantis::musicFadeTimer(void *refCon) {
 // 0x00495e72 from the music volume setting (the sound menu stores the AIL
 // volume rescaled to the mixer's 0..255).
 void CryOmni3DEngine_Atlantis::musicSyncVolume() {
-	const int v = ConfMan.hasKey("music_volume") ? ConfMan.getInt("music_volume") : Audio::Mixer::kMaxMixerVolume;
+	const int v = ConfMan.getInt("music_volume");   // the registered default (192) when no domain has it, as the mixer reads it
 	Common::StackLock lock(_musicFade.mutex);
-	_musicFade.vol = (uint8)CLIP(v * 127 / Audio::Mixer::kMaxMixerVolume, 0, 127);
+	_musicFade.vol = (uint8)CLIP(menuAilFromMixerVolume(v, Audio::Mixer::kMaxMixerVolume), 0, 127);
 }
 
-// The original spins on the fade (calling only the music refill) until the
-// timer callback has finished it; the screen does not change meanwhile.
+// The original spins on the fade (calling only the music refill FUN_0043318c,
+// which reads no input) until the timer callback has finished it; the screen
+// does not change meanwhile and input made during the spin is seen by the
+// next poll, FUN_0042e624's GetAsyncKeyState pass (FUN_0042a100 @
+// 0x0042ad98..0x0042ada6, 0x0042aed0..0x0042aede).  So the events stay
+// queued for the next pollEvents; a quit is only delayed (the fade is timer
+// driven, at most 99 steps of 25 ms).
 void CryOmni3DEngine_Atlantis::musicWaitFadeEnd() {
 	for (;;) {
 		{
@@ -219,9 +223,6 @@ void CryOmni3DEngine_Atlantis::musicWaitFadeEnd() {
 		}
 		if (shouldQuit())
 			return;
-		Common::Event ev;
-		while (g_system->getEventManager()->pollEvent(ev)) {
-		}
 		g_system->delayMillis(5);
 	}
 }
@@ -322,13 +323,6 @@ void CryOmni3DEngine_Atlantis::musicHaltPlayback() {
 	_musicCurrentFile = nullptr;
 }
 
-// stopmusik (CON), chapter change, and the credits sequence — clear the music
-// selection entirely and stop playback.
-void CryOmni3DEngine_Atlantis::musicStop() {
-	_musicTrackId = 0;
-	musicHaltPlayback();
-}
-
 // FUN_00432ea8: open track N and start it looping (callers: musicSwitchTrack,
 // the StartMusik command and the credits).
 void CryOmni3DEngine_Atlantis::musicPlayTrack(int trackId) {
@@ -401,25 +395,26 @@ void CryOmni3DEngine_Atlantis::musicCopyThroughScreenBuffer(uint idx) {
 // no music for a later StartMusik of a track never copied; the port plays
 // every track from the archive (decision 0014), so these rules change only
 // the set of tracks on disk and the IX buffer the next video starts on.
-// With kEnhMinorBugFixes the port copies per track as the other builds do:
-// M1 gives way to the per-track test of FUN_0041f1d0 (each listed track not
-// on disk and not playing is copied) and M2's volume test is dropped; the
-// first-value rule of the executor (musicFirstValueRule), DelMusik and M3
-// stay this build's.
+// With kEnhMinorBugFixes the port copies per track as the other builds do
+// (decision 0020 B): only M1 gives way to the per-track test of FUN_0041f1d0
+// (each listed track not on disk and not playing is copied); M2's volume
+// test, the first-value rule of the executor (musicFirstValueRule), DelMusik
+// and M3 stay this build's.
 void CryOmni3DEngine_Atlantis::execMusicList(bool load, const Common::Array<char> &text, uint32 pos) {
 	const bool fixed = enhancementEnabled(kEnhMinorBugFixes);
-	if (load && !fixed) {
+	if (load) {
+		const uint8 minVolume = loadMusikMinVolume(*_exeBuild, fixed);
 		Common::StackLock lock(_musicFade.mutex);
-		if (!conLoadMusikVolumeOk(_musicFade.cur, _exeBuild->musicLoadMinVolume)) {
+		if (!conLoadMusikVolumeOk(_musicFade.cur, minVolume)) {
 			debugC(1, kDebugMusic, "loadmusik: current music volume %u below %u, nothing copied",
-			       _musicFade.cur, _exeBuild->musicLoadMinVolume);
+			       _musicFade.cur, minVolume);
 			return;
 		}
 	}
 	uint32 onDisk = musicOnDisk();
 	Common::Array<uint8> copies;
 	conMusicApply(load, conMusicList(text, pos), _musicTrackId, onDisk, copies,
-	              _exeBuild->musicFirstValueRule, _exeBuild->musicLoadAllOrNothing && !fixed);
+	              _exeBuild->musicFirstValueRule, loadMusikAllOrNothing(*_exeBuild, fixed));
 	for (uint i = 0; i < copies.size(); i++)
 		musicCopyThroughScreenBuffer(copies[i]);
 	setMusicOnDisk(onDisk);

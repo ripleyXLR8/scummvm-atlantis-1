@@ -50,6 +50,22 @@ inline int32 truncInt(double v) {
 	return (int32)v;
 }
 
+// pan = a * 127 / (a + b) in 32-bit as the original (ADD / IMUL / CDQ /
+// IDIV, FUN_00432178 @ 0x004324aa..0x004324bb, FUN_0043259c @
+// 0x004326b9..0x004326ca): the sum and the product wrap.  Only a gain
+// outside 0..255 (the indefinite 0x80000000 of truncInt, an object at the
+// camera) is affected; no shipped object is closer than 240 units to a
+// centre camera.  The sum is never 0 here (the "a + b == 0" fix comes first);
+// a sum of -1 with a product of INT32_MIN is a divide error in the original
+// and is returned as the product here.
+inline int32 ambientPan32(int32 a, int32 b) {
+	const int32 sum = (int32)((uint32)a + (uint32)b);
+	const int32 prod = (int32)((uint32)a * 127u);
+	if (sum == -1)
+		return (int32)(0u - (uint32)prod);
+	return prod / sum;
+}
+
 } // End of anonymous namespace
 
 AmbientGains ambientGains(const float pos[3], float loudness, const AtlantisCentrePos &cam,
@@ -85,14 +101,17 @@ AmbientGains ambientGains(const float pos[3], float loudness, const AtlantisCent
 	g.left = gain(gR);
 	g.out26 = truncInt(ref.c);
 	// FUN_00432178 @ 0x0043241e..0x00432581
-	if (g.right + g.left == 0)
+	if ((uint32)g.right + (uint32)g.left == 0)
 		g.left = 1;
-	const int64 sum = (int64)g.right + g.left;
-	const int32 pan = (int32)(((int64)g.right * 127) / sum);
+	const int32 pan = ambientPan32(g.right, g.left);
 	const int32 vol = MAX(g.right, g.left) / 2;
 	g.pan = (uint8)(pan & 0xff);
 	g.volume = (uint8)(vol & 0xff);
 	return g;
+}
+
+float ambientGlideStep(int32 target, float last, int32 frames) {
+	return (float)(((double)target - (double)last) / (double)frames);
 }
 
 AmbientSounds::AmbientSounds() : _loopFlag(false), _effectsVolume(0x6e), _count(0), _active(false), _clock(nullptr), _clockCtx(nullptr) {
@@ -287,11 +306,10 @@ void AmbientSounds::prepareGlide(const AtlantisPlace &place, const Common::Array
 		const AtlantisAmbientObject &o = objects[refObj];
 		const float pos[3] = { -o.pos[1], o.pos[0], -o.pos[2] };
 		const AmbientGains g = ambientGains(pos, o.loudness, cam, ref, alpha, beta);
-		const int32 sum = g.right + g.left;
-		const int32 pan = (int32)(((int64)g.right * 127) / sum);
+		const int32 pan = ambientPan32(g.right, g.left);
 		const int32 vol = MAX(g.right, g.left) / 2;
-		_stepPan[i] = (float)(((double)pan - (double)_curPan[i]) / (double)frames);
-		_stepVol[i] = (float)(((double)vol - (double)_curVol[i]) / (double)frames);
+		_stepPan[i] = ambientGlideStep(pan, _curPan[i], frames);
+		_stepVol[i] = ambientGlideStep(vol, _curVol[i], frames);
 	}
 }
 

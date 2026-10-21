@@ -66,6 +66,44 @@ struct LoadLog {
 	}
 };
 
+// FUN_0043259c's step arithmetic, emulated unmodified with the game's x87
+// control word (atlantis-re tools/emu/audio_ambient_glide.py): pan
+// @ 0x004326cf..0x004326f2, volume @ 0x00432724..0x00432747, from
+// (target, last as float bits, frames); the two steps as float bits.
+struct GlideStepCase {
+	int32 target;
+	uint32 last;
+	int32 frames;
+	uint32 panStep, volStep;
+};
+
+static const GlideStepCase kGlideStepCases[] = {
+	{ 63, 0x41280000, 7, 0x40f00000, 0x40f00000 },
+	{ 63, 0x41200000, 4, 0x41540000, 0x41540000 },
+	{ 127, 0x3e99999a, 3, 0x4228eeef, 0x4228eeef },
+	{ 0, 0x42146666, 13, 0xc036a56a, 0xc036a56a },
+	{ 1, 0x42fdcccd, 25, 0xc0a126ea, 0xc0a126ea },
+	{ 100, 0x42c76666, 7, 0x3d2f8b6e, 0x3d2f8b6e },
+	{ 0, 0x00000000, 1, 0x00000000, 0x00000000 },
+	{ 127, 0x42fe0000, 9, 0x00000000, 0x00000000 },
+	{ 37, 0x40100000, 11, 0x404a2e8c, 0x404a2e8c },
+	{ 5, 0x42813333, 3, 0xc19eeeef, 0xc19eeeef },
+	{ 88, 0x4155eb85, 17, 0x408c7ae1, 0x408c7ae1 },
+	{ 20, 0x419f3333, 6, 0x3c8888ab, 0x3c8888ab },
+};
+
+static float floatOfBits(uint32 b) {
+	float f;
+	memcpy(&f, &b, 4);
+	return f;
+}
+
+static uint32 bitsOfFloat(float f) {
+	uint32 b;
+	memcpy(&b, &f, 4);
+	return b;
+}
+
 static AtlantisAmbientObject object(uint8 id, uint8 w0, uint8 w1, uint8 w2, uint8 w3, int variants) {
 	AtlantisAmbientObject o;
 	o.id = id;
@@ -283,11 +321,24 @@ public:
 		TS_ASSERT(!a._loopFlag);
 	}
 
+	// FUN_0043259c's steps against the emulated original, inexact quotients
+	// included (the step rounding: fdivp at 53 bits, fstp float).
+	void test_glide_step_vs_original() {
+		using namespace AudioAmbient;
+		for (uint k = 0; k < ARRAYSIZE(kGlideStepCases); k++) {
+			const GlideStepCase &gc = kGlideStepCases[k];
+			const float s = ambientGlideStep(gc.target, floatOfBits(gc.last), gc.frames);
+			TSM_ASSERT_EQUALS(Common::String::format("pan %u", k).c_str(), bitsOfFloat(s), gc.panStep);
+			TSM_ASSERT_EQUALS(Common::String::format("vol %u", k).c_str(), bitsOfFloat(s), gc.volStep);
+		}
+	}
+
 	// FUN_0043259c / FUN_00432758 (atlantis-re functions/audio-FUN_00432178.md,
-	// STATIC): steps = (gain at the destination - last value) / frames;
-	// each video frame adds them and sets the truncated values; a finished
-	// sample (status 2 only) with more than one variant restarts, keeping a
-	// finite loop count.
+	// STATIC): steps = (gain at the destination - last value) / frames (the
+	// step value itself: test_glide_step_vs_original; here prepareGlide's
+	// wiring); each video frame adds them and sets the truncated values; a
+	// finished sample (status 2 only) with more than one variant restarts,
+	// keeping a finite loop count.
 	void test_video_glide() {
 		using namespace AudioAmbient;
 		AmbientSounds a;
@@ -307,8 +358,8 @@ public:
 		const float pos[3] = { -objs[0].pos[1], objs[0].pos[0], -objs[0].pos[2] };
 		const AmbientGains g = ambientGains(pos, objs[0].loudness, dst, p.ambientRefs[0], 0.5f, 0.0f);
 		a.prepareGlide(p, objs, dst, 0.5f, 0.0f, 4);
-		TS_ASSERT_EQUALS(a._stepPan[0], (float)(((double)g.pan - 10.0) / 4.0));
-		TS_ASSERT_EQUALS(a._stepVol[0], (float)((double)g.volume / 4.0));
+		TS_ASSERT_EQUALS(a._stepPan[0], ambientGlideStep(g.pan, 10.0f, 4));
+		TS_ASSERT_EQUALS(a._stepVol[0], ambientGlideStep(g.volume, 0.0f, 4));
 		for (int k = 1; k <= 4; k++) {
 			out.log.clear();
 			a.videoFrame(out, p, objs, 100);
@@ -330,6 +381,58 @@ public:
 		a.videoFrame(out, p, objs, 100);
 		TS_ASSERT(out.has("start 0 0 1 0"));
 		TS_ASSERT(a._loopFlag);   // FUN_00432758 neither reads nor clears it
+	}
+
+	// The pause over a video reads the CON variable CHAPTERTIME, which only
+	// the warp frame start writes (FUN_0041c75c), so it stands still during
+	// the video: FUN_00432758 of the original (atlantis-re
+	// tools/emu/audio_ambient_pause.py -> evidence/golden/
+	// audio_ambient_pause.txt): a pending pause (count 2, start 10, delay 5,
+	// status 2) makes no pick and no restart at CHAPTERTIME 10, 12 and 15,
+	// restarts at 16 (start back to 0); a draw of -1 arms the pause with
+	// start = CHAPTERTIME (42) and stops the sample.  The port's
+	// videoFrame, given the frozen value (place.cpp ambientVideoFrame).
+	void test_pause_reads_frozen_chaptertime() {
+		using namespace AudioAmbient;
+		const uint8 one[] = { 1 };
+		const AtlantisPlace p = place(135, one, 1);
+		static const struct { int32 ct; bool restart; uint32 startAfter; } kCases[] = {
+			{ 10, false, 10 }, { 12, false, 10 }, { 15, false, 10 }, { 16, true, 0 }, { 2000, true, 0 },
+		};
+		for (uint k = 0; k < ARRAYSIZE(kCases); k++) {
+			AmbientSounds a;
+			Clock c;
+			c.values = { 0, 0, 0, 0 };
+			a.setClock(&Clock::fn, &c);
+			FakeOut out;
+			Common::Array<AtlantisAmbientObject> objs;
+			objs.push_back(object(1, 50, 50, 0, 0, 2));
+			a._records[0].count = 2;
+			a._records[0].current = 0;
+			a._records[0].delay = 5;
+			a._records[0].start = 10;
+			a._records[0].object = 0;
+			out.st[0] = AmbientSampleOutput::kDone;
+			a.videoFrame(out, p, objs, kCases[k].ct);
+			TSM_ASSERT_EQUALS(Common::String::format("chaptertime %d", kCases[k].ct).c_str(),
+			                  out.has("start 0 0 0 0"), kCases[k].restart);
+			TSM_ASSERT_EQUALS(Common::String::format("chaptertime %d", kCases[k].ct).c_str(),
+			                  a._records[0].start, kCases[k].startAfter);
+		}
+		// arming: start 0, count 2, the draw gives -1 (no weight)
+		AmbientSounds b;
+		FakeOut out;
+		Common::Array<AtlantisAmbientObject> objs;
+		objs.push_back(object(1, 0, 0, 0, 0, 2));
+		b._records[0].count = 2;
+		b._records[0].current = 0;
+		b._records[0].delay = 5;
+		b._records[0].start = 0;
+		b._records[0].object = 0;
+		out.st[0] = AmbientSampleOutput::kDone;
+		b.videoFrame(out, p, objs, 42);
+		TS_ASSERT_EQUALS(b._records[0].start, 42u);
+		TS_ASSERT(out.has("stop 0"));
 	}
 
 	// MSS32.DLL DirectSound pan (0x2000dd50, helper 0x2000dcd0; atlantis-re
@@ -470,38 +573,44 @@ public:
 		BigFileArchive big;
 		for (int d = 1; d <= 4; d++)
 			TS_ASSERT(big.open(Common::Path(Common::String::format("BIGCD%d.BIG", d))));
-		AtlantisWAMParser night, day;
+		// One parser reloaded in place, as the engine's _wam (ChangeWam ->
+		// setupWAMByName -> loadStream), so the object indices are the
+		// engine's.
+		AtlantisWAMParser wam;
 		Common::ScopedPtr<Common::SeekableReadStream> s2(big.createReadStreamForMember(Common::String("WAM\\PECHEUR2.WAM")));
 		Common::ScopedPtr<Common::SeekableReadStream> s1(big.createReadStreamForMember(Common::String("WAM\\PECHEUR1.WAM")));
 		TS_ASSERT(s2 && s1);
 		if (!s2 || !s1)
 			return;
-		night.loadStream(*s2);
-		day.loadStream(*s1);
-		const AtlantisPlace *p2 = night.findPlaceById(145), *p1 = day.findPlaceById(145);
-		TS_ASSERT(p2 && p1);
-		if (!p2 || !p1)
+		wam.loadStream(*s2);
+		const AtlantisPlace *p2 = wam.findPlaceById(145);
+		TS_ASSERT(p2);
+		if (!p2)
 			return;
 		AmbientSounds a;
 		Clock c;
 		a.setClock(&Clock::fn, &c);
 		FakeOut out;
 		LoadLog l;
-		l.objects = &night.getAmbientObjects();
-		TS_ASSERT(a.enterPlace(out, *p2, night.getAmbientObjects(), &LoadLog::fn, &l));
+		l.objects = &wam.getAmbientObjects();
+		TS_ASSERT(a.enterPlace(out, *p2, wam.getAmbientObjects(), &LoadLog::fn, &l));
 		TS_ASSERT_EQUALS(a.count(), 2u);
 		TS_ASSERT_EQUALS(l.names.size(), 8u);
 		if (l.names.size() == 8) {
 			TS_ASSERT_EQUALS(l.names[0], "vague_07.apc");   // mernuit
 			TS_ASSERT_EQUALS(l.names[4], "vague_01.apc");   // mernuit2
 		}
+		wam.loadStream(*s1);
+		const AtlantisPlace *p1 = wam.findPlaceById(145);
+		TS_ASSERT(p1);
+		if (!p1)
+			return;
 		// the day WAM names other waves for the same slots
-		TS_ASSERT_EQUALS(day.getAmbientObjects()[0].variants[0], "vague_01.apc");   // mer1
-		TS_ASSERT_EQUALS(day.getAmbientObjects()[1].variants[0], "vague_07.apc");   // mer2
+		TS_ASSERT_EQUALS(wam.getAmbientObjects()[0].variants[0], "vague_01.apc");   // mer1
+		TS_ASSERT_EQUALS(wam.getAmbientObjects()[1].variants[0], "vague_07.apc");   // mer2
 		l.names.clear();
-		l.objects = &day.getAmbientObjects();
 		out.log.clear();
-		TS_ASSERT(a.enterPlace(out, *p1, day.getAmbientObjects(), &LoadLog::fn, &l));
+		TS_ASSERT(a.enterPlace(out, *p1, wam.getAmbientObjects(), &LoadLog::fn, &l));
 		TS_ASSERT_EQUALS(l.names.size(), 0u);   // nothing reloaded
 		TS_ASSERT_EQUALS(out.log.size(), 0u);   // nothing stopped or released
 		TS_ASSERT_EQUALS(a.count(), 2u);

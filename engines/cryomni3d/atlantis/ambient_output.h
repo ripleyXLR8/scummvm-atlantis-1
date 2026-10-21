@@ -65,6 +65,15 @@ inline int8 milesPanBalance(uint8 pan) {
 // FUN_00430d20 sets them up as 16-bit mono at 22050 Hz and nothing changes
 // that, so every variant plays at 22050 Hz whatever its header says (two
 // 16000 Hz waves are heard 1.38 times fast in the original too).
+// They play on the mixer's kPlainSoundType, which syncSoundSettings scales
+// by the master volume alone: Miles scales a sample only by the digital
+// master volume (MSS32.DLL 0x2000dc60: master x volume / 127), and
+// FUN_00432178 / FUN_00432758 rewrite the six volumes on every frame with
+// max(a, b) / 2, never with the effects byte 0x00495e73 (written to the six
+// handles only once, by the sound menu's OK @ 0x0041d8c4..0x0041d8f5, the
+// checkpoint loader @ 0x0042e436..0x0042e46c and FUN_00431e98 before the
+// stop, until the next ambient frame).  The puzzles' effects set their own
+// volume (0x6e) and do not read the effects byte either.
 class AtlantisAmbientOutput : public AmbientSampleOutput {
 public:
 	explicit AtlantisAmbientOutput(Audio::Mixer *mixer);
@@ -86,7 +95,12 @@ public:
 	// (a puzzle effect, the options' channel test): `s` is played with the
 	// mixer volume and balance given (the slot's pan / volume are set by the
 	// caller through setPan / setVolume when they are the original's).
-	void playOn(uint slot, Audio::AudioStream *s, byte mixerVolume, int8 balance);
+	// `type`: kPlainSoundType (master volume only) as the ambient sounds; the
+	// options' channel test passes kSFXSoundType, since FUN_0041db4c /
+	// FUN_0041dcf8 set the slot's volume to the effects byte 0x00495e73
+	// (@ 0x0041dc99, 0x0041de45).
+	void playOn(uint slot, Audio::AudioStream *s, byte mixerVolume, int8 balance,
+	            Audio::Mixer::SoundType type = Audio::Mixer::kPlainSoundType);
 	// The statuses as AIL_sample_status returns them.
 	void statuses(int st[AmbientSounds::kSlots]);
 

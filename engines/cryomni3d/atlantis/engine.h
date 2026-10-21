@@ -530,9 +530,6 @@ private:
 	// Select and (re)play a numbered music track (1-based, matching the
 	// startmusik CON command IDs).  The track loops until changed.
 	void musicPlayTrack(int trackId);
-	// Clear the selection entirely and stop playback — stopmusik (CON),
-	// chapter change, and the credits sequence.
-	void musicStop();
 	// Stop mixer playback and free the decoded buffer without clearing the
 	// selected track — used before a track switch.
 	void musicHaltPlayback();
