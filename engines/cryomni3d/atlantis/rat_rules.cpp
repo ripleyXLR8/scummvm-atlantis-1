@@ -329,7 +329,14 @@ void RatRules::animateRat() {
 		setB(0x00496ca5, 6);
 	if (b(0x00496ca5) == 0)
 		setI(0x00496cd0, i(0x00496cd0) + 1);
-	const uint32 e = 0x00496c7a + 6 * b(0x00496ca5);   // {first, last, current}
+	// {first, last, current}.  With the .data byte 0x68 (the first rat's
+	// wait for the lever, mode 0) the entry is 0x00496eea..0x00496eef: the
+	// original increments the short at 0x00496eee, inside puzzle 3's sprite
+	// name "puzsrp2c.spr" at 0x00496eec, every frame (0x00439513..0x0043951d)
+	// and resets it to 0 after 502 frames (0x0043955c..0x00439563); nothing
+	// restores the name.  Here the write stays in mem (kMemSize):
+	// kEnhGameBreakingBugFixes (decision 0016 R3).
+	const uint32 e = 0x00496c7a + 6 * b(0x00496ca5);
 	switch (b(0x00496ca4)) {
 	case 0:
 		if (b(0x00496ca5) == 0) {

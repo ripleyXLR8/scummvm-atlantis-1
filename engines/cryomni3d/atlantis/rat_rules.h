@@ -39,7 +39,13 @@ public:
 	static const uint32 kSize = 0x318;      // the state the tests compare
 	// The memory kept: up to 0x0049727f, because the rat's animation entry
 	// (0x00496c7a + 6 * byte) is indexed by any byte value, and before the
-	// first trajectory the byte is still 0x68 from the data section.
+	// first trajectory the byte is still 0x68 from the data section.  That
+	// entry is 0x00496eea..0x00496eef, over the start of puzzle 3's cursor
+	// sprite name "puzsrp2c.spr" (0x00496eec, loaded by FUN_004459c0 @
+	// 0x00445a00): the original corrupts the name for the rest of the
+	// program (see animateRat).  The write stays in this copy and
+	// puzzle_pieces.cpp loads PUZSRP2C.SPR by name: kEnhGameBreakingBugFixes
+	// (decision 0016 R3, no original mode).
 	static const uint32 kMemSize = 0x8c0;
 	static const int kNumRecords = 30;
 

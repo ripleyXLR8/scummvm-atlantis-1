@@ -37,8 +37,25 @@ static const int kScreenH = 480;
 // original (0x007e2264) that lasts as long as the program.
 static int16 g_ratT0023Pos = 0;
 
+// The puzzle's state 0x004969c0..0x0049727f and the clock-tick flag
+// 0x00772d90 are globals of the original that last as long as the program:
+// the entry FUN_00438bf0 (0x00438c08..0x00438e62) and the reset before each
+// rat FUN_004387ec (0x0043881b..0x004388c8) write only some of them, so a
+// second play (CHAPI041 "Play again") starts from what the previous one
+// left: the clock deadline 0x004969c4, the wheel's half-frame toggle
+// 0x00496ccc, the counters 0x00496cd0 / 0x00496cd4, record 18's direction
+// 0x00496cbc, the rat byte 0x00496ca5 and the animation frames (ghidra
+// xrefs: no other writer).  The first play starts from the .data image
+// (RatRules::RatRules).
+struct RatMemory {
+	bool valid;
+	byte mem[RatRules::kMemSize];
+	uint32 clockTicked;
+};
+static RatMemory g_ratMemory = { false, {}, 0 };
+
 RatPuzzle::RatPuzzle(CryOmni3DEngine_Atlantis *engine)
-	: _engine(engine), _loaded(false), _prevButton(false),
+	: _engine(engine), _loaded(false), _prevButton(false), _heldFlag(false),
 	  _mouseX(0), _mouseY(0) {
 	bool ok = loadPuzzleTGA(engine, "PZFBACK.TGA", _bgPixels);
 	ok = loadPuzzleSpr(engine, "PZFPIECE.SPR", _pieces) && ok;
@@ -65,6 +82,12 @@ int RatPuzzle::play() {
 	g_system->lockMouse(false);
 	_engine->showMouse(false);   // FUN_00438ee4 draws the cursor into the frame
 	_prevButton = (_engine->getCurrentMouseButton() != 0);
+	_heldFlag = _prevButton;
+	_buttonMessages.clear();
+	if (g_ratMemory.valid) {
+		memcpy(rules.mem, g_ratMemory.mem, sizeof(rules.mem));
+		rules.clockTicked = g_ratMemory.clockTicked;
+	}
 	// The 1997 build's frame deadline and T0023 search (exe_build.h).
 	frameDeadline = _engine->exeBuild().ratFrameDeadline;
 	t0023Restart = _engine->exeBuild().ratT0023Restart;
@@ -73,6 +96,9 @@ int RatPuzzle::play() {
 	int result = run();
 	if (!t0023Restart)
 		g_ratT0023Pos = slots[0x16].pos;
+	memcpy(g_ratMemory.mem, rules.mem, sizeof(g_ratMemory.mem));
+	g_ratMemory.clockTicked = rules.clockTicked;
+	g_ratMemory.valid = true;
 	_engine->showMouse(true);
 	_working.free();
 	if (_engine->shouldAbort() || (result != 255 && result != 2))
@@ -80,16 +106,32 @@ int RatPuzzle::play() {
 	return result;
 }
 
-// FUN_0043318c then FUN_0041a298's sampling: the mouse, the left button
-// held, and a click on its press edge.
+// FUN_0041a298's sampling at the end of the previous frame (read here, at
+// FUN_0043318c, the first call of the frame: nothing in between reads the
+// input).  The click flag 0x0049611c is the left button's press edge
+// (FUN_0042e624); on that edge FUN_0041a298 sets it and returns before its
+// message pump (0x0041a2b5..0x0041a2e4).  The held flag 0x00496114 is
+// written only by the window procedure on WM_LBUTTONDOWN / WM_LBUTTONUP
+// (0x00419c47 / 0x00419c6a), and the pump of the active window dispatches
+// one message per call (PeekMessage without removal, GetMessage,
+// DispatchMessage, 0x0041a483..0x0041a4ce).  So the held flag follows the
+// button one frame after the click flag, and a tap within one frame still
+// gives one held frame.  The button messages are queued here in their
+// order and one is dispatched on each frame without a press edge; the
+// other messages sharing that pump (mouse moves, ...), which could delay
+// them further, are not modelled [UNKNOWN].
 void RatPuzzle::readInput(int &mx, int &my, bool &click, bool &held) {
 	_engine->pollEvents();
 	const Common::Point m = _engine->getMousePos();
 	const bool now = (_engine->getCurrentMouseButton() == 1);
 	mx = _mouseX = m.x;
 	my = _mouseY = m.y;
-	held = now;
 	click = now && !_prevButton;
+	if (now != _prevButton)
+		_buttonMessages.push(now);   // WM_LBUTTONDOWN / WM_LBUTTONUP
+	if (!click && !_buttonMessages.empty())
+		_heldFlag = _buttonMessages.pop();
+	held = _heldFlag;
 	_prevButton = now;
 }
 

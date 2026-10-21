@@ -72,7 +72,9 @@ public:
 	int run();
 
 protected:
-	// FUN_0043318c, the frame boundary: read the player's input.
+	// FUN_0043318c (the music stream refill), the first call of each frame:
+	// where the port and the harness read the player's input, which the
+	// original's FUN_0041a298 polls at the end of the previous frame.
 	virtual void readInput(int &mx, int &my, bool &click, bool &held) = 0;
 	// Drawing: the background copies (0 and 1: FUN_00438fd4's two copies of
 	// the background; 2: the frame copy before the present), a sprite of

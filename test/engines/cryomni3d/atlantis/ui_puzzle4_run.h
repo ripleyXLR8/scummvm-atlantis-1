@@ -19,6 +19,17 @@
 // Per frame: the input, the sounds, the md5 of the draws and of the state.
 //
 // Port code exercised directly: RatGame (rat_game.cpp) over RatRules.
+//
+// The compared state is 0x004969c0..0x00496cd7, the result, 0x00772d90 /
+// 0x00772d94 and the 0x68 animation entry 0x00496eea..0x00496eef.  The
+// scenario abort_then_lose_all plays twice on one image ("play 2" in the
+// golden): the second play starts from the state the first left, as
+// RatPuzzle's g_ratMemory carries RatRules::mem and clockTicked (Fable pass 2
+// rat#0 / rat#7).
+//
+// Not covered: the harness writes the click and held flags together at the
+// frame boundary, so RatPuzzle::readInput's one-frame lag of the held flag
+// is not tested.
 
 namespace UiRatRun {
 
@@ -51,12 +62,14 @@ public:
 		const Common::String wantSnd = l.substr(b1 + 2, b2 - b1 - 3);
 		const Common::String wantDraws = l.substr(b2 + 2, b3 - b2 - 3);
 		const Common::String wantState = l.substr(b3 + 2);
-		byte st[RatRules::kSize + 12];
+		byte st[RatRules::kSize + 12 + 6];
 		memcpy(st, rules.mem, RatRules::kSize);
 		const uint32 extra[3] = { (uint32)rules.result, rules.clockTicked, (uint32)wheelY };
 		for (int k = 0; k < 3; k++)
 			for (int j = 0; j < 4; j++)
 				st[RatRules::kSize + 4 * k + j] = (byte)(extra[k] >> (8 * j));
+		// the 0x68 animation entry 0x00496eea..0x00496eef
+		memcpy(st + RatRules::kSize + 12, rules.mem + (0x00496eea - RatRules::kBase), 6);
 		const Common::String gotDraws = AtlantisTest::md5Hex((const byte *)draws.c_str(), draws.size());
 		const Common::String gotState = AtlantisTest::md5Hex(st, sizeof(st));
 		if (gotDraws != wantDraws || gotState != wantState || sounds != wantSnd) {
@@ -193,7 +206,40 @@ public:
 			TS_ASSERT_EQUALS(g.frames, frames);
 			TS_ASSERT_EQUALS(got, want);
 			scenarios++;
+			// "play 2 frames N result R": a second play on the same image,
+			// from the state the first left (RatPuzzle::play's g_ratMemory:
+			// RatRules::mem and clockTicked); the clock goes on.
+			const uint p2 = i + 1 + frames;
+			if (p2 < golden.size() && golden[p2].hasPrefix("play 2 ")) {
+				Common::Array<Common::String> t2;
+				Common::String c2;
+				for (uint k = 0; k <= golden[p2].size(); k++) {
+					if (k == golden[p2].size() || golden[p2][k] == ' ') {
+						t2.push_back(c2);
+						c2.clear();
+					} else {
+						c2 += golden[p2][k];
+					}
+				}
+				const uint frames2 = (uint)atoi(t2[3].c_str());
+				const int want2 = atoi(t2[5].c_str());
+				Replay g2;
+				TS_ASSERT(loadTrajectories(g2));
+				memcpy(g2.rules.mem, g.rules.mem, sizeof(g2.rules.mem));
+				g2.rules.clockTicked = g.rules.clockTicked;
+				g2._clock = g._clock;
+				g2.lines = &golden;
+				g2.next = p2 + 1;
+				g2.end = p2 + 1 + frames2;
+				const int got2 = g2.run();
+				g2.closeFrame();
+				TS_ASSERT_EQUALS(g2.firstMismatch, Common::String());
+				TS_ASSERT_EQUALS(g2.mismatches, 0);
+				TS_ASSERT_EQUALS(g2.frames, frames2);
+				TS_ASSERT_EQUALS(got2, want2);
+				scenarios++;
+			}
 		}
-		TS_ASSERT_EQUALS(scenarios, 4);
+		TS_ASSERT_EQUALS(scenarios, 6);
 	}
 };

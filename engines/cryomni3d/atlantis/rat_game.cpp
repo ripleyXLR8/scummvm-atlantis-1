@@ -193,6 +193,7 @@ void RatGame::runSlot(int k) {
 int RatGame::run() {
 	RatRules &r = rules;
 	r.result = 0;
+	r.setI(kAmbientAt, 0);   // 0x00438c3f; the rest of the state is kept from the last play
 	r.setI(0x00496cb0, 0);
 	r.setF(0x00496cb4, 98.0f);
 	r.setB(kRats, 5);

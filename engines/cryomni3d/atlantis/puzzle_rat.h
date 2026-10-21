@@ -23,6 +23,7 @@
 #define CRYOMNI3D_ATLANTIS_PUZZLE_RAT_H
 
 #include "common/array.h"
+#include "common/queue.h"
 #include "common/random.h"
 #include "common/scummsys.h"
 
@@ -66,6 +67,8 @@ private:
 	Graphics::ManagedSurface _working;
 	bool _loaded;
 	bool _prevButton;
+	bool _heldFlag;                     // 0x00496114
+	Common::Queue<bool> _buttonMessages;   // WM_LBUTTONDOWN (true) / UP not yet dispatched
 	int _mouseX, _mouseY;
 };
 
