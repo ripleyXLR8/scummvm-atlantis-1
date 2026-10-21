@@ -373,6 +373,68 @@ uint nameKeyCode(uint16 unicode);
 // code page bytes 0x8e 0x8f 0x99 0x84 0x86 0x94, the FONTMIN glyphs.
 int nameEntryChar(uint code, bool upperCase, bool swedishLetters = false);
 
+// The SELECT PLAYER NAME loop's state (atlantis.exe FUN_0041dea4) and its
+// per-frame blocks, in the original's order: click (0x0041e0a5..0x0041e1e4),
+// the field draw (shown when not empty, 0x0041e1e9), name entry
+// (0x0041e212..0x0041e4cc), the double-click exit (0x0041e4d3), the OK exit
+// (0x0041e5bf) and, on any exit, the commit test (0x0041e6af..0x0041e6d4).
+// There is no typing mode: a click is handled the same way while a name is
+// typed.  The rows are names[0..count) as the original keeps them
+// (0x0049657c, count 0x00496606): the players, then the New Player marker
+// (0x00496570) while there are fewer than five; records are SELEMENU's (5
+// OK, 6 DELETE).  See atlantis-re: functions/ui-FUN_0041dea4.md steps 3-5,
+// golden ui_player_screen.txt (tools/emu/ui_player_screen.py).
+struct PlayerScreenState {
+	static const uint kNameLen = 16;
+
+	int row = -1;            // [EBP-8]: the selected row, -1 none
+	Common::String field;    // 0x00612080: the name field, "" at entry
+	uint len = 0;            // 0x00772910: typed length, at most 15
+	bool full = false;       // [EBP-0x18]: a 16th character was typed
+	char lastKey = '.';      // [EBP-4]: the 16th character
+	bool blinkOn = true;     // [EBP-0x10]: insertion point phase, 1 at entry
+	int current = -1;        // 0x00496607: the current player's row
+	bool dblFlag = false;    // 0x00496118: set by WM_LBUTTONDBLCLK
+	uint key = 0;            // 0x006ce262: the last WM_CHAR code, 0 none
+
+	static bool isNewRow(const Common::Array<Common::String> &names,
+	                     const Common::String &marker, int r);
+	// First byte neither NUL, ' ' nor '.' (0x0041e37c, 0x0041e4dc, 0x0041e5d3).
+	bool fieldValid() const;
+	// The click block, for a frame whose click flag 0x0049611c is set on a
+	// record other than OK: unless on DELETE the row is the grid's
+	// (FUN_004211f0, -1 off the rows); length, key and 16th-character flag
+	// reset; a row gives its name (16 dots on the New Player row) and
+	// becomes current, no row empties the field and clears the double-click
+	// flag.  True when FUN_0041e8a8 (ARE YOU SURE, then delete) runs for
+	// row: DELETE on a row whose name is not the marker; the caller asks,
+	// deletes and calls deleteDone.
+	bool click(bool clicked, int record, int grid, const Common::Array<Common::String> &names,
+	           const Common::String &marker);
+	// After FUN_0041e8a8: a confirmed delete empties the field (0x0041ec58);
+	// the flag is cleared and the row is -1 either way (0x0041e1e3).
+	void deleteDone(bool confirmed);
+	// Name entry on the New Player row: a key (0x20..0xa7 through
+	// nameEntryChar; from the 16th on the length stays 15 and the key
+	// replaces the 16th character), Backspace, Enter, or the blink when no
+	// key; then key and length reset off the last row (0x0041e4b3).  True on
+	// an Enter commit: field is then the name and row -1 (0x0041e3a2..
+	// 0x0041e43c), the loop ends as on OK.
+	bool nameEntry(const Common::Array<Common::String> &names, const Common::String &marker,
+	               bool upperCase, bool swedishLetters);
+	bool dblExit() const { return dblFlag && fieldValid(); }
+	bool okExit(bool clicked, int record) const { return clicked && record == 5 && fieldValid(); }
+	// On any exit: record 5, no pending Enter and the last row selected run
+	// the commit of a typed name (0x0041e6af..0x0041e6d4), whatever that
+	// row holds.
+	bool exitCommits(int record, int count) const;
+	// The name the commits store: the typed bytes, then the 16th character
+	// when one was typed (0x0041e39e..0x0041e3cc, 0x0041e6db..0x0041e709).
+	Common::String typedName() const;
+	// The exit commit's state change: field = the name, row = count - 1.
+	void commitAtExit(int count);
+};
+
 } // namespace Atlantis
 } // namespace CryOmni3D
 

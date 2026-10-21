@@ -748,5 +748,129 @@ int nameEntryChar(uint code, bool upperCase, bool swedishLetters) {
 	return (code >= 'a' && code <= 'z') ? (int)(code - 0x20) : (int)code;
 }
 
+// Byte i of the name field buffer 0x00612080 (the field always holds 16
+// bytes when the name entry writes it).
+static void putFieldByte(Common::String &field, uint i, char c) {
+	if (i < field.size())
+		field.setChar(c, i);
+	else if (i == field.size())
+		field += c;
+}
+
+bool PlayerScreenState::isNewRow(const Common::Array<Common::String> &names,
+                                 const Common::String &marker, int r) {
+	return r >= 0 && r == (int)names.size() - 1 && names[r] == marker;
+}
+
+bool PlayerScreenState::fieldValid() const {
+	return !field.empty() && field[0] != ' ' && field[0] != '.';
+}
+
+bool PlayerScreenState::click(bool clicked, int record, int grid,
+                              const Common::Array<Common::String> &names,
+                              const Common::String &marker) {
+	// 0x0041e0a5: the click flag and a record other than OK (5).
+	if (!clicked || record == 5)
+		return false;
+	if (record != 6)                    // 0x0041e0bc..0x0041e0ea
+		row = grid;
+	len = 0;                            // 0x0041e0ed..0x0041e0fd
+	key = 0;
+	full = false;
+	if (row != -1) {
+		// 0x0041e10d..0x0041e165.  The caller gives no row past the list.
+		field = row < (int)names.size() ? names[row] : Common::String();
+		if (isNewRow(names, marker, row))
+			field = Common::String(kNameLen, '.');   // 0x0041e153
+		current = row;
+	} else {
+		field.clear();                  // 0x0041e175
+		dblFlag = false;                // 0x0041e184
+	}
+	// 0x0041e18e..0x0041e1c7: DELETE, a field not starting with ' ', a name
+	// other than the marker and a row.
+	if (record == 6 && (field.empty() || field[0] != ' ') && row != -1 &&
+	    row < (int)names.size() && names[row] != marker) {
+		dblFlag = false;                // 0x0041e1cb
+		return true;
+	}
+	return false;
+}
+
+void PlayerScreenState::deleteDone(bool confirmed) {
+	if (confirmed)
+		field.clear();
+	dblFlag = false;                    // FUN_0041e8a8 @ 0x0041e8db
+	row = -1;
+}
+
+bool PlayerScreenState::nameEntry(const Common::Array<Common::String> &names,
+                                  const Common::String &marker,
+                                  bool upperCase, bool swedishLetters) {
+	const int count = (int)names.size();
+	if (isNewRow(names, marker, row)) {           // 0x0041e212..0x0041e23c
+		if (key != 0 && len < kNameLen) {           // 0x0041e243..0x0041e254
+			dblFlag = false;                        // 0x0041e25b
+			const uint k = (key == 0x20 && len == 0) ? 0 : key;   // 0x0041e265..0x0041e27a
+			const int c = (k < 0x20) ? -1 : nameEntryChar(k, upperCase, swedishLetters);
+			if (c >= 0) {
+				// 0x0041e29d..0x0041e302
+				if (len == 0)
+					field = Common::String(kNameLen, '.');
+				putFieldByte(field, len, (char)c);
+				lastKey = '.';
+				if (len == kNameLen - 1) {
+					full = true;
+					lastKey = (char)c;
+				} else {
+					len++;
+				}
+			} else if (k == 8) {
+				// 0x0041e310..0x0041e361
+				if (len != 0) {
+					putFieldByte(field, len, '.');
+					if (len == kNameLen - 1 && lastKey != '.') {
+						lastKey = '.';
+					} else {
+						putFieldByte(field, len - 1, '.');
+						len--;
+					}
+				}
+			} else if (k == 0x0d && fieldValid()) {
+				// 0x0041e39e..0x0041e44c: the key stays 0x0d.
+				field = typedName();
+				row = -1;
+				return true;
+			}
+			key = 0;
+		} else {
+			// 0x0041e45c..0x0041e4b0
+			putFieldByte(field, len, blinkOn ? (full ? lastKey : '.') : ' ');
+			blinkOn = !blinkOn;
+		}
+	}
+	if (row < count - 1) {                        // 0x0041e4b3..0x0041e4cc
+		key = 0;
+		len = 0;
+	}
+	return false;
+}
+
+bool PlayerScreenState::exitCommits(int record, int count) const {
+	return record == 5 && key != 0x0d && row == count - 1;
+}
+
+Common::String PlayerScreenState::typedName() const {
+	Common::String name(field.c_str(), MIN<uint>(len, field.size()));
+	if (full)
+		name += lastKey;
+	return name;
+}
+
+void PlayerScreenState::commitAtExit(int count) {
+	field = typedName();
+	row = count - 1;
+}
+
 } // namespace Atlantis
 } // namespace CryOmni3D

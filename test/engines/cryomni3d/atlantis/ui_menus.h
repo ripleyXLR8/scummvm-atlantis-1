@@ -1494,4 +1494,182 @@ public:
 		UiMenuRecordTable::checkVsGolden(AtlantisTest::dataDir(), "ui_menu_record_table_en714240.txt",
 		                                 atlantisExeBuild(714240));
 	}
+
+private:
+	// A golden value: \xNN escapes (bytes outside 0x21..0x7e and '\', '|',
+	// '=') decoded.
+	static Common::String unescPs(const Common::String &v) {
+		Common::String out;
+		for (uint i = 0; i < v.size(); i++) {
+			if (v[i] == '\\' && i + 3 < v.size() && v[i + 1] == 'x') {
+				out += (char)strtol(v.substr(i + 2, 2).c_str(), nullptr, 16);
+				i += 3;
+			} else {
+				out += v[i];
+			}
+		}
+		return out;
+	}
+	static Common::String escPs(const Common::String &v) {
+		Common::String out;
+		for (uint i = 0; i < v.size(); i++) {
+			const byte c = (byte)v[i];
+			if (c >= 0x21 && c <= 0x7e && c != '\\' && c != '|' && c != '=')
+				out += (char)c;
+			else
+				out += Common::String::format("\\x%02x", c);
+		}
+		return out;
+	}
+	static Common::Array<Common::String> splitNames(const Common::String &v) {
+		Common::Array<Common::String> out;
+		Common::String cur;
+		for (uint i = 0; i < v.size(); i++) {
+			if (v[i] == '|') {
+				out.push_back(unescPs(cur));
+				cur.clear();
+			} else {
+				cur += v[i];
+			}
+		}
+		out.push_back(unescPs(cur));
+		return out;
+	}
+	// The "key=value" tokens of a golden line after its "in" and "out" words.
+	static void tokens(const Common::String &line, Common::HashMap<Common::String, Common::String> &in,
+	                   Common::HashMap<Common::String, Common::String> &out) {
+		Common::HashMap<Common::String, Common::String> *cur = nullptr;
+		uint i = 0;
+		while (i < line.size()) {
+			uint j = i;
+			while (j < line.size() && line[j] != ' ')
+				j++;
+			const Common::String t = line.substr(i, j - i);
+			if (t == "in")
+				cur = &in;
+			else if (t == "out")
+				cur = &out;
+			else if (cur) {
+				const uint eq = t.findFirstOf('=');
+				if (eq != Common::String::npos)
+					(*cur)[t.substr(0, eq)] = t.substr(eq + 1);
+			}
+			i = j + 1;
+		}
+	}
+
+public:
+	// The SELECT PLAYER NAME loop's state through the port's
+	// PlayerScreenState (menu_layout.cpp, the blocks displayPlayerScreen
+	// runs each frame, in its order) against FUN_0041dea4's click block,
+	// name entry, exit tests and exit commit run under Unicorn
+	// (atlantis-re tools/emu/ui_player_screen.py, ui_player_screen.txt):
+	// 17 keys, Backspace on the 16th character and below, refused keys,
+	// clicks while typing, DELETE (cancelled, confirmed, on the New Player
+	// row), the sticky double-click flag, OK and Enter commits, five
+	// players.  The names after FUN_0041e8a8 (a confirmed delete) are the
+	// golden's, as the port's deletePlayer has its own storage; after a
+	// commit the test stores the struct's field into the last row as
+	// 0x0041e40d / 0x0041e72f do, the marker appended below five rows.
+	// enterdraw: the Enter commit draws the stored name with FUN_00420f60
+	// into the work buffer 0x004960d8 (0x0041e3e4), which the loop copies to
+	// the back surface only at 0x0041e56b, not reached after the commit;
+	// displayPlayerScreen leaves without drawing, the name compared is the
+	// struct's field.
+	// The five-player OK commit is the original's (the struct says it
+	// commits); displayPlayerScreen keeps that name (differences of
+	// functions/ui-FUN_0041dea4.md).
+	void test_player_screen_vs_original() {
+		using CryOmni3D::Atlantis::PlayerScreenState;
+		Common::Array<Common::String> lines;
+		if (AtlantisTest::goldenDir().empty() || !AtlantisTest::loadGoldenLines("ui_player_screen.txt", lines)) {
+			TS_WARN("ui_player_screen.txt not found; skipped");
+			return;
+		}
+		const Common::String marker("#New Player");
+		PlayerScreenState st;
+		Common::Array<Common::String> names;
+		int frames = 0, scenarios = 0;
+		for (const Common::String &line : lines) {
+			if (line.hasPrefix("S ")) {
+				Common::HashMap<Common::String, Common::String> in, out;
+				tokens("in " + line, in, out);
+				names = splitNames(in["names"]);
+				st = PlayerScreenState();
+				scenarios++;
+				continue;
+			}
+			if (!line.hasPrefix("F "))
+				continue;
+			Common::HashMap<Common::String, Common::String> in, out;
+			tokens(line, in, out);
+			const Common::String where = line.substr(0, line.find(" in "));
+			frames++;
+			// The window procedure's writes, then the frame.
+			if (in["key"] != "-")
+				st.key = (uint)strtol(in["key"].c_str(), nullptr, 16);
+			if (in["dbl"] == "1")
+				st.dblFlag = true;
+			const bool click = in["click"] == "1";
+			const int record = atoi(in["rec"].c_str());
+			const int grid = atoi(in["grid"].c_str());
+			Common::String del = "-";
+			if (st.click(click, record, grid, names, marker)) {
+				del = Common::String::format("%d", st.row);
+				st.deleteDone(in["sure"] == "3");
+			}
+			const Common::String shown = st.field.empty() ? Common::String("-") : escPs(st.field);
+			Common::String exitKind = "-";
+			int exitRecord = -1;
+			bool commit = false;
+			if (st.nameEntry(names, marker, false, false)) {
+				exitKind = "enter";
+				exitRecord = 5;
+				commit = true;
+			} else if (st.dblExit()) {
+				exitKind = "dbl";
+				exitRecord = record;
+			} else if (st.okExit(click, record)) {
+				exitKind = "ok";
+				exitRecord = 5;
+			}
+			if (exitKind != "-") {
+				st.dblFlag = false;
+				if (st.exitCommits(exitRecord, names.size())) {
+					st.commitAtExit(names.size());
+					commit = true;
+				}
+				if (commit) {
+					names[names.size() - 1] = st.field;
+					if (names.size() < 5)
+						names.push_back(marker);
+				}
+			}
+			const Common::String port = Common::String::format(
+			    "row=%d len=%u full=%d last=%02x blink=%d cur=%d dbl=%d key=%02x field=%s shown=%s del=%s "
+			    "exit=%s commit=%d atl=%d enterdraw=%s",
+			    st.row, st.len, st.full ? 1 : 0, (byte)st.lastKey, st.blinkOn ? 1 : 0, st.current,
+			    st.dblFlag ? 1 : 0, st.key, escPs(st.field).c_str(), shown.c_str(), del.c_str(),
+			    exitKind.c_str(), commit ? 1 : 0, exitRecord == 5 ? 1 : 0,
+			    exitKind == "enter" ? escPs(st.field).c_str() : "-");
+			const Common::String orig = Common::String::format(
+			    "row=%s len=%s full=%s last=%s blink=%s cur=%s dbl=%s key=%s field=%s shown=%s del=%s "
+			    "exit=%s commit=%s atl=%s enterdraw=%s",
+			    out["row"].c_str(), out["len"].c_str(), out["full"].c_str(), out["last"].c_str(),
+			    out["blink"].c_str(), out["cur"].c_str(), out["dbl"].c_str(), out["key"].c_str(),
+			    out["field"].c_str(), out["shown"].c_str(), out["del"].c_str(), out["exit"].c_str(),
+			    out["commit"].c_str(), out["atl"].c_str(), out["enterdraw"].c_str());
+			TSM_ASSERT_EQUALS(where.c_str(), port, orig);
+			// The rows after the frame: the golden's after a delete (the
+			// port's storage is its own), the struct's commit otherwise.
+			const Common::Array<Common::String> after = splitNames(out["names"]);
+			if (del != "-" && in["sure"] == "3")
+				names = after;
+			TSM_ASSERT_EQUALS(where.c_str(), names.size(), after.size());
+			for (uint i = 0; i < names.size() && i < after.size(); i++)
+				TSM_ASSERT_EQUALS(where.c_str(), names[i], after[i]);
+		}
+		TS_ASSERT(scenarios >= 17);
+		TS_ASSERT(frames >= 150);
+	}
 };

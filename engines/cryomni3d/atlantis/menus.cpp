@@ -573,35 +573,18 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 	// first hit-test; it is re-rendered with hover state inside the loop.
 	renderMenuLayout(surf, decor, -1, decorRects);
 
-	// FUN_0041dea4's state, which has no "typing" mode: the selected row
-	// [EBP-8] (-1 none; the "New Player" row is the last), the name field
-	// 0x00612080 (a player's name, 16 dots on the New Player row, "" after a
-	// click off the rows), its length 0x00772910, the 16th-character flag and
-	// key [EBP-0x18] / [EBP-4], the blink phase [EBP-0x10] (1 at entry, never
-	// reset), the current player 0x00496607 (here the storage slot, or
-	// kRowNew) and the double-click flag 0x00496118.
+	// FUN_0041dea4's state and blocks (PlayerScreenState, menu_layout.h);
+	// its rows are names[0..count) (0x0049657c / 0x00496606): the players,
+	// then the New Player marker while there is room.  The current player
+	// is a row; rowSlot maps a row to the port's storage slot (kRowNew for
+	// the New Player row).
 	const int kRowNew = -2;
-	int  row        = -1;
-	Common::String field;          // 0x00612080 = "" at entry
-	uint len        = 0;
-	bool full       = false;
-	char lastKey    = '.';
-	bool blinkOn    = true;
-	int  current    = -1;
-	bool dblFlag    = false;
+	PlayerScreenState st;
 	MenuDoubleClick dblClick;
 	int  result     = -2;          // -2 running, -1 quit, >=0 chosen player
-	const Common::String kDots(".................", kPlayerNameLen);
-	auto fieldValid = [&]() {
-		return !field.empty() && field[0] != ' ' && field[0] != '.';
-	};
-	// The commit (Enter @ 0x0041e3a2.., OK @ 0x0041e6db..): the typed bytes,
-	// then the 16th character when one was typed over (field[len] =
-	// [EBP-4]), into the New Player row, i.e. the first free slot.
-	auto commitName = [&]() -> int {
-		Common::String name(field.c_str(), len);
-		if (full)
-			name += lastKey;
+	// The commit of a typed name into the New Player row, i.e. the first
+	// free slot (0x0041e3fa..0x0041e436, 0x0041e71c..0x0041e758).
+	auto commitName = [&](const Common::String &name) -> int {
 		for (uint i = 0; i < kMaxPlayers; i++) {
 			if (_players[i].empty()) {
 				_players[i] = name;
@@ -616,43 +599,49 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 	showMouse(true);
 	setArrowCursor();
 
-	// The loop reads no Escape (FUN_0041dea4 ends only on OK or a double
-	// click with a valid name; WM_CHAR 0x1b is not a name character); the
-	// ScummVM quit (window close, GMM) is shouldAbort().  The 1997 builds'
-	// loops (atlantis-cd-fr-687104 FUN_0041d45c, atlantis-cd-sv-688128
-	// FUN_0041d704, ...) are compared only for the name characters
-	// (nameEntryChar); the rest follows the reference here [UNKNOWN].
+	// The loop reads no Escape (FUN_0041dea4 ends only on OK, Enter or a
+	// double click with a valid name; WM_CHAR 0x1b is not a name
+	// character); the ScummVM quit (window close, GMM) is shouldAbort().
+	// The 1997 builds' loops (atlantis-cd-fr-687104 FUN_0041d45c,
+	// atlantis-cd-sv-688128 FUN_0041d704, ...) are compared only for the
+	// name characters (nameEntryChar); the rest follows the reference here
+	// [UNKNOWN].
 	while (result == -2 && !shouldAbort()) {
 		pollEvents();
 
 		// The rows: existing players, then the "New Player" row while there
-		// is room (0x00496606 counts it; FUN_00420d8c draws every row each
-		// frame, so it stays listed while a name is typed).
+		// is room (FUN_00420d8c draws every row each frame, so it stays
+		// listed while a name is typed).
+		Common::Array<Common::String> names;
 		int  rowSlot[kMaxPlayers + 1];
-		int  numRows = 0;
-		uint numPlayers = 0;
 		for (uint i = 0; i < kMaxPlayers; i++) {
 			if (!_players[i].empty()) {
-				rowSlot[numRows++] = (int)i;
-				numPlayers++;
+				rowSlot[names.size()] = (int)i;
+				names.push_back(_players[i]);
 			}
 		}
-		if (numPlayers < kMaxPlayers)
-			rowSlot[numRows++] = kRowNew;
-		if (row >= numRows)
-			row = -1;
+		if (names.size() < kMaxPlayers) {
+			rowSlot[names.size()] = kRowNew;
+			names.push_back(_newPlayerMarker);
+		}
+		const int numRows = (int)names.size();
+		if (st.row >= numRows)
+			st.row = -1;
 
-		// The key 0x006ce262: the WM_CHAR code (Windows-1252), 8 for
-		// Backspace, 0x0d for Enter, 0 for none.
-		uint key = 0;
+		// The key 0x006ce262, written by the window procedure on WM_CHAR
+		// (Windows-1252, 8 for Backspace, 0x0d for Enter) and kept until a
+		// block clears it.
 		{
 			Common::KeyState k = getNextKey();
+			uint code = 0;
 			if (k.keycode == Common::KEYCODE_BACKSPACE)
-				key = 8;
+				code = 8;
 			else if (k.keycode == Common::KEYCODE_RETURN || k.keycode == Common::KEYCODE_KP_ENTER)
-				key = 0x0d;
+				code = 0x0d;
 			else if (k.keycode != Common::KEYCODE_INVALID && k.ascii)
-				key = nameKeyCode(k.ascii);
+				code = nameKeyCode(k.ascii);
+			if (code)
+				st.key = code;
 		}
 
 		// Mouse hover / click.
@@ -660,7 +649,7 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 		int hovered = -1;
 		// FUN_004211f0 with FUN_0041dea4's arguments (0x0041e08e): cell 320 x 22
 		// at (175, 248), one column, numRows rows; its inclusive far edges give
-		// an index past the list, which selects nothing.
+		// an index past the list, which selects nothing here (differences).
 		{
 			const int g = menuGridHit(kGridX0, kGridY0, kGridW, kGridStep, 1, numRows, true,
 			                          mouse.x, mouse.y);
@@ -670,6 +659,7 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 		// Hover state for the interactive SELEMENU labels (records 5 and 6).
 		bool okHover  = (okIdx  >= 0) && decorRects[okIdx].contains(mouse);
 		bool delHover = (delIdx >= 0) && decorRects[delIdx].contains(mouse);
+		const int record = okHover ? 5 : (delHover ? 6 : -1);
 
 		const bool click = getCurrentMouseButton() == 1;
 		if (click) {
@@ -683,155 +673,89 @@ int CryOmni3DEngine_Atlantis::displayPlayerScreen() {
 			// it comes first, so a double click off the rows ends with the
 			// flag cleared.
 			if (dblClick.press(pressMs, mouse))
-				dblFlag = true;
+				st.dblFlag = true;
 		}
-		if (click && !okHover) {
-			// 0x0041e0a5..0x0041e165: unless on DELETE (record 6) the grid
-			// result becomes the row, -1 off the rows; length, key and the
-			// 16th-character flag reset; the field takes the row's name, 16
-			// dots on the New Player row, "" off the rows (with the double-
-			// click flag cleared, 0x0041e184); the current player = row.
-			if (!delHover)
-				row = hovered;
-			len = 0;
-			key = 0;
-			full = false;
-			if (row < 0) {
-				field.clear();
-				dblFlag = false;
-			} else if (rowSlot[row] == kRowNew) {
-				field = kDots;
-				current = kRowNew;
-			} else {
-				field = _players[rowSlot[row]];
-				current = rowSlot[row];
+		// 0x0041e0a5..0x0041e1e4.  DELETE with a real player's row runs
+		// FUN_0041e8a8: the ARE YOU SURE prompt (confirmQuit, shown over the
+		// bare title backdrop bg as the original, SUREMENU.TXT carrying its
+		// own ornament sprites), then the delete.
+		if (st.click(click, record, hovered, names, _newPlayerMarker)) {
+			const bool confirmed = confirmQuit(bg);
+			if (confirmed) {
+				deletePlayer((uint)rowSlot[st.row]);
+				savePlayers();
 			}
-			// 0x0041e18e..0x0041e1e4: DELETE with a real player's row
-			// clears the double-click flag and runs FUN_0041e8a8 (the
-			// ARE YOU SURE prompt; a confirmed delete empties the field,
-			// 0x0041ec58), then the row is -1 either way.  confirmQuit()
-			// shows the SUREMENU prompt over the bare title backdrop (bg)
-			// rather than the live player screen, so the list,
-			// "SELECT PLAYER NAME" / "DELETE PLAYER NAME" / "OK" labels all
-			// vanish behind "ARE YOU SURE ?" -- matching the original.
-			// SUREMENU.TXT carries its own ornament sprites.
-			if (delHover && row >= 0 && rowSlot[row] >= 0) {
-				dblFlag = false;
-				if (confirmQuit(bg)) {
-					deletePlayer((uint)rowSlot[row]);
-					savePlayers();
-					field.clear();
-				}
-				row = -1;
-			}
+			st.deleteDone(confirmed);
 		}
 
 		// FUN_00420f60 draws the field here (0x0041e20d), before this frame's
 		// name entry: what is shown lags the blink by one frame.
-		const Common::String shownField = field;
+		const Common::String shownField = st.field;
 
-		// Name entry, only on the New Player row (0x0041e212..0x0041e4b0).
-		if (row >= 0 && rowSlot[row] == kRowNew && field.size() == kPlayerNameLen) {
-			if (key == 0) {
-				// No key: the insertion point blinks between '.' (or the
-				// 16th character once typed over) and ' ', one phase per
-				// frame (the frame rate is the port's, decision 0013).
-				field.setChar(blinkOn ? (full ? lastKey : '.') : ' ', len);
-				blinkOn = !blinkOn;
-			} else {
-				dblFlag = false;          // 0x0041e25b
-				// Characters 0x20..0xa7 (the FONTMIN glyphs); a leading
-				// space is refused, a leading '.' is typed (the commit still
-				// refuses it).  The 1997 build takes 0x20..0x7a, a..z as
-				// A..Z; the Swedish one adds six letters (nameEntryChar).
-				const int c = (key == 8 || key == 0x0d) ? -1
-				    : nameEntryChar(key, _exeBuild->upperCaseNames, _exeBuild->nameSwedishLetters);
-				if (c >= 0) {
-					if (!(len == 0 && c == ' ')) {
-						if (len == 0)
-							field = kDots;
-						// 0x0041e2c2..0x0041e2ff: at the 16th character the
-						// length stays 15 and every further key replaces it.
-						field.setChar((char)c, len);
-						lastKey = '.';
-						if (len == kPlayerNameLen - 1) {
-							full = true;
-							lastKey = (char)c;
-						} else {
-							len++;
-						}
-					}
-				} else if (key == 8) {
-					// Backspace restores a dot; on a typed-over 16th
-					// character it only turns that character into '.', which
-					// the commit keeps (0x0041e310..0x0041e361).
-					if (len != 0) {
-						field.setChar('.', len);
-						if (len == kPlayerNameLen - 1 && lastKey != '.') {
-							lastKey = '.';
-						} else {
-							field.setChar('.', len - 1);
-							len--;
-						}
-					}
-				} else if (key == 0x0d && fieldValid()) {
-					const int slot = commitName();
-					if (slot >= 0) {
-						result = slot;   // the new player becomes current
-						break;
-					}
-				}
+		// Name entry, Enter commit, then the double-click exit (0x0041e4d3);
+		// the OK exit is tested after the frame is drawn (0x0041e5bf).
+		int exitRecord = -1;
+		if (st.nameEntry(names, _newPlayerMarker, _exeBuild->upperCaseNames,
+		                 _exeBuild->nameSwedishLetters)) {
+			const int slot = commitName(st.field);
+			if (slot >= 0) {
+				result = slot;   // the new player becomes current
+				break;
 			}
 		}
+		if (st.dblExit())
+			exitRecord = record;
 
-		// 0x0041e4d3: the double-click flag with a valid name leaves the
-		// loop.  It is cleared only by a click off the rows, a delete or a
-		// typed key, so a double click anywhere (on the New Player row, on
-		// OK with no name) and a later single click on a player's row start
-		// that player.  A typed name never meets the flag here (a typed key
-		// clears it, a click on the New Player row resets the field).
-		if (dblFlag && fieldValid() && current >= 0) {
-			result = current;
-			break;
+		if (exitRecord == -1) {
+			// Redraw.  The SELEMENU frame is re-rendered each frame so the
+			// "OK" and "DELETE PLAYER NAME" labels can light up on hover.
+			surf.blitFrom(bg);
+			renderMenuLayout(surf, decor, okHover ? okIdx
+			                              : (delHover ? delIdx : -1), decorRects);
+			// Player rows use FONTMIN (FONTMIN2 for the hovered row),
+			// left-aligned at the grid's X origin.
+			for (int j = 0; j < numRows; j++) {
+				int slot = rowSlot[j];
+				Common::String label = (slot == kRowNew)
+				    ? _newPlayerLabel : _players[slot];
+				// FUN_00420d8c highlights the row under the mouse only (the
+				// grid result, FUN_0041dea4 @ 0x0041e096).
+				bool hot = (j == hovered);
+				// FUN_00420d8c: x 185 (0xb9), y 270 + 22 j.
+				drawPlayerText(surf, label, 185,
+				               kGridY0 + (j + 1) * kGridStep, hot, kFontMinPlayerList);
+			}
+			// The name field above the list, whenever it is not empty
+			// (0x0041e1e9..0x0041e20d).
+			if (!shownField.empty())
+				drawPlayerText(surf, shownField, kEditFieldX, kEditFieldY, true, kFontMinNameField);
+
+			g_system->copyRectToScreen(surf.getPixels(), surf.pitch, 0, 0, 640, 480);
+			g_system->updateScreen();
+			g_system->delayMillis(10);
+
+			// Loop test (0x0041e5bf..0x0041e5f2): a click on OK with a valid
+			// name.
+			if (!st.okExit(click, record))
+				continue;
+			exitRecord = 5;
 		}
 
-		// Redraw.  The SELEMENU frame is re-rendered each frame so the "OK"
-		// and "DELETE PLAYER NAME" labels can light up on hover.
-		surf.blitFrom(bg);
-		renderMenuLayout(surf, decor, okHover ? okIdx
-		                              : (delHover ? delIdx : -1), decorRects);
-		// Player rows use FONTMIN (FONTMIN2 for the hovered row), left-aligned
-		// at the grid's X origin.
-		for (int j = 0; j < numRows; j++) {
-			int slot = rowSlot[j];
-			Common::String label = (slot == kRowNew)
-			    ? _newPlayerLabel : _players[slot];
-			// FUN_00420d8c highlights the row under the mouse only (the grid
-			// result, FUN_0041dea4 @ 0x0041e096).
-			bool hot = (j == hovered);
-			// FUN_00420d8c: x 185 (0xb9), y 270 + 22 j.
-			drawPlayerText(surf, label, 185,
-			               kGridY0 + (j + 1) * kGridStep, hot, kFontMinPlayerList);
-		}
-		// The name field above the list, whenever it is not empty
-		// (0x0041e1e9..0x0041e20d).
-		if (!shownField.empty())
-			drawPlayerText(surf, shownField, kEditFieldX, kEditFieldY, true, kFontMinNameField);
-
-		g_system->copyRectToScreen(surf.getPixels(), surf.pitch, 0, 0, 640, 480);
-		g_system->updateScreen();
-		g_system->delayMillis(10);
-
-		// Loop test (0x0041e5bf..0x0041e5f2): a click on OK with a valid
-		// name; a typed name is then committed (0x0041e6db..).  With five
-		// players and the fifth selected the original also runs that commit
-		// and empties the fifth name (functions/ui-FUN_0041dea4.md,
-		// differences); not reproduced.
-		if (click && okHover && fieldValid()) {
-			if (row >= 0 && rowSlot[row] == kRowNew)
-				result = commitName();
-			else if (current >= 0)
-				result = current;
+		// The exit (0x0041e5f7..): the flag cleared, then the commit test
+		// (0x0041e6af..0x0041e6d4).  On the New Player row it stores the
+		// typed name.  With five players (no New Player row) and the fifth
+		// selected the original runs it too and stores the empty typed name
+		// over the fifth name (ui_player_screen.txt five_ok_last); the port,
+		// whose storage has no empty-named player, starts the fifth player
+		// with its name (functions/ui-FUN_0041dea4.md, differences).
+		st.dblFlag = false;
+		if (st.exitCommits(exitRecord, numRows) && rowSlot[st.row] == kRowNew) {
+			st.commitAtExit(numRows);
+			const int slot = commitName(st.field);
+			if (slot >= 0)
+				result = slot;
+		} else if (st.current >= 0 && st.current < numRows && rowSlot[st.current] >= 0) {
+			result = rowSlot[st.current];
 		}
 	}
 
