@@ -226,6 +226,21 @@ struct OSystemPeek : OSystem {
 	}
 };
 
+// The end of the shown records 0x00496928 as the port reads it.  The port
+// keeps no end variable: the original's FUN_0042c098 test cell + 1 <= end
+// (@ 0x0042c10f) is clickedRecord's bound on the first shown record, so the
+// end the port uses for a given first is one past the largest cell
+// clickedRecord takes.  A bound that did not move with first (the
+// original's FUN_0042cc98 / FUN_0042c8ac scrolls move first and end
+// together, @ 0x0042cf55..0x0042cf89, 0x0042cbba..0x0042cbee) gives
+// another end once the bar is scrolled.
+inline uint portClickEnd(uint first) {
+	int cell = 0;
+	while (cell < 64 && CryOmni3D::Atlantis::Atlantis_Toolbar::clickedRecord(70 * cell, 409, first) >= 0)
+		cell++;
+	return (uint)cell;
+}
+
 // The harness's clock FUN_00451d0c: 70, so FUN_004320bc draws r = 70.
 inline uint32 ambientClock70(void *) {
 	return 70;
@@ -1296,6 +1311,17 @@ public:
 	// edge returned and the first shown record after the pass (the edge
 	// scroll runs on the click pass too) match; the port's scroll throttle
 	// (110 ms, decision 0013) is kept out of the way with passes 1 s apart.
+	// The golden's edge= is an input: the harness's FUN_0041a298 stub sets
+	// the edge flags 0x0049611c / 0x00496120, so the original's edge
+	// detection is not run.  The test presses that button (after none) and
+	// the edge column checks only that holdPass returns that press as 1 / 2
+	// and ends the loop on that pass (the loop test @ 0x0042cd05 after the
+	// ambient sounds and the scroll); how holdPass tells a press from a held
+	// button is not compared with the original here.  The exit row's first=
+	// is holdPass's scroll; its end= is portClickEnd (the bound of the
+	// port's clickedRecord for that first).  The ambient= column of the port
+	// is read from the call log (a pass with no call is ambient=0), the
+	// original's from FUN_00432178 reaching its FUN_00432a64 tail.
 	void test_bar_ambient_restart_vs_original() {
 		using namespace GraphicsToolbarTest;
 		typedef CryOmni3D::Atlantis::Atlantis_Toolbar TB;
@@ -1440,8 +1466,9 @@ public:
 					Common::Array<Common::String> xy;
 					splitOn(field(f, "mouse"), ',', xy);
 					const Common::Point mouse((int16)atoi(xy[0].c_str()), (int16)atoi(xy[1].c_str()));
-					const Common::String edgeWant = field(f, "edge");
-					const uint button = edgeWant == "left" ? 1 : edgeWant == "right" ? 2 : 0;
+					// The stub's edge flag, an input: the button pressed this pass.
+					const Common::String edgeIn = field(f, "edge");
+					const uint button = edgeIn == "left" ? 1 : edgeIn == "right" ? 2 : 0;
 					const int edge = tb.holdPass(button, prevButton, mouse, 1000 * (passes + 1), nextScrollMs);
 					const Common::String calls = out.take();
 					got.push_back(Common::String::format("pass=%u mouse=%d,%d edge=%s ambient=%d first=%u calls=%s", passes,
@@ -1454,7 +1481,7 @@ public:
 					}
 				}
 				got.push_back(Common::String::format("exit passes=%u first=%u end=%u", passes, tb._inventoryOffset,
-				                                     tb._inventoryOffset + 9));
+				                                     portClickEnd(tb._inventoryOffset)));
 			}
 			TSM_ASSERT_EQUALS(name.c_str(), got.size(), sc.rows.size());
 			for (uint k = 0; k < got.size() && k < sc.rows.size(); k++) {
