@@ -25,6 +25,7 @@
 #include "video_test_big.h"
 #include "../../../system/null_osystem.h"
 
+#include "audio/audiostream.h"
 #include "common/archive.h"
 #include "common/array.h"
 #include "common/fs.h"
@@ -38,6 +39,7 @@
 #define protected public
 #include "cryomni3d/atlantis/subtitle_layout.h"
 #include "cryomni3d/atlantis/dialog_view.h"
+#include "cryomni3d/atlantis/apc_stream.h"
 #include "cryomni3d/atlantis/engine.h"
 #undef private
 #undef protected
@@ -609,6 +611,117 @@ public:
 		TS_ASSERT_EQUALS(CryOmni3D::Atlantis::subtitleLineY(0, 1), 0x1ce - 2 * 14);
 		TS_ASSERT_EQUALS(CryOmni3D::Atlantis::subtitleLineY(1, 2) - CryOmni3D::Atlantis::subtitleLineY(0, 2), 14);
 		TS_ASSERT_EQUALS(CryOmni3D::Atlantis::subtitleLineY(1, 2), 0x1ce - 2 * 14);
+	}
+};
+
+// The screen of an "off1" line: the off1 player FUN_00430884 of
+// atlantis-cd-en-714240 and FUN_004307d0 of atlantis-gog-fr-714752 (the
+// release whose scripts have off1 lines), run whole under Unicorn on GOG
+// CHAPI031 /377 A ("[Commander,off1] ...", WAV\ATA0377A.APC), with a known
+// screen buffer 0x004960d4 (atlantis-re tools/emu/video_dialog_off1.py ->
+// evidence/golden/video_dialog_off1.txt).  Port code exercised:
+// DialogView::showScreenBuffer, which playSingleConLine applies to the
+// line's screen (keptScreen) once makeAtlantisAPCStream has accepted the
+// voice, and makeAtlantisAPCStream, the gate.
+class VideoDialogOff1TestSuite : public CxxTest::TestSuite {
+	static void pattern(Common::Array<byte> &out) {
+		// The harness's screen buffer: byte i = (i * 7 + (i >> 11)) & 0xff.
+		out.resize(640 * 480 * 2);
+		for (uint i = 0; i < out.size(); i++)
+			out[i] = (byte)((i * 7 + (i >> 11)) & 0xff);
+	}
+
+public:
+	void setUp() { Common::install_null_g_system(); }
+	void tearDown() { Common::uninstall_null_g_system(); }
+
+	// The original copies the screen buffer to the back buffer and the
+	// surface: 480 rows of 0x500 bytes, the rest of a wider surface row
+	// untouched; the subtitle and the present come after.  Same surface in
+	// both builds, for a surface pitch of 0x500 and of 0x600.
+	void test_off1_screen_vs_original() {
+		AtlantisTest::Golden golden;
+		if (!AtlantisTest::loadGolden("video_dialog_off1.txt", golden)) {
+			TS_WARN("video_dialog_off1.txt not found; skipped");
+			return;
+		}
+		Common::Array<byte> buf;
+		pattern(buf);
+		TS_ASSERT_EQUALS(AtlantisTest::md5Hex(buf.begin(), buf.size()), golden["pattern screenbuffer"]);
+		const char *const builds[] = { "ref", "gog" };
+		const uint pitches[] = { 0x500, 0x600 };
+		int checked = 0;
+		for (uint p = 0; p < ARRAYSIZE(pitches); p++) {
+			Common::Array<byte> surface;
+			surface.resize(pitches[p] * 480);
+			memset(surface.begin(), 0x55, surface.size());
+			TS_ASSERT_EQUALS(AtlantisTest::md5Hex(surface.begin(), surface.size()),
+			                 golden[Common::String::format("pattern surface%u", pitches[p])]);
+			CryOmni3D::Atlantis::DialogView::showScreenBuffer(buf.begin(), surface.begin(), pitches[p]);
+			const Common::String port = AtlantisTest::md5Hex(surface.begin(), surface.size());
+			for (uint b = 0; b < ARRAYSIZE(builds); b++) {
+				const Common::String key = Common::String::format("%s ok pitch%u a1c0 ", builds[b], pitches[p]);
+				TS_ASSERT_EQUALS(golden[key + "ret"], Common::String("1"));
+				// the surface once the line ends, and as presented after the
+				// subtitle call (the subtitle draw is stubbed in the harness)
+				TS_ASSERT_EQUALS(port, golden[key + "surface"]);
+				TS_ASSERT_EQUALS(port, golden[key + "present"]);
+				// the screen buffer is only read
+				TS_ASSERT_EQUALS(golden[key + "screenbuffer"], golden["pattern screenbuffer"]);
+				checked++;
+			}
+		}
+		TS_ASSERT_EQUALS(checked, 4);
+	}
+
+	// The copy happens only once the voice is loaded: without the file, or
+	// with a header that is not "CRYO_APC" "1.20" (FUN_00417cb4), the
+	// original returns 0 with the surface and the back buffer untouched.
+	// Port: playSingleConLine draws nothing when the file does not open and
+	// copies only when makeAtlantisAPCStream returns a stream.
+	void test_off1_voice_gate_vs_original() {
+		AtlantisTest::Golden golden;
+		const Common::String gog = AtlantisTest::configValue("gog");
+		if (gog.empty() || !AtlantisTest::loadGolden("video_dialog_off1.txt", golden)) {
+			TS_WARN("no GOG data (gog=) or no video_dialog_off1.txt; skipped");
+			return;
+		}
+		Common::File f;
+		if (!f.open(Common::FSNode(Common::Path(gog + "/fr-FR/WAV/ATA0377A.APC", '/')))) {
+			TS_FAIL("fr-FR/WAV/ATA0377A.APC");
+			return;
+		}
+		Common::Array<byte> apc;
+		apc.resize(f.size());
+		f.read(apc.begin(), apc.size());
+		TS_ASSERT_EQUALS(AtlantisTest::md5Hex(apc.begin(), apc.size()),
+		                 Common::String("44342fbae2e52ab416ca475f3ef1af9b"));   // the harness's file
+		const char *const builds[] = { "ref", "gog" };
+		const char *const kinds[] = { "ok", "badmagic", "badversion" };
+		for (uint k = 0; k < ARRAYSIZE(kinds); k++) {
+			Common::Array<byte> data = apc;
+			if (!strcmp(kinds[k], "badmagic"))
+				data[7] = 'X';
+			else if (!strcmp(kinds[k], "badversion"))
+				data[11] = '1';
+			Common::MemoryReadStream s(data.begin(), data.size());
+			Audio::AudioStream *stream = CryOmni3D::Atlantis::makeAtlantisAPCStream(s);
+			const bool portShows = stream != nullptr;
+			delete stream;
+			for (uint b = 0; b < ARRAYSIZE(builds); b++) {
+				const Common::String key = Common::String::format("%s %s pitch1280 a1c0 ", builds[b], kinds[k]);
+				const bool origShows = golden[key + "ret"] == "1";
+				TS_ASSERT_EQUALS(portShows, origShows);
+				TS_ASSERT_EQUALS(golden[key + "events"].contains("copy(screenbuffer->backbuffer"), origShows);
+				if (!origShows)
+					TS_ASSERT_EQUALS(golden[key + "surface"], golden["pattern surface1280"]);
+			}
+		}
+		for (uint b = 0; b < ARRAYSIZE(builds); b++) {
+			const Common::String key = Common::String::format("%s absent pitch1280 a1c0 ", builds[b]);
+			TS_ASSERT_EQUALS(golden[key + "ret"], Common::String("0"));
+			TS_ASSERT_EQUALS(golden[key + "surface"], golden["pattern surface1280"]);
+		}
 	}
 };
 

@@ -469,9 +469,11 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 		// stands, with no view redraw and no FOV reset.  off1 (FUN_00430884)
 		// does the same over the screen buffer 0x004960d4 (the first IX
 		// buffer), which it first copies to the back buffer and the surface
-		// (0x00430a96..), with no sprite pass (FUN_00425304), no panorama
-		// redraw (FUN_00451d8b) and no FOV reset (FUN_0045179a): below, the
-		// screen is set from _ixVideoBuffers and the line then plays as off0.
+		// (0x00430a86..0x00430abb) once the voice has loaded, with no sprite
+		// pass (FUN_00425304), no panorama redraw (FUN_00451d8b) and no FOV
+		// reset (FUN_0045179a): the line plays as off0 and
+		// playSingleConLine puts _ixVideoBuffers under the subtitle
+		// (_dialShowScreenBuffer; atlantis-re tools/emu/video_dialog_off1.py).
 		// The reference's CON files have no off1 header; the GOG.com
 		// release's have 30 (CHAPI031, 036, 048, 058, 062).
 		const bool off1 = tailIs("off1", 4);
@@ -587,21 +589,14 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 			if (fovChanged)
 				_omni3dMan.setHFov((double)kDialogCamFovDeg[camNum - 2] * M_PI / 180.0);
 			// off1: FUN_00430884 shows the screen buffer before the subtitle,
-			// once the voice has loaded (0x00430a12..0x00430ab8).
-			if (off1 && _ixVideoBuffers) {
-				Common::ScopedPtr<Common::SeekableReadStream> apc(openBigFileStream(kFileTypeSound,
-				    Common::String::format("ATA%04d%c.APC", sec.id, conTrackLetter(lineIdx))));
-				if (apc && g_system->getScreenFormat().bytesPerPixel == 2 &&
-				        g_system->getWidth() == 640 && g_system->getHeight() == 480) {
-					g_system->copyRectToScreen(_ixVideoBuffers, 640 * 2, 0, 0, 640, 480);
-					g_system->updateScreen();
-				}
-			}
+			// once the voice has loaded (playSingleConLine).
+			_dialShowScreenBuffer = off1;
 			playSingleConLine(sec.id, conTrackLetter(lineIdx++), item.line.text, vid,
 			                  spfBase,
 			                  /*hasAngle=*/false, 0, 0, effCamNum,
 			                  /*interactiveDialog=*/sec.isCon,
 			                  (!voiceOnly && !vid.empty()) ? dialRow : -1);
+			_dialShowScreenBuffer = false;
 			if (fovChanged)
 				_omni3dMan.setHFov(savedHFov);
 		}
@@ -1183,6 +1178,14 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 		debugC(1, kDebugScript, "playSingleConLine: no %s, line skipped", apcName.c_str());
 	} else {
 		Audio::AudioStream *apc = makeAtlantisAPCStream(*apcFile);
+		// off1 (FUN_00430884): with the voice loaded, the screen buffer
+		// becomes the screen, before the voice starts and the subtitle is
+		// drawn (0x00430a86..0x00430ad6, DialogView::showScreenBuffer); a
+		// missing voice or a bad header draws nothing.  keptScreen is what
+		// drawFrame shows under the subtitle.
+		if (apc && _dialShowScreenBuffer && _dialKeepScreen && _ixVideoBuffers &&
+		        keptScreen.w == 640 && keptScreen.h == 480 && keptScreen.format.bytesPerPixel == 2)
+			DialogView::showScreenBuffer(_ixVideoBuffers, (byte *)keptScreen.getPixels(), keptScreen.pitch);
 		if (apc) {
 			Audio::SoundHandle handle;
 			// With a talking head (FUN_0042ee88's loop) the voice starts at

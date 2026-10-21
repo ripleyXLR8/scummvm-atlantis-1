@@ -153,6 +153,26 @@ inline Common::String headOpenFailText(const Common::String &ubbName) {
 	return Common::String(kHeadOpenFailText) + ubbName;
 }
 
+// The screen of an "off1" line (FUN_00430884; atlantis-re
+// functions/video-FUN_00430258.md#fun_00430884--off1-line, emulated by
+// tools/emu/video_dialog_off1.py, golden video_dialog_off1.txt).  Once the
+// voice is loaded (an APC 1.20 header, FUN_00417cb4; a missing file or a
+// bad header returns 0 before anything is drawn, 0x0043099d..0x004309b2),
+// the surface is locked and FUN_00410f36 copies the screen buffer
+// 0x004960d4 to the back buffer 0x004960d8 (0x00430a86..0x00430a9c), then
+// the back buffer to the surface at its pitch (0x00430aa4..0x00430abb):
+// 480 rows of 0x500 bytes, read contiguously, written every `pitch` bytes;
+// the bytes of a wider row past 0x500 keep what they had.  The voice starts
+// after, then the subtitle is drawn over that screen.  screenBuffer: 640 x
+// 480 RGB565 (the port's first IX buffer, _ixVideoBuffers).
+static const uint kOff1Rows = 0x1e0;
+static const uint kOff1RowBytes = 0x500;
+
+inline void showScreenBuffer(const byte *screenBuffer, byte *surface, uint pitch) {
+	for (uint y = 0; y < kOff1Rows; y++)
+		memcpy(surface + y * pitch, screenBuffer + y * kOff1RowBytes, kOff1RowBytes);
+}
+
 } // End of namespace DialogView
 
 } // End of namespace Atlantis
