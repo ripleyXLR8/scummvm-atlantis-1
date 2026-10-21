@@ -56,6 +56,7 @@
 #include "cryomni3d/atlantis/sprite_anim.h"
 #include "cryomni3d/atlantis/sprite_decode.h"
 #include "cryomni3d/atlantis/toolbar.h"
+#include "cryomni3d/atlantis/transition_turn.h"
 #include "cryomni3d/atlantis/warp_cursor.h"
 #include "cryomni3d/atlantis/warp_momentum.h"
 #include "cryomni3d/atlantis/warp_pointer.h"
@@ -655,10 +656,12 @@ private:
 	void showWarpCursorSprite(int sprite);  // CURSEURS.SPR sprite, -1 hides
 	static const int kWarpCursorUnset = -2;
 public:
-	void setArrowCursor();          // plain arrow (CURSEURS.SPR sprite 8)
+	void setArrowCursor();          // plain arrow (CURSEURS.SPR frame 6, FUN_0042d558)
 private:
-	// Set the carried-item cursor to object `obj`'s icon; when overlayCursorFrame
-	// >= 0 that _cursorSprites frame (an action cursor) is composited on top.
+	// Set the carried-item cursor to object `obj`'s icon.  overlayCursorFrame
+	// >= 0: that _cursorSprites frame (the warp loop's action cursor) on top;
+	// -1 (default): the bar loops' pointer FUN_0042d558, CURSEURS frame 6 under
+	// the icon; -3 (navigation.cpp kItemCursorIconAlone): the icon alone.
 	void setItemCursor(const Object *obj, int overlayCursorFrame = -1);
 	// Draw the "just received" item icon centre-bottom (the dialog overlay an
 	// NPC-given object shows for the rest of the conversation).
@@ -915,6 +918,10 @@ private:
 	// Animated warp-view cursors (CURSEURS.SPR) + current group/frame state.
 	Common::Array<CursorSpr> _cursorSprites;
 	WarpCursorState _warpCursor;  // FUN_00422fcc animation globals
+	// The double-click flag 0x00496118 and the press Windows pairs with the
+	// next for WM_LBUTTONDBLCLK (transition_turn.h; set during the turn,
+	// tested before a move's video @ 0x00423f8a).
+	TurnDoubleClick _turnDoubleClick;
 	int    _warpCursorShown;    // sprite on screen, -1 hidden, kWarpCursorUnset
 	uint32 _warpCursorNextMs;   // getMillis() threshold for the next frame
 

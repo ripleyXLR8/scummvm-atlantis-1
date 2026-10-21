@@ -136,6 +136,64 @@ private:
 	}
 };
 
+// The double-click flag 0x00496118 that a move tests before its video:
+// FUN_00423ad8 @ 0x00423f8a jumps past the HNM open FUN_00448c70, the SPF
+// sprites FUN_0041b81c, the ambient glide FUN_0043259c and the play loop
+// FUN_0041bc74 when it is set, to the flag reset @ 0x00424013; the place
+// then changes at once.  The window procedure sets it on WM_LBUTTONDBLCLK
+// (0x00419b49 -> 0x00419c79..0x00419c8b) when the cursor state 0x004968ac
+// is 5 (FUN_00422fcc's navigate cursor, zone 1..511) or the menu request
+// 0x00496138 is 1; the window class has CS_DBLCLKS (style 0xb @ 0x0042e4eb).
+// The turn FUN_004212cc pumps the messages on every frame (FUN_0041a298
+// @ 0x00421670 / 0x00421a5a) and does not call FUN_00422fcc (0x0049616c = 1),
+// so the navigate state of the clicked zone holds through it: a double
+// click whose second press comes during the turn skips the video.
+// When Windows sends WM_LBUTTONDBLCLK is the system's rule, not the
+// binary's: a second press within the double-click time of the first,
+// inside a rectangle centred on it (GetDoubleClickTime, SM_CXDOUBLECLK /
+// SM_CYDOUBLECLK), 500 ms and 4 x 4 pixels by default [INFERRED: the
+// Windows defaults; the player's setting is not known].
+// See atlantis-re: functions/graphics-FUN_004212cc.md.
+struct TurnDoubleClick {
+	static const uint32 kTimeMs = 500;   // GetDoubleClickTime() default
+	static const int kRectSize = 4;      // SM_CXDOUBLECLK / SM_CYDOUBLECLK default
+
+	bool flag;        // 0x00496118
+	bool armed;       // a first press is kept
+	uint32 firstMs;
+	int firstX, firstY;
+
+	TurnDoubleClick() : flag(false), armed(false), firstMs(0), firstX(0), firstY(0) {}
+
+	// A left press that is not the second of a pair (the click that ends
+	// the warp loop).
+	void firstPress(uint32 ms, int x, int y) {
+		armed = true;
+		firstMs = ms;
+		firstX = x;
+		firstY = y;
+	}
+
+	// A later left press; cursorMode is 0x004968ac, menuRequest 0x00496138.
+	// Returns true when it is a double click (whether or not it sets the
+	// flag); the press after a double click starts a new pair.
+	bool press(uint32 ms, int x, int y, uint8 cursorMode, bool menuRequest) {
+		const int dx = x - firstX, dy = y - firstY;
+		const bool dbl = armed && ms - firstMs < kTimeMs &&
+		                 dx >= -kRectSize / 2 && dx <= kRectSize / 2 &&
+		                 dy >= -kRectSize / 2 && dy <= kRectSize / 2;
+		if (dbl) {
+			armed = false;
+			// 0x00419c79: CMP byte [0x004968ac],5 / CMP [0x00496138],1
+			if (cursorMode == 5 || menuRequest)
+				flag = true;
+		} else {
+			firstPress(ms, x, y);
+		}
+		return dbl;
+	}
+};
+
 } // End of namespace Atlantis
 } // End of namespace CryOmni3D
 

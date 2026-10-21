@@ -142,38 +142,16 @@ void CryOmni3DEngine_Atlantis::setArrowCursor() {
 	                 spr.xoff, spr.yoff);
 }
 
-void CryOmni3DEngine_Atlantis::setItemCursor(const Object *obj, int overlayCursorFrame) {
-	if (!obj || _objects.empty() || _objSprites.empty()) return;
-	ptrdiff_t idx = obj - &_objects.front();
-	if (idx < 0 || (uint)idx >= _objSprites.size()) return;
-	const SubjSprite &spr = _objSprites[(uint)idx];
-	if (spr.pixels.empty()) return;
+// setItemCursor's overlayCursorFrame for the icon alone: the warp loop over
+// nothing (FUN_0041bfa0 draws the icon @ 0x0041c45a, FUN_00422fcc nothing).
+static const int kItemCursorIconAlone = -3;
 
-	const bool overlay = overlayCursorFrame >= 0 &&
-	    (uint)overlayCursorFrame < _cursorSprites.size() &&
-	    !_cursorSprites[(uint)overlayCursorFrame].pixels.empty();
-
-	if (!overlay) {
-		// No action overlay: the object sprite alone is the cursor.
-		setBlendedCursor(spr.w, spr.h, spr.pixels.data(), spr.blend.data(),
-		                 spr.xoff, spr.yoff);
-		return;
-	}
-
-	// Carrying an object with an action available: composite the object sprite
-	// with the action cursor on top, both anchored by their own hotspot.
-	const CursorSpr &act = _cursorSprites[(uint)overlayCursorFrame];
-	const int hx = MAX((int)spr.xoff, (int)act.xoff);
-	const int hy = MAX((int)spr.yoff, (int)act.yoff);
-	const int w  = hx + MAX((int)spr.w - spr.xoff, (int)act.w - act.xoff);
-	const int h  = hy + MAX((int)spr.h - spr.yoff, (int)act.h - act.yoff);
-
-	Common::Array<uint16> buf;
-	Common::Array<uint8>  blendBuf;
-	buf.resize((uint)(w * h), 0);
-	blendBuf.resize((uint)(w * h), kSprTranspBlend);
-
-	const int ox = hx - spr.xoff, oy = hy - spr.yoff;   // object (base)
+// Draw spr into a cursor of w x h pixels whose hotspot is (hx, hy), anchored
+// at the hotspot by its own (xoff, yoff); it replaces what is under it
+// wherever it is not transparent.
+static void drawIntoCursor(const SprSprite &spr, Common::Array<uint16> &buf,
+                           Common::Array<uint8> &blendBuf, int w, int hx, int hy) {
+	const int ox = hx - spr.xoff, oy = hy - spr.yoff;
 	for (int y = 0; y < (int)spr.h; y++)
 		for (int x = 0; x < (int)spr.w; x++) {
 			uint si = y * spr.w + x;
@@ -183,16 +161,53 @@ void CryOmni3DEngine_Atlantis::setItemCursor(const Object *obj, int overlayCurso
 				blendBuf[di] = spr.blend[si];
 			}
 		}
-	const int ax = hx - act.xoff, ay = hy - act.yoff;   // action cursor (top)
-	for (int y = 0; y < (int)act.h; y++)
-		for (int x = 0; x < (int)act.w; x++) {
-			uint si = y * act.w + x;
-			if (act.blend[si] != kSprTranspBlend) {
-				uint di = (ay + y) * w + (ax + x);
-				buf[di]      = act.pixels[si];
-				blendBuf[di] = act.blend[si];
-			}
-		}
+}
+
+void CryOmni3DEngine_Atlantis::setItemCursor(const Object *obj, int overlayCursorFrame) {
+	if (!obj || _objects.empty() || _objSprites.empty()) return;
+	ptrdiff_t idx = obj - &_objects.front();
+	if (idx < 0 || (uint)idx >= _objSprites.size()) return;
+	const SubjSprite &spr = _objSprites[(uint)idx];
+	if (spr.pixels.empty()) return;
+
+	// overlayCursorFrame >= 0: the warp loop's action cursor over the icon
+	// (the icon @ 0x0041c45a, then FUN_00422fcc on top).  The default -1:
+	// the pointer of the bar loops, FUN_0042d558, which draws CURSEURS
+	// frame 6 at the mouse (0x0042d5b9..0x0042d5dd), then the held icon
+	// over it at the same position when OBJETENMAIN != 0
+	// (0x0042d600..0x0042d627).
+	int frame = -1;
+	bool iconOnTop = false;
+	if (overlayCursorFrame >= 0) {
+		frame = overlayCursorFrame;
+	} else if (overlayCursorFrame != kItemCursorIconAlone) {
+		frame = 6;
+		iconOnTop = true;
+	}
+	const bool second = frame >= 0 && (uint)frame < _cursorSprites.size() &&
+	    !_cursorSprites[(uint)frame].pixels.empty();
+
+	if (!second) {
+		// The object sprite alone is the cursor.
+		setBlendedCursor(spr.w, spr.h, spr.pixels.data(), spr.blend.data(),
+		                 spr.xoff, spr.yoff);
+		return;
+	}
+
+	// The two sprites composited, both anchored by their own hotspot.
+	const CursorSpr &cur = _cursorSprites[(uint)frame];
+	const int hx = MAX((int)spr.xoff, (int)cur.xoff);
+	const int hy = MAX((int)spr.yoff, (int)cur.yoff);
+	const int w  = hx + MAX((int)spr.w - spr.xoff, (int)cur.w - cur.xoff);
+	const int h  = hy + MAX((int)spr.h - spr.yoff, (int)cur.h - cur.yoff);
+
+	Common::Array<uint16> buf;
+	Common::Array<uint8>  blendBuf;
+	buf.resize((uint)(w * h), 0);
+	blendBuf.resize((uint)(w * h), kSprTranspBlend);
+
+	drawIntoCursor(iconOnTop ? cur : spr, buf, blendBuf, w, hx, hy);   // first drawn
+	drawIntoCursor(iconOnTop ? spr : cur, buf, blendBuf, w, hx, hy);   // on top
 	setBlendedCursor((uint16)w, (uint16)h, buf.data(), blendBuf.data(), hx, hy);
 }
 
@@ -245,37 +260,28 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 	// block): a mouse motion since the port last wrote it (warp exit, panorama
 	// load) is the WM_MOUSEMOVE that set it in the original (warp_pointer.h).
 	syncWarpPointerMouse();
-	// The entry block also clears 0x00496120 and 0x004960c4 (0x0041bff4).
+	// The entry block also clears 0x00496120 and 0x004960c4 (0x0041bff4),
+	// and the double-click flag 0x00496118 (0x0041bfc2).
 	BarSessionRules::flagsReset(_barSession);
+	_turnDoubleClick.flag = false;
 
 	showMouse(true);
-	setMousePos(Common::Point(320, 240));
 
-	// The view on screen at once: the original's loop draws it on its first
-	// pass; the port's wait below must not leave the move's last video frame
-	// (or the previous place) on screen meanwhile.
-	if (_warpLoaded) {
-		const Graphics::Surface *view = _omni3dMan.getSurface();
-		if (view) {
-			g_system->copyRectToScreen(view->getPixels(), view->pitch, 0, 0, view->w, view->h);
-			g_system->updateScreen();
-		}
-	}
-
-	// Drain stale clicks from the place change / window focus (the port's).
-	for (int grace = 0; grace < 5 && !shouldAbort(); grace++) {
-		pollEvents();
-		g_system->delayMillis(20);
-	}
-	while (getCurrentMouseButton() != 0 && !shouldAbort()) {
-		pollEvents();
-		g_system->delayMillis(10);
-	}
-	setMousePos(Common::Point(320, 240));
+	// No wait at the entry (0x0041bfb8..0x0041c01e; the first frame polls
+	// FUN_0041a298 @ 0x0041c5f2).  A left press is a click on the first poll
+	// that sees it down, and a button still down from a press an earlier
+	// poll saw is none: FUN_0042e624's edge latch for VK_LBUTTON, kept here
+	// as leftLatched (and rightLatched for VK_RBUTTON, whose edge toggles
+	// the bar request 0x004960c4, 0x0041a2e9..0x0041a337).  The loop keeps
+	// running frames while a button is held.
+	bool leftLatched = getCurrentMouseButton() == 1;
+	bool rightLatched = getCurrentMouseButton() == 2;
 
 	// Lock the cursor into SDL relative mode for the look; warpMouse cannot
 	// re-centre the pointer on Wayland (WSL), so we read pure per-frame motion.
 	g_system->lockMouse(true);
+	setMousePos(_warpPointer.pos);
+	markWarpPointerMouse();
 	takeMouseRelative();   // discard motion accumulated before entry
 
 	// Mouse look with the momentum of atlantis.exe FUN_0041bfa0 step 4
@@ -291,7 +297,6 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 	int curHeldOverlay = -1;
 	// The arrow frame starts at 0 on every warp entry (0x0041c017).
 	_arrowFrame = 0;
-	bool bowButtonHeld = (getCurrentMouseButton() == 1);
 
 	// FUN_00431a1c at 0x0041c012: the place's ambient sounds.
 	ambientEnterPlace();
@@ -304,10 +309,15 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 	// caller or the mouse left it: (320, 320) after a panorama load, the
 	// last mouse position after a dialog or a video (atlantis-re
 	// functions/graphics-FUN_0041bfa0.md, experiments/2026-10-15-70).  The
-	// system pointer stays pinned for the relative look.
+	// original draws the cursor and the held icon at that same pointer
+	// (FUN_00422fcc @ 0x00423382, 0x0041c463): the port pins the system
+	// mouse, and so the shown cursor, to it on every frame (the look reads
+	// relative motion only).
 
 	while (!leftButtonPressed && !exit) {
 		pollEvents();
+		// Each frame starts by clearing the double-click flag (0x0041c04a).
+		_turnDoubleClick.flag = false;
 		updateConClocks();   // atlantis.exe FUN_0041bfa0 @ 0x0041c086
 
 		// This frame's accumulated relative motion of the pointer (x right,
@@ -324,20 +334,28 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 #endif
 		const int motionY = lookRel.y;
 
-		// Pin the crosshair to screen centre (every hit-test is at the centre).
-		setMousePos(Common::Point(320, 240));
+		// The press edges (FUN_0042e624's latch, above).
+		const bool leftDown = getCurrentMouseButton() == 1;
+		bool clicked = leftDown && !leftLatched;
+		leftLatched = leftDown;
+		const bool rightDown = getCurrentMouseButton() == 2;
+		const bool rightPress = rightDown && !rightLatched;
+		rightLatched = rightDown;
+
+		// Pin the system mouse to the pointer: the cursor is shown where
+		// the hit test below acts.
+		setMousePos(_warpPointer.pos);
+		markWarpPointerMouse();
 		takeMouseRelative();
 
-		bool clicked = (getCurrentMouseButton() == 1);
 		// Bow mode consumes the click (0x0041c631): no zone or character
 		// action; the press edge feeds the shot test after the render.
-		const bool bowClick = _bowMode && clicked && !bowButtonHeld;
-		bowButtonHeld = clicked;
+		const bool bowClick = _bowMode && clicked;
 		if (_bowMode)
 			clicked = false;
 
-		// Hit-test the panorama at the screen centre: an NPC takes priority
-		// over the navigation zone underneath it.
+		// Hit-test the panorama at the pointer: an NPC takes priority over
+		// the navigation zone underneath it.
 		actionId = 0;
 		int centrePerso = 0;
 		if (_currentPlace && _warpLoaded) {
@@ -349,7 +367,13 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 		// Cursor: a carried object shows the item cursor; otherwise it reflects
 		// what the crosshair is over — talk (NPC) > navigate (zone) > default.
 		const Object *heldObj = _inventory.selectedObject();
-		if (heldObj) {
+		if (_bowMode) {
+			// Step 10 of FUN_0041bfa0 (0x0041c4b4) and its helper
+			// FUN_0041afd0 (0x0041b00e) skip FUN_00422fcc while 0x00496164
+			// is set: only the bow sprite is drawn, and the cursor's
+			// animation state does not advance.
+			showWarpCursorSprite(-1);
+		} else if (heldObj) {
 			// atlantis.exe draws the icon at the mouse (0x0041c45a), then
 			// FUN_00422fcc draws its animation on top of it (step 10 of
 			// FUN_0041bfa0 does not test OBJETENMAIN): over a drop zone or a
@@ -367,7 +391,7 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 				const int overlay = warpCursorStep(_warpCursor, in).sprite;
 				if (heldObj != curHeldObj || overlay != curHeldOverlay) {
 					showMouse(true);
-					setItemCursor(heldObj, overlay);
+					setItemCursor(heldObj, overlay >= 0 ? overlay : kItemCursorIconAlone);
 					curHeldObj = heldObj;
 					curHeldOverlay = overlay;
 				}
@@ -408,24 +432,44 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 			// dialog's mouse motions set the pointer (WM_MOUSEMOVE).
 			setMousePos(_warpPointer.pos);
 			markWarpPointerMouse();
-			// FUN_004278a0 starts the click animation (0x004278b5).
-			_warpCursor.clickAnim = true;
 			// ClicZone = the zone under the pointer: the warp loop returns it
 			// with the NPC (0x0041c71e) and the place loop stores it before
 			// FUN_004278a0 (0x00423c1c); it returns to 0 on the next pass.
 			_gameVars["cliczone"] = (int)actionId;
-			if (centrePerso < 0x200)
-				clickObject(centrePerso);
-			else
-				interactNPC(centrePerso);
+			// The place loop runs the puzzle-zone runner FUN_004240fc
+			// (0x00423c42) before FUN_004278a0 (0x00423d12) on every click:
+			// it does not test the id 0x006cd7e4, so an armed puzzle zone
+			// under an NPC runs the puzzle first (PALAIS2/3 vue 290 NPC 540
+			// over zone 1002, FORET3/4 vue 52 NPC 567 over zone 1008).
+			// Quit, GAMEOVER or EXIT then end the pass before FUN_004278a0
+			// (0x00423ca5..0x00423d0d).
+			bool puzzleRan = false;
+			if (actionId >= 1000 && actionId < 1017 &&
+			        _gameVars.getValOrDefault("startpuzzle", 0) == (int)actionId - 1000) {
+				runPuzzleZone((int)actionId - 1000);
+				puzzleRan = true;
+			}
+			const bool passEnded = puzzleRan && (shouldAbort() ||
+			    _gameVars.getValOrDefault("gameover", 0) != 0 ||
+			    _gameVars.getValOrDefault("exit", 0) != 0);
+			if (!passEnded) {
+				// FUN_004278a0 starts the click animation (0x004278b5).
+				_warpCursor.clickAnim = true;
+				if (centrePerso < 0x200)
+					clickObject(centrePerso);
+				else
+					interactNPC(centrePerso);
+			}
 			_gameVars["cliczone"] = 0;
 			syncWarpPointerMouse();   // the last mouse position, if it moved
 			if (shouldAbort()) {
 				actionId = 66666;
 				exit = true;
-			} else if (_arrivalScanPending) {
-				// A Vue= in the dialog entered another place; the place loop
-				// takes over (arrival scan).
+			} else if (_arrivalScanPending || puzzleRan) {
+				// A Vue= in the dialog entered another place, or a puzzle
+				// ran: the place loop takes over (arrival scan; the warp
+				// loop entered again reloads the ambient sounds that
+				// FUN_004240fc stopped, 0x0041c012).
 				actionId = 66666;
 				exit = true;
 			} else {
@@ -433,15 +477,14 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 				// dialog left (experiments/2026-10-15-70 entry 2).
 				g_system->lockMouse(true);
 				takeMouseRelative();
-				setMousePos(Common::Point(320, 240));
+				setMousePos(_warpPointer.pos);
+				markWarpPointerMouse();
 				_dialogGivenObjSprite = -1;   // the conversation ended
 				_warpCursorShown = kWarpCursorUnset;   // dialog changed the cursor
-				// Drain the skip click the dialog ended on so it isn't read as
-				// a fresh navigation press next frame.
-				while (getCurrentMouseButton() != 0 && !shouldAbort()) {
-					pollEvents();
-					g_system->delayMillis(10);
-				}
+				// The click the dialog ended on, if still held, is no new
+				// press (the dialog's polls latched it).
+				leftLatched = getCurrentMouseButton() == 1;
+				rightLatched = getCurrentMouseButton() == 2;
 				// The original's warp loop returns the character
 				// (0x0041c71e) after this frame's timer scan (0x0041c369);
 				// the place loop runs the conversation (0x00423c1c) and
@@ -472,7 +515,7 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 		// the bar in that same frame, after its own poll; each frame then
 		// starts by clearing the flags (0x0041c04a..0x0041c07c).
 		const bool pendingRequest = BarSessionRules::warpFrameStart(_barSession);
-		bool barRequested = !exit && (getCurrentMouseButton() == 2 || pendingRequest);
+		bool barRequested = !exit && (rightPress || pendingRequest);
 		// In bow mode the request only lowers the bow and is dropped
 		// (0x0041c6af..0x0041c6c8: FUN_0042d368, 0x004960c4 = 0).
 		if (barRequested && _bowMode) {
@@ -524,16 +567,16 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 			}
 			g_system->lockMouse(true);
 			takeMouseRelative();
-			setMousePos(Common::Point(320, 240));
 			// FUN_0042c098 closes the bar with SetCursorPos(320, 240) and the
 			// pointer at (320, 240) (@ 0x0042c275).
 			_warpPointer.recentre();
+			setMousePos(_warpPointer.pos);
+			markWarpPointerMouse();
 			_warpCursorShown = kWarpCursorUnset;   // re-apply the warp cursor next frame
 			curHeldObj = nullptr;
-			while (getCurrentMouseButton() != 0 && !shouldAbort()) {
-				pollEvents();
-				g_system->delayMillis(10);
-			}
+			// The press that closed the bar, if still held, is no new one.
+			leftLatched = getCurrentMouseButton() == 1;
+			rightLatched = getCurrentMouseButton() == 2;
 		} else if (kc == Common::KEYCODE_ESCAPE && escapeOpensMenu()) {
 			// Open the in-game menu (resume / load / quit).
 			g_system->lockMouse(false);
@@ -567,9 +610,12 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 				rebaseConClocks();
 				g_system->lockMouse(true);
 				takeMouseRelative();
-				setMousePos(Common::Point(320, 240));
+				setMousePos(_warpPointer.pos);
+				markWarpPointerMouse();
 				_warpCursorShown = kWarpCursorUnset;
 				curHeldObj = nullptr;
+				leftLatched = getCurrentMouseButton() == 1;
+				rightLatched = getCurrentMouseButton() == 2;
 			}
 		}
 
@@ -605,6 +651,7 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 		_warpPointer.frame(motionX, motionY, look.newAlpha, look.newBeta, alphaF, betaF);
 
 		// Timer sections (atlantis.exe FUN_0041bfa0 @ 0x0041c369).
+		const bool exitBeforeTimers = exit;
 		if (!exit && runConTimers(true)) {
 			syncWarpPointerMouse();   // the section's last mouse position
 			if (shouldAbort()) {
@@ -620,13 +667,13 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 				// the next click (atlantis-re subsystems/scripts-con.md).
 				g_system->lockMouse(true);
 				takeMouseRelative();
-				setMousePos(Common::Point(320, 240));
+				setMousePos(_warpPointer.pos);
+				markWarpPointerMouse();
 				_dialogGivenObjSprite = -1;
 				_warpCursorShown = kWarpCursorUnset;
-				while (getCurrentMouseButton() != 0 && !shouldAbort()) {
-					pollEvents();
-					g_system->delayMillis(10);
-				}
+				// A press the section's polls saw, if still held, is no new one.
+				leftLatched = getCurrentMouseButton() == 1;
+				rightLatched = getCurrentMouseButton() == 2;
 			}
 		}
 
@@ -636,6 +683,10 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 			actionId = 66666;
 			exit = true;
 		}
+		// Leaving here (0x0041c387 / 0x0041c3a2 -> 0x0041c71e), the frame
+		// ends at once: no sprites, render, bow step or FUN_00432178.
+		if (exit && !exitBeforeTimers)
+			break;
 		if (!exit)
 			animateSprites();
 
@@ -675,8 +726,14 @@ int CryOmni3DEngine_Atlantis::handleWarp() {
 	// The mouse at the pointer; motions from here on set it (WM_MOUSEMOVE).
 	setMousePos(_warpPointer.pos);
 	markWarpPointerMouse();
+	// The click that ended the loop is the press Windows pairs a second one
+	// with for WM_LBUTTONDBLCLK (TurnDoubleClick, transition_turn.h).
+	if (leftButtonPressed)
+		_turnDoubleClick.firstPress(g_system->getMillis(), _warpPointer.pos.x, _warpPointer.pos.y);
 
-	// Drain the click that ended the loop.
+	// Wait until the click that ended the loop is released (the port's: the
+	// original goes on at once and its later loops' polls latch the held
+	// button, FUN_0042e624; the port's are not all edge-latched).
 	while (getCurrentMouseButton() != 0 && !shouldAbort()) {
 		pollEvents();
 		g_system->delayMillis(10);

@@ -27,8 +27,21 @@
 // which the port does outside TransitionTurn::run and which this test does
 // not check: the FOV handling and the ZOOM clear in
 // CryOmni3DEngine_Atlantis::turnToTransition (place.cpp, which restores the
-// warp's HFov instead of holding 75.187 through the video) and the jump to
-// dstAlpha / dstBeta in its callers (place.cpp, after playTransitionVideo).
+// warp's HFov instead of setting 75.187 and letting the destination load
+// FUN_0044a424 set 75.137 before the video) and the jump to dstAlpha /
+// dstBeta in its callers (place.cpp, before playTransitionVideo).
+//
+// test_double_click: TurnDoubleClick (transition_turn.h), the double-click
+// flag 0x00496118 that skips a move's video.  The cursor-state / menu-request
+// condition comes from the ORIGINAL window procedure 0x00419ae0 run under
+// Unicorn with WM_LBUTTONDBLCLK for each byte 0x004968ac 0..7 and
+// 0x00496138 0 / 1 (all imports stubbed); the same run of FUN_00423ad8
+// 0x00423f78..0x0042404f with the flag set calls none of the HNM open,
+// SPF, glide or play functions (atlantis-re
+// tools/emu/graphics_double_click.py -> evidence/golden/
+// graphics_double_click.txt; first run in
+// audit/fable-pass-2/verify-opus-gap2-video-hnm-0-reproduce.json).  The 500 ms / 4 x 4 px pairing is the Windows default
+// double-click rule [INFERRED], checked here only as the port's model.
 
 namespace TransitionTurnTest {
 
@@ -100,5 +113,48 @@ public:
 		TS_ASSERT_EQUALS(out.size(), want.size());
 		for (uint i = 0; i < out.size() && i < want.size(); i++)
 			TS_ASSERT_EQUALS(out[i], want[i]);
+	}
+
+	void test_double_click() {
+		using CryOmni3D::Atlantis::TurnDoubleClick;
+		// [0x00496118] after WM_LBUTTONDBLCLK, from the emulated window
+		// procedure: index = cursor byte 0x004968ac * 2 + [0x00496138].
+		static const int kFlag[16] = {
+			0, 1,  0, 1,  0, 1,  0, 1,  0, 1,  1, 1,  0, 1,  0, 1
+		};
+		for (int cursor = 0; cursor < 8; cursor++)
+			for (int menu = 0; menu < 2; menu++) {
+				TurnDoubleClick d;
+				d.firstPress(1000, 320, 240);
+				TS_ASSERT(d.press(1100, 321, 239, (uint8)cursor, menu != 0));
+				TS_ASSERT_EQUALS((int)d.flag, kFlag[cursor * 2 + menu]);
+			}
+
+		// The port's model of the Windows pairing: a second press later
+		// than the double-click time, or outside the rectangle, is a new
+		// first press; the press after a double click starts a new pair.
+		TurnDoubleClick late;
+		late.firstPress(1000, 320, 240);
+		TS_ASSERT(!late.press(1000 + TurnDoubleClick::kTimeMs, 320, 240, 5, false));
+		TS_ASSERT(!late.flag);
+		TS_ASSERT(late.press(1100 + TurnDoubleClick::kTimeMs, 320, 240, 5, false));
+		TS_ASSERT(late.flag);
+
+		TurnDoubleClick distant;
+		distant.firstPress(1000, 320, 240);
+		TS_ASSERT(!distant.press(1050, 323, 240, 5, false));
+		TS_ASSERT(!distant.flag);
+
+		TurnDoubleClick third;
+		third.firstPress(1000, 320, 240);
+		TS_ASSERT(third.press(1050, 320, 240, 4, false));
+		TS_ASSERT(!third.flag);
+		TS_ASSERT(!third.press(1100, 320, 240, 5, false));
+		TS_ASSERT(!third.flag);
+
+		// No first press kept: never a double click.
+		TurnDoubleClick none;
+		TS_ASSERT(!none.press(10, 320, 240, 5, false));
+		TS_ASSERT(!none.flag);
 	}
 };

@@ -223,8 +223,96 @@ public:
 	// The IX buffers kept from one video to the next (setHNM6VideoBuffers):
 	// CINEM005 frames 0..3, then CINEM006 frames 0..3 in the same block, as
 	// the game's never-cleared buffers [0x004960d4] (atlantis-re
-	// experiments/2026-10-14-11); md5s from tools/emu/video_ix.py's decoder
-	// run on one block without clearing it.
+	// experiments/2026-10-14-11); md5s from the original FUN_004506ec run on
+	// one block zeroed once, the buffers reset to the block's start at each
+	// file as setHNM6VideoBuffers does: atlantis-re tools/emu/video_ix.py
+	// --chain 4 CINEM005.HNM CINEM006.HNM -> golden video_ix_chain.txt (frames
+	// 0..3 of CINEM005 and CINEM006 frame 0 also in video_ix_frames.txt).
+	// The overlays drawn into the IX buffers (place.cpp playTransitionVideo
+	// writes each frame's composite back into its buffer after the next
+	// decode, as FUN_0041b064 draws into the presented buffer, which decode
+	// k + 2 then reads): a marker 0xf81f over x 540..639, y 350..449 written
+	// into the previous frame's pixels after each decode from frame 1 on.
+	// md5s from the original FUN_004506ec with the same marker written into
+	// its out buffer before each decode from frame 2 on: atlantis-re
+	// tools/emu/video_ix_overlay.py -> golden video_ix_overlay.txt.
+	void test_ubb_vue_ix_overlay_write_back() {
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("Atlantis data not configured: IX overlay test skipped");
+			return;
+		}
+		Common::Array<Common::String> lines;
+		TS_ASSERT(AtlantisTest::loadGoldenLines("video_ix_overlay.txt", lines));
+		Common::HashMap<Common::String, Common::String> want;
+		Common::Array<Common::String> files;
+		for (uint i = 0; i < lines.size(); i++) {
+			if (lines[i].empty() || lines[i][0] == '#')
+				continue;
+			const uint sp1 = lines[i].findFirstOf(' ');
+			const uint sp2 = lines[i].findLastOf(' ');
+			if (sp1 == Common::String::npos || sp2 == sp1)
+				continue;
+			const Common::String name = lines[i].substr(0, sp1);
+			if (files.empty() || files.back() != name)
+				files.push_back(name);
+			want[lines[i].substr(0, sp2)] = lines[i].substr(sp2 + 1);
+		}
+		TS_ASSERT_EQUALS(files.size(), 5u);
+		VideoTest::Big big;
+		const Graphics::PixelFormat fmt(2, 5, 6, 5, 0, 11, 5, 0, 0);
+		uint compared = 0, bad = 0;
+		for (uint v = 0; v < files.size(); v++) {
+			Common::Array<byte> block(2 * 640 * 480 * 2, 0);
+			uint32 size;
+			byte *d = big.get("UBB_VUE\\" + files[v], size);
+			TS_ASSERT(d != nullptr);
+			if (!d)
+				continue;
+			d[6] = 0;   // audioflags: no APC track
+			Video::HNMDecoder dec(fmt);
+			dec.setHNM6VideoBuffers(block.data());
+			TS_ASSERT(dec.loadStream(new Common::MemoryReadStream(d, size, DisposeAfterUse::YES)));
+			dec.start();
+			byte *prev = nullptr;
+			int prevPitch = 0, prevW = 0, prevH = 0;
+			for (uint k = 0; ; k++) {
+				const Common::String key = Common::String::format("%s %u", files[v].c_str(), k);
+				if (!want.contains(key))
+					break;
+				const Graphics::Surface *f = dec.decodeNextFrame();
+				TS_ASSERT(f != nullptr);
+				if (!f)
+					break;
+				Common::Array<byte> le(f->w * f->h * 2);
+				for (int y = 0; y < f->h; y++) {
+					const uint16 *row = (const uint16 *)f->getBasePtr(0, y);
+					for (int x = 0; x < f->w; x++) {
+						le[(y * f->w + x) * 2] = row[x] & 0xff;
+						le[(y * f->w + x) * 2 + 1] = row[x] >> 8;
+					}
+				}
+				compared++;
+				if (AtlantisTest::md5Hex(le.data(), le.size()) != want[key]) {
+					bad++;
+					TS_WARN(("overlay frame differs: " + key).c_str());
+				}
+				// the previous frame's composite back into its buffer, which
+				// the next decode writes into
+				if (prev) {
+					for (int y = 350; y < MIN(450, prevH); y++)
+						for (int x = 540; x < MIN(640, prevW); x++)
+							*(uint16 *)(prev + y * prevPitch + x * 2) = 0xf81f;
+				}
+				prev = (byte *)const_cast<void *>(f->getPixels());
+				prevPitch = f->pitch;
+				prevW = f->w;
+				prevH = f->h;
+			}
+		}
+		TS_ASSERT_EQUALS(compared, 125u);
+		TS_ASSERT_EQUALS(bad, 0u);
+	}
+
 	void test_ubb_vue_ix_persistent_buffers() {
 		if (!AtlantisTest::haveData()) {
 			TS_WARN("Atlantis data not configured: IX persistence test skipped");

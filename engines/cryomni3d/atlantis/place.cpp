@@ -75,6 +75,9 @@ void CryOmni3DEngine_Atlantis::setupChapterWAM(int chapter, bool keepState) {
 		error("Cannot open WAM file for chapter %d (%s)", chapter, kWAMNames[chapter]);
 
 	_wam.loadStream(*s);
+	// FUN_00421ebc writes the fixed place records on every load, the
+	// chapter's WAM included (new game @ 0x004237b5, a load @ 0x0042e354).
+	recordPlaceTable();
 	_currentWAMName = kWAMNames[chapter];
 	loadAmbientCentres();   // FUN_00431580, last step of the WAM loader
 	debugC(1, kDebugScript, "Loaded WAM for chapter %d: %u places", chapter, _wam.getPlaces().size());
@@ -98,9 +101,12 @@ void CryOmni3DEngine_Atlantis::setupChapterWAM(int chapter, bool keepState) {
 			b = 0;
 		_conClocks.time1Offset = _conClocks.time2Offset = 0;
 		_conClocks.time1Start = g_system->getMillis();
-		// The guest list is zeroed at boot (FUN_004239f4); the shown flag
-		// starts at 1.  Whether a second new game in one session starts clean
-		// is not established; the port starts clean.
+		// The guest list is zeroed at boot (FUN_004239f4, called once, @ 0x004195b7);
+		// the shown flag starts at 1.  The original never clears the guests
+		// or the inventory again, so an in-play chapter-1 restart keeps them
+		// (keepState branch above).  This branch is reached only by the port's
+		// own player-screen New Game, which has no counterpart in the original
+		// and starts clean.  See atlantis-re: functions/scripts-FUN_00423760.md.
 		_guests.clear();
 		_guestsShown = true;
 		// FUN_00423760 @ 0x004237a0: the IncPerso count starts at 0.
@@ -229,7 +235,12 @@ void CryOmni3DEngine_Atlantis::executeTransition(uint nextPlaceId) {
 		// ambient glide uses them.
 		_omni3dMan.setAlpha(trans->dstAlpha);
 		_omni3dMan.setBeta(trans->dstBeta);
-		playTransitionVideo(trans->videoName, _currentPlaceId, nextPlaceId, kTransitionFrameMs);
+		// 0x00423f8a: a double click during the turn skips the video (and
+		// its SPF sprites and ambient glide); the flag is reset either way
+		// (0x00424013).
+		if (!_turnDoubleClick.flag)
+			playTransitionVideo(trans->videoName, _currentPlaceId, nextPlaceId, kTransitionFrameMs);
+		_turnDoubleClick.flag = false;
 	}
 
 	// Cross-WAM transition: sub-WAMs hot-swap the navigation map when a
@@ -267,8 +278,10 @@ void CryOmni3DEngine_Atlantis::executeTransition(uint nextPlaceId) {
 // drawn as the warp loop draws one (place sprites, the view, the guest
 // portraits) without input or cursor.  With the CON variable ZOOM set, the
 // field of view narrows by 3 degrees a frame from 75.187; the turn ends with
-// FUN_0045179a(75.187), which lasts through the video until FUN_0044a424
-// sets the warp's 75.137 again, and ZOOM = 0.
+// FUN_0045179a(75.187), which FUN_0044a424 (the destination panorama load,
+// called before the video @ 0x00423ed4) replaces with the warp's 75.137;
+// the port restores the saved warp HFov (75.137) directly, same result.
+// Then ZOOM = 0.
 void CryOmni3DEngine_Atlantis::turnToTransition(float srcAlpha, float srcBeta) {
 	if (!_warpLoaded)
 		return;
@@ -279,12 +292,28 @@ void CryOmni3DEngine_Atlantis::turnToTransition(float srcAlpha, float srcBeta) {
 	                    (float)_omni3dMan.getBeta(), srcAlpha, srcBeta, zoom, frames, endAlpha, endBeta);
 	const double savedHFov = _omni3dMan.getHFov();
 	showMouse(false);
+	bool leftDown = getCurrentMouseButton() == 1;
 	for (uint i = 0; i < frames.size() && !shouldAbort(); i++) {
+		// The messages FUN_0041a298 pumps (0x00421670 / 0x00421a5a): a
+		// left press here can be the second of a double click whose first
+		// ended the warp loop (TurnDoubleClick, 0x00496118).  The menu
+		// request 0x00496138 the turn's poll can set is not modelled.
 		pollEvents();
+		const bool down = getCurrentMouseButton() == 1;
+		if (down && !leftDown) {
+			const Common::Point m = getMousePos();
+			_turnDoubleClick.press(g_system->getMillis(), m.x, m.y, _warpCursor.mode, false);
+		}
+		leftDown = down;
 		if (frames[i].fovSet)
 			_omni3dMan.setHFov((double)frames[i].fov * M_PI / 180.0);
 		_omni3dMan.setAlpha((double)frames[i].alpha);
 		_omni3dMan.setBeta((double)frames[i].beta);
+		// FUN_00432178 on every turn frame, with the frame's angles stored
+		// and before FUN_00451915 (0x004212cc, both phases): the ambient
+		// gains follow the turning view, so the glide FUN_0043259c starts
+		// from the last turn frame's; NewSound is polled.
+		ambientFrame();
 		animateSprites();
 		const Graphics::Surface *view = _omni3dMan.getSurface();
 		if (!view)
@@ -415,10 +444,11 @@ void CryOmni3DEngine_Atlantis::playTransitionVideo(const Common::String &videoNa
 	uint spfFrameIdx = 0;
 	bool firstFrame = true;
 	Graphics::ManagedSurface composite;  // per-frame scratch when sprites are active
-	// FUN_0041bc74's input: a left click, or Escape with the conditions of
-	// FUN_0041a298 (video_skip.h); after that poll the next frame is still
-	// presented.  Space is not read.
-	VideoSkipState skip;
+	// FUN_0041bc74's frame control (video_skip.h VideoSkipRun): a poll after
+	// each presented frame but the last; after the poll that ends the video
+	// the next frame is still presented.  Space is not read.
+	VideoSkipRun skipRun;   // not `run`: the engine's run()
+	VideoSkipState &skip = skipRun.s;
 	skip.bowMode = _bowMode;
 	skip.objectInHand = _inventory.selectedObject() != nullptr ||
 	                    _gameVars.getValOrDefault("objetenmain", 0) != 0;
@@ -426,11 +456,39 @@ void CryOmni3DEngine_Atlantis::playTransitionVideo(const Common::String &videoNa
 	// The bar request as it stands: 1 for a Cinema= of a timer run by the
 	// bar loop (FUN_0042c8ac), so Escape does not end it then.
 	skip.barRequest = _barSession.request;
-	bool stopAfterFrame = false, skipped = false;
 	uint prevButton = getCurrentMouseButton();
+	// A left press during the start-up wait (engine.cpp run(), atlantis.exe
+	// @ 0x00419662..0x0041967c) is a press edge for this video's first poll
+	// (FUN_0042e624 reads GetAsyncKeyState).
+	bool pendingLeft = _videoLeftEdgePending;
+	_videoLeftEdgePending = false;
+	// The presenter FUN_0041b064 draws the overlays INTO the frame's decode
+	// buffer (0x0041b187..0x0041b192 on [EBP-0x10], then the copy to the
+	// surface @ 0x0041b1ff), and FUN_0041bc74 presents frame k only after
+	// decoding frame k + 1 (0x0041bde7: [0x004960e4] after the swap), so
+	// frame k's buffer holds its overlays when decode k + 2 writes into it:
+	// the IX decoder's in-place motion copies read them (atlantis-re
+	// experiments/2026-10-14-10-older-buffer.md).  The port presents each
+	// frame at once from a copy; the copy goes back into the frame's own
+	// buffer once the next frame is decoded (that buffer is then no longer
+	// a reference), and the last one after the loop (0x0041be45), which the
+	// next video keeps.  Only for the game's IX buffers (_ixVideoBuffers).
+	const byte *const ixBegin = _ixVideoBuffers;
+	const byte *const ixEnd = _ixVideoBuffers ? _ixVideoBuffers + 2 * 640 * 480 * 2 : nullptr;
+	byte *pendingBack = nullptr;   // the presented frame's buffer, for its composite
+	int pendingPitch = 0;
 	while (!shouldAbort() && !decoder->endOfVideo()) {
+		pollEvents();
 		if (decoder->needsUpdate()) {
 			const Graphics::Surface *frame = decoder->decodeNextFrame();
+			if (frame && pendingBack) {
+				// The previous frame's overlays into its buffer, the out
+				// buffer of the next decode.
+				const uint rowBytes = (uint)composite.w * composite.format.bytesPerPixel;
+				for (int row = 0; row < composite.h; ++row)
+					memcpy(pendingBack + row * pendingPitch, composite.getBasePtr(0, row), rowBytes);
+				pendingBack = nullptr;
+			}
 			// FUN_0041bc74 decodes the first frame before its loop; each
 			// loop pass decodes the next one, then runs FUN_00432758.
 			if (frame && !firstFrame)
@@ -448,9 +506,12 @@ void CryOmni3DEngine_Atlantis::playTransitionVideo(const Common::String &videoNa
 				// @ 0x0041b133 otherwise; both test the shown flag
 				// 0x0049613c and 0x00496138 == 0), then presents: the
 				// portraits stay over every frame of a move video or a
-				// cinematic.
+				// cinematic, except the frame presented after an Escape
+				// poll: that poll sets the menu request 0x00496138
+				// (0x0041a423), which is cleared only after that present
+				// (0x0041be4a, 0x0041bf79).
 				// See atlantis-re: functions/scripts-guests.md.
-				const bool guestsOver = _guestsShown && _guests.count != 0;
+				const bool guestsOver = _guestsShown && _guests.count != 0 && !skip.menuRequest;
 				if ((!spfStreams.empty() || guestsOver) && fmt.bytesPerPixel >= 2) {
 					// Composite the SPF sprites for this frame into a
 					// throwaway copy of the video frame.  The SPF pixel
@@ -471,50 +532,63 @@ void CryOmni3DEngine_Atlantis::playTransitionVideo(const Common::String &videoNa
 					if (guestsOver)
 						drawGuests(composite);
 					toBlit = composite.surfacePtr();
+					byte *const pixels = (byte *)const_cast<void *>(frame->getPixels());
+					if (fmt.bytesPerPixel == 2 && ixBegin && pixels >= ixBegin && pixels < ixEnd) {
+						pendingBack = pixels;
+						pendingPitch = frame->pitch;
+					}
 				}
 
 				g_system->copyRectToScreen(toBlit->getPixels(), toBlit->pitch,
 				                           0, 0, toBlit->w, toBlit->h);
 				g_system->updateScreen();
 				++spfFrameIdx;
-				if (stopAfterFrame)
-					break;   // the frame FUN_0041bc74 presents at 0x0041be2e
+				// the frame after the ending poll (0x0041be2e) or the last one:
+				// no poll follows it
+				if (skipRun.framePresented(decoder->getCurFrame() + 1 >= (int)decoder->getFrameCount()))
+					break;
+				// FUN_0041a298, once per presented frame (0x0041bdf7)
+				const uint button = getCurrentMouseButton();
+				const bool left = (button == 1 && prevButton != 1) || pendingLeft;
+				pendingLeft = false;
+				const bool right = button == 2 && prevButton != 2;
+				prevButton = button;
+				skipRun.poll(left, right, checkKeysPressed(1, Common::KEYCODE_ESCAPE));
 			}
 		}
-		pollEvents();
-		if (!stopAfterFrame) {
-			const uint button = getCurrentMouseButton();
-			const bool left = button == 1 && prevButton != 1;
-			const bool right = button == 2 && prevButton != 2;
-			prevButton = button;
-			const bool escape = checkKeysPressed(1, Common::KEYCODE_ESCAPE);
-			if (videoSkipPoll(skip, left, right, escape))
-				stopAfterFrame = skipped = true;
-		}
 		g_system->delayMillis(10);
+	}
+	if (pendingBack) {
+		// The last frame's overlays into its own buffer (0x0041be45).
+		const uint rowBytes = (uint)composite.w * composite.format.bytesPerPixel;
+		for (int row = 0; row < composite.h; ++row)
+			memcpy(pendingBack + row * pendingPitch, composite.getBasePtr(0, row), rowBytes);
 	}
 	clearKeys();
 	// A video that ends by itself leaves its sound playing to its end
 	// (FUN_0042a100 @ 0x0042a907..0x0042a954 stops nothing); one cut short
 	// fades it out, 2 volume steps every 25 ms from the effects volume
 	// (FUN_0041bc74 @ 0x0041be69..0x0041be9e arms 0x00495eb0 = 2).
-	if (skipped && videoSkipFades(skip, frameMs == kCinemaFrameMs) &&
-	        _mixer->isSoundHandleActive(_newSoundHandle))
+	// 0x0041be55..0x0041bf8d: the fade test, then the flag resets
+	const bool fade = skipRun.finish(frameMs == kCinemaFrameMs, _barSession);
+	if (fade && _mixer->isSoundHandleActive(_newSoundHandle))
 		fadeOutNewSound();
 	delete decoder;
 	for (Common::SeekableReadStream *spf : spfStreams)
 		delete spf;
 	composite.free();
-	BarSessionRules::flagsReset(_barSession);   // 0x0041bf5b..0x0041bf8d
 #else
 	debugC(1, kDebugScript, "playTransitionVideo: %s (HNM not compiled)", videoName.c_str());
 #endif
 }
 
-// The effects volume byte 0x00495e73 (0..127), from ScummVM's sfx volume.
+// The effects volume byte 0x00495e73 (0..127), from ScummVM's sfx volume,
+// read the way the mixer reads it (the registered default when no domain
+// has the key).  The sound menu stores the byte a as (a * 256 + 126) / 127,
+// which this truncation gives back exactly.
 uint8 CryOmni3DEngine_Atlantis::effectsVolume127() const {
-	const int sfx = ConfMan.hasKey("sfx_volume") ? ConfMan.getInt("sfx_volume") : Audio::Mixer::kMaxMixerVolume;
-	return (uint8)(sfx * 127 / Audio::Mixer::kMaxMixerVolume);
+	const int sfx = ConfMan.getInt("sfx_volume");
+	return (uint8)CLIP(menuAilFromMixerVolume(sfx, Audio::Mixer::kMaxMixerVolume), 0, 127);
 }
 
 void CryOmni3DEngine_Atlantis::fadeOutNewSound() {
@@ -543,8 +617,8 @@ void CryOmni3DEngine_Atlantis::loadAmbientCentres() {
 
 namespace {
 
-uint32 ambientClock(void *) {
-	return g_system->getMillis();   // timeGetTime - 0x00bcb5b8 (FUN_00451d0c)
+uint32 ambientClock(void *engine) {
+	return ((const CryOmni3DEngine_Atlantis *)engine)->gameClockMs();   // FUN_00451d0c
 }
 
 struct AmbientLoadCtx {
@@ -577,7 +651,13 @@ void CryOmni3DEngine_Atlantis::ambientEnterPlace() {
 	_ambient.enterPlace(*_ambientOut, *place, _wam.getAmbientObjects(), &ambientLoadVariant, &ctx);
 }
 
-// FUN_00432178's ambient part, at the end of a warp or bar frame.
+// FUN_00432178's ambient part, at the end of a warp frame, of each frame of
+// the bar slides, the bar loop and the pick-up hold loop, and on
+// every frame of the turn FUN_004212cc.  Its pause test and pause start read
+// the CON variable CHAPTERTIME (@ 0x0043220f, 0x004323e9), which only
+// FUN_0041c75c writes (@ 0x0041c7c0), at the start of a warp frame
+// (0x0041c086, updateConClocks): it stands still in the bar, the turn and
+// the videos.
 void CryOmni3DEngine_Atlantis::ambientFrame() {
 	pollNewSound();   // FUN_00432178's tail calls FUN_00432a64 in every frame
 	if (!_ambientOut || !_ambient.active())
@@ -591,7 +671,7 @@ void CryOmni3DEngine_Atlantis::ambientFrame() {
 		cam = _ambientCentres[(int32)_currentPlaceId];
 	_ambient.frame(*_ambientOut, *place, _wam.getAmbientObjects(), cam,
 	               (float)_omni3dMan.getAlpha(), (float)_omni3dMan.getBeta(),
-	               _conClocks.chapterTime(g_system->getMillis()));
+	               (int32)_gameVars.getValOrDefault("chaptertime", 0));
 }
 
 // FUN_0043259c, called by FUN_00423ad8 after the HNM is opened and before
@@ -611,10 +691,20 @@ void CryOmni3DEngine_Atlantis::ambientPrepareGlide(uint toPlace, int32 frames) {
 	                      (float)_omni3dMan.getAlpha(), (float)_omni3dMan.getBeta(), frames);
 }
 
-// FUN_00432758, called by the HNM play loop FUN_0041bc74 on each frame of
-// its loop (every video, cinematics included, with the last steps).  The
-// port only runs it when the place's sounds are loaded (0x00496980), which
-// is the case whenever the current place has any.
+// FUN_00432758, called by the HNM play loop FUN_0041bc74 on each pass of
+// its loop (every video, cinematics included, with the last steps), without
+// testing 0x00496980; it loops over the current place's count byte.  Like
+// FUN_00432178 it reads the CON variable CHAPTERTIME (@ 0x004327ce,
+// 0x00432978), frozen during the video (see ambientFrame).
+// The port only runs it while the place's sounds are loaded (0x00496980).
+// After FUN_00431e98 (from FUN_004240fc before a puzzle, FUN_00426590 or
+// FUN_0042de5c) the flag is 0 while the place still has references, and a
+// video in that window (the /sel scan after a puzzle) makes the original
+// step the floats 0x006cc5d0 / 0x006cc548, write pan / volume to the
+// stopped handles, arm +6 and call FUN_004320bc (rand, may set 0x00495e8c);
+// the port skips all of this.  Nothing can start there, since FUN_00431e98
+// zeroed the buffer pointers, and the reload resets +6 and the gains.
+// See atlantis-re: functions/audio-FUN_00432178.md (port limits).
 void CryOmni3DEngine_Atlantis::ambientVideoFrame() {
 	if (!_ambientOut || !_ambient.active())
 		return;
@@ -622,14 +712,14 @@ void CryOmni3DEngine_Atlantis::ambientVideoFrame() {
 	if (!place)
 		return;
 	_ambient.videoFrame(*_ambientOut, *place, _wam.getAmbientObjects(),
-	                    _conClocks.chapterTime(g_system->getMillis()));
+	                    (int32)_gameVars.getValOrDefault("chaptertime", 0));
 }
 
 // The six Miles samples (FUN_00430bf0 / FUN_00430d20 at start-up).
 AtlantisAmbientOutput &CryOmni3DEngine_Atlantis::milesSamples() {
 	if (!_ambientOut) {
 		_ambientOut = new AtlantisAmbientOutput(_mixer);
-		_ambient.setClock(&ambientClock, nullptr);
+		_ambient.setClock(&ambientClock, this);
 	}
 	return *_ambientOut;
 }
@@ -694,8 +784,10 @@ void CryOmni3DEngine_Atlantis::transitionAfterDepartureVue(uint transitionIndex)
 	turnToTransition(t.srcAlpha, t.srcBeta);
 	_omni3dMan.setAlpha(t.dstAlpha);   // 0x00421b01..0x00421b31, before the video
 	_omni3dMan.setBeta(t.dstBeta);
-	if (t.videoName.contains('.'))
+	// The same double-click test (0x00423f8a) and reset (0x00424013).
+	if (t.videoName.contains('.') && !_turnDoubleClick.flag)
 		playTransitionVideo(t.videoName, _currentPlaceId, _currentPlaceId, kTransitionFrameMs);
+	_turnDoubleClick.flag = false;
 }
 
 } // End of namespace Atlantis

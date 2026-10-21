@@ -134,6 +134,34 @@ public:
 		}
 	}
 
+	// Off-node points: at (320, 240) x & 15 = y & 15 = 0, so the three
+	// bilinear terms of FUN_0045166f (0x00451712..0x00451782) weigh 0 and
+	// only the node term is compared above.  These screen points have
+	// non-zero x & 15 and y & 15; expected values from the original
+	// FUN_0045166f under Unicorn (graphics_omni3d.Orig.map after
+	// FUN_0045179a(75.137, 50) + FUN_00451915(a, b), run 2026-10-21).  Since
+	// ScummVM e881ec66612 handleWarp hit-tests the pointer wherever it is.
+	void test_offnode_point() {
+		using namespace GraphicsNavTest;
+		static const struct { int x, y; } pts[4] = { {333, 247}, {7, 471}, {639, 479}, {100, 13} };
+		static const struct { double a, b; int o[4][2]; } cases[] = {
+			{0.0, 0.0,   {{10, 390}, {1837, 543}, {213, 547}, {1889, 213}}},
+			{1.0, 0.25,  {{1732, 487}, {1482, 609}, {1965, 612}, {1576, 295}}},
+			{3.0, -0.5,  {{1081, 201}, {880, 386}, {1261, 391}, {838, 83}}},
+			{6.0, 0.75,  {{106, 656}, {1771, 696}, {468, 696}, {1994, 472}}},
+		};
+		Pano pano;
+		for (uint i = 0; i < ARRAYSIZE(cases); i++) {
+			CryOmni3D::Atlantis::Omni3DManagerAtlantis m;
+			setupPort(m, pano.s, 75.137, cases[i].a, cases[i].b);
+			for (uint k = 0; k < 4; k++) {
+				Common::Point pan = CryOmni3D::Atlantis::hitTestPoint(m.mapMouseCoords(Common::Point(pts[k].x, pts[k].y)));
+				TS_ASSERT_EQUALS(pan.x, cases[i].o[k][0]);
+				TS_ASSERT_EQUALS(pan.y, cases[i].o[k][1]);
+			}
+		}
+	}
+
 	// Zone resolution: original FUN_00422bb0 (inclusive right/bottom edges,
 	// largest id wins) on zones placed around the original centre point;
 	// port = AtlantisPlace::hitTest on the port's centre point.
