@@ -21,10 +21,15 @@
 // callbackInventory / setupZones / menuSpriteTop (toolbar.cpp); init()
 // itself cannot run (see initToolbarNoGfx).  test_bar_frame_pixels runs
 // drawToolbar (view under the transparent texels, _position offset);
-// slideFrame, presentBarFrame and drawInventoryIcon need the engine and are
-// not run (the guest portraits, the held-object skip and the per-frame
-// ambientFrame of the slides are not covered); test_icon_hotspots checks
-// iconHotspot, which drawInventoryIcon uses.  test_slide_out_frames_vs_original
+// test_slide_guest_frames_vs_original runs composeSlideFrame (slideFrame's
+// work buffer, through composeBarFrame, presentBarFrame's too) and
+// slideGuestPortraits on a zero-filled engine against
+// atlantis-re/tools/emu/ui_bar_slide_guests.py (golden
+// ui_bar_slide_guests.txt: FUN_0042c2c4 / FUN_0042c59c with FUN_0042bc58);
+// the screen copy of slideFrame / presentBarFrame, drawInventoryIcon and the
+// per-frame barTick / ambientFrame of the slides need the running engine and
+// are not run; test_icon_hotspots checks iconHotspot, which
+// drawInventoryIcon uses.  test_slide_out_frames_vs_original
 // runs drawToolbar (background), barIcons / barBackgroundDrawn and
 // slideOutRecordDrawn over the frames of FUN_0042c59c, the icons drawn as
 // drawInventoryIcon draws them (drawSprSprite at iconHotspot), against
@@ -55,9 +60,16 @@
 #include "common/archive.h"
 #include "common/fs.h"
 
+// The first test header that includes engine.h decides its access, hence
+// the same defines as video_dialog.h.
 #define private public
+#define protected public
+#include "cryomni3d/atlantis/engine.h"
 #include "cryomni3d/atlantis/toolbar.h"
 #undef private
+#undef protected
+
+#include <new>
 
 namespace GraphicsToolbarTest {
 
@@ -98,6 +110,29 @@ inline void initToolbarNoGfx(CryOmni3D::Atlantis::Atlantis_Toolbar &tb, CryOmni3
 	tb._destSurface.create(640, 82, Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0));
 	tb.setupZones();
 }
+
+// Zero-filled storage for T, never constructed or destroyed (the engine
+// peek of ui_puzzle_random.h: the engine cannot be constructed in the
+// runner).
+template<class T>
+inline T *rawStorage() {
+	void *mem = ::operator new(sizeof(T));
+	memset(mem, 0, sizeof(T));
+	return static_cast<T *>(mem);
+}
+
+// The omni manager's view for a test: getSurface() returns _surface as long
+// as neither dirty flag is set.  Its members are protected (cryomni3d/omni3d.h
+// is included before this header without the access defines); a member
+// pointer formed in a derived class reaches them.
+struct OmniViewPeek : CryOmni3D::Omni3DManager {
+	static void setView(CryOmni3D::Omni3DManager &m, const Graphics::Surface &view) {
+		m.*(&OmniViewPeek::_sourceSurface) = &view;
+		m.*(&OmniViewPeek::_surface) = view;   // shallow: the pixels stay the caller's
+		m.*(&OmniViewPeek::_dirty) = false;
+		m.*(&OmniViewPeek::_dirtyCoords) = false;
+	}
+};
 
 } // End of namespace GraphicsToolbarTest
 
@@ -878,7 +913,176 @@ public:
 		TS_ASSERT_EQUALS(badFix, 0u);
 	}
 
+	// The bar slides with guest portraits: each frame of FUN_0042c2c4 /
+	// FUN_0042c59c renders the view anew, draws the bar, then the portraits
+	// (FUN_0042bc58) at the guest y 0x00496880, which the slide-in lowers by 7
+	// before the frame and the slide-out raises by 7 after it while < 350.
+	// Golden ui_bar_slide_guests.txt (atlantis-re
+	// tools/emu/ui_bar_slide_guests.py: FUN_0042c2c4, FUN_0042c59c,
+	// FUN_0042bc58 and FUN_00410430 emulated on OBJETS0 / SUIVEUR.SPR, the
+	// hash view written by the FUN_00451d8b stub each frame, no inventory
+	// record): 11 scenarios (one guest with each of the 9 portraits, the
+	// portraits hidden, 3 records with a hidden middle one), 19 frames each.
+	// Port: Atlantis_Toolbar::composeSlideFrame (slideFrame's work buffer:
+	// animateSprites, currentViewSurface, composeBarFrame = view, bar,
+	// drawGuests) on a zero-filled engine with the view loaded, and
+	// CryOmni3DEngine_Atlantis::slideGuestPortraits.  The frame sequence is
+	// the one slideIn / slideOut run (slot y 492 .. 443 with the guests moved
+	// before the frame, then 443 .. 513 with the guests moved after it); their
+	// screen copy, pacing, barTick and ambientFrame need the running engine and
+	// are not run.  `original` is the snapshot navigation.cpp passes (the view
+	// with the portraits drawn at 350): with a view loaded the frame must not
+	// show it.  Each frame's whole-screen md5, the guest y, the bar background
+	// flag, the portraits drawn and the number of changed pixels in rows
+	// 384..397 (0 on the slide-in's last frame: no portrait copy above the
+	// bar) match the original's.  A second pass with no view loaded takes the
+	// clean view from `original` (the fallback).
+	void test_slide_guest_frames_vs_original() {
+		using namespace GraphicsToolbarTest;
+		typedef CryOmni3D::Atlantis::Atlantis_Toolbar TB;
+		typedef CryOmni3D::Atlantis::CryOmni3DEngine_Atlantis Eng;
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("graphics_toolbar: no atlantis_test.cfg, slide guest test skipped");
+			return;
+		}
+		Common::Array<Common::String> lines;
+		TS_ASSERT(AtlantisTest::loadGoldenLines("ui_bar_slide_guests.txt", lines));
+		if (!SearchMan.hasArchive("toolbar_test_data"))
+			SearchMan.addDirectory("toolbar_test_data", Common::FSNode(Common::Path(AtlantisTest::dataDir(), '/')));
+		CryOmni3D::Atlantis::BigFileArchive big;
+		TS_ASSERT(big.open(Common::Path("BIGCD1.BIG")));
+		Common::Array<CryOmni3D::Atlantis::SprSprite> bar, portraits;
+		{
+			Common::ScopedPtr<Common::SeekableReadStream> s0(big.createReadStreamForMember(Common::String("SPRITE\\2D\\OBJETS0.SPR")));
+			Common::ScopedPtr<Common::SeekableReadStream> sg(big.createReadStreamForMember(Common::String("SPRITE\\2D\\SUIVEUR.SPR")));
+			TS_ASSERT(s0 && sg);
+			if (!s0 || !sg)
+				return;
+			TS_ASSERT(CryOmni3D::Atlantis::readSprFile(*s0, bar));
+			TS_ASSERT(CryOmni3D::Atlantis::readSprFile(*sg, portraits));
+		}
+		TS_ASSERT_EQUALS(bar.size(), 1u);
+		TS_ASSERT_EQUALS(portraits.size(), 9u);
+		if (bar.size() != 1 || portraits.size() != 9)
+			return;
+		const Graphics::PixelFormat rgb565(2, 5, 6, 5, 0, 11, 5, 0, 0);
+		Graphics::Surface view;
+		view.create(640, 480, rgb565);
+		for (uint i = 0; i < 640u * 480u; i++)
+			((uint16 *)view.getPixels())[i] = (uint16)((i * 2654435761U) >> 16);
+
+		Eng *e = rawStorage<Eng>();
+		e->_guestSprites = portraits;
+
+		uint frames = 0, bad = 0, scenarios = 0, lastInFrames = 0;
+		for (int pass = 0; pass < 2; pass++) {
+			// pass 0: a view loaded, `original` holds the portraits at 350;
+			// pass 1: no view, `original` is the clean view.
+			e->_warpLoaded = pass == 0;
+			if (pass == 0)
+				OmniViewPeek::setView(e->_omni3dMan, view);
+			Common::ScopedPtr<TB> tb;
+			Graphics::ManagedSurface original;
+			Common::String scenario;
+			for (uint li = 0; li < lines.size(); li++) {
+				const Common::String &ln = lines[li];
+				if (ln.hasPrefix("#"))
+					continue;
+				Common::Array<Common::String> f;
+				splitWords(ln, f);
+				if (f[0] == "scenario") {
+					scenario = f[1];
+					if (!pass)
+						scenarios++;
+					// The guest list as AtlantisGuests holds it: record i's
+					// SUIVEUR.SPR sprite, 0xff (kHidden) not drawn.
+					Common::Array<Common::String> spr;
+					splitOn(field(f, "sprites"), ',', spr);
+					e->_guests = CryOmni3D::Atlantis::AtlantisGuests();
+					e->_guests.count = spr.size();
+					for (uint k = 0; k < spr.size(); k++)
+						e->_guests.sprite[k] = (byte)atoi(spr[k].c_str());
+					e->_guestsShown = field(f, "shown") == "1";
+					tb.reset(new TB());
+					initToolbarNoGfx(*tb, nullptr);
+					tb->_engine = e;
+					tb->_format = rgb565;
+					tb->addMenuSprite(bar[0].w, bar[0].h, bar[0].xoff, bar[0].yoff,
+					                  0, TB::kBarHotspotY - TB::kBarSurfaceTop,
+					                  bar[0].pixels.data(), bar[0].blend.data());
+					// navigation.cpp: the view with the portraits at 350.
+					original.copyFrom(view);
+					if (pass == 0)
+						e->drawGuests(original);
+					continue;
+				}
+				// <scenario> phase= frame= slotY= guestY= bg= guests= rows= above= md5=
+				const bool in = field(f, "phase") == "in";
+				const int slotY = atoi(field(f, "slotY").c_str());
+				// slideIn: _position, then the portraits -7, then the frame;
+				// slideOut: _slideOutSlotY and _position, the frame, then +7.
+				tb->_slideOutSlotY = in ? 0 : slotY;
+				tb->_slideOutGateFix = false;
+				tb->_position = (uint)(slotY - 443);
+				if (in)
+					e->slideGuestPortraits(-7);
+				const int guestY = e->_guests.portraitY;
+				Graphics::ManagedSurface frame;
+				tb->composeSlideFrame(frame, &original.rawSurface());
+				if (!in)
+					e->slideGuestPortraits(7);
+				Common::String guests;
+				if (e->_guestsShown)
+					for (uint k = 0; k < e->_guests.count; k++)
+						if (e->_guests.sprite[k] != CryOmni3D::Atlantis::AtlantisGuests::kHidden)
+							guests += Common::String::format("%s%u:%d:%d", guests.empty() ? "" : ",",
+							                                 e->_guests.sprite[k], 540 - 100 * (int)k, guestY);
+				if (guests.empty())
+					guests = "-";
+				uint above = 0;
+				for (int y = 384; y < 398; y++)
+					for (int x = 0; x < 640; x++)
+						above += *(const uint16 *)frame.getBasePtr(x, y) != *(const uint16 *)view.getBasePtr(x, y);
+				const Common::String md5 = frameMd5(frame.rawSurface());
+				const Common::String bg = tb->barBackgroundDrawn() ? "1" : "0";
+				frames++;
+				const bool ok = guestY == atoi(field(f, "guestY").c_str()) && bg == field(f, "bg") &&
+				                guests == field(f, "guests") &&
+				                above == (uint)atoi(field(f, "above").c_str()) && md5 == field(f, "md5");
+				if (!ok) {
+					bad++;
+					TS_WARN(Common::String::format("pass %d %s: guestY %d bg %s guests %s above %u md5 %s", pass,
+					                               ln.c_str(), guestY, bg.c_str(), guests.c_str(), above,
+					                               md5.c_str()).c_str());
+				}
+				if (in && slotY == 443 && e->_guestsShown) {
+					lastInFrames++;
+					TSM_ASSERT_EQUALS(scenario.c_str(), above, 0u);
+				}
+			}
+			original.free();
+		}
+		e->_guestSprites.clear();
+		::operator delete(e);
+		view.free();
+		TS_ASSERT_EQUALS(scenarios, 11u);
+		TS_ASSERT_EQUALS(frames, 2u * 209u);
+		TS_ASSERT_EQUALS(lastInFrames, 2u * 10u);
+		TS_ASSERT_EQUALS(bad, 0u);
+	}
+
 private:
+	// md5 of the whole 640x480 frame, little-endian RGB565 as the harness dumps it.
+	static Common::String frameMd5(const Graphics::Surface &s) {
+		Common::Array<byte> b;
+		for (int y = 0; y < s.h; y++)
+			for (int x = 0; x < s.w; x++) {
+				const uint16 p = *(const uint16 *)s.getBasePtr(x, y);
+				b.push_back(p & 0xff);
+				b.push_back(p >> 8);
+			}
+		return AtlantisTest::md5Hex(b.begin(), b.size());
+	}
 	static void splitWords(const Common::String &s, Common::Array<Common::String> &out) {
 		splitOn(s, ' ', out);
 	}

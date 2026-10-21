@@ -118,6 +118,14 @@ public:
 	// the bar at _position (82 = not drawn), then the guest portraits, on the
 	// whole screen.
 	void slideFrame(const Graphics::Surface *original);
+	// The work buffer of slideFrame (640 x 480, without the screen copy):
+	// the place sprites, the view rendered anew (`original` when no view is
+	// loaded), then composeBarFrame.
+	void composeSlideFrame(Graphics::ManagedSurface &frame, const Graphics::Surface *original);
+	// The frame of the bar loops over `view` (presentBarFrame, slideFrame):
+	// the view, the bar at _position (82 = not drawn), then the guest
+	// portraits (FUN_0042bc58 after the bar).
+	void composeBarFrame(Graphics::ManagedSurface &frame, const Graphics::Surface *view);
 	// FUN_0042c2c4 / FUN_0042c59c; true when a timer closed the bar.
 	bool slideIn(const Graphics::Surface *original);
 	bool slideOut(const Graphics::Surface *original);

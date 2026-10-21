@@ -306,18 +306,27 @@ bool Atlantis_Toolbar::displayToolbar(const Graphics::Surface *original) {
 // 0x0042c381 / 0x0042c60e), the bar (FUN_00410430), then the guest portraits
 // over it (FUN_0042bc58 @ 0x0042c4a9 / 0x0042c702).  `original` (the view
 // when the bar opened) is used only when no view is loaded.
-void Atlantis_Toolbar::slideFrame(const Graphics::Surface *original) {
+void Atlantis_Toolbar::composeSlideFrame(Graphics::ManagedSurface &frame, const Graphics::Surface *original) {
 	_engine->animateSprites();   // FUN_00425304
 	const Graphics::Surface *view = _engine->currentViewSurface();   // FUN_00451d8b
 	if (!view)
 		view = original;
-	Graphics::ManagedSurface frame(640, 480, _format);
+	frame.create(640, 480, _format);
+	composeBarFrame(frame, view);
+}
+
+void Atlantis_Toolbar::composeBarFrame(Graphics::ManagedSurface &frame, const Graphics::Surface *view) {
 	if (view)
 		frame.blitFrom(*view);
 	drawToolbar(&frame.rawSurface());
 	if (_position < (uint)_destSurface.h)
 		frame.blitFrom(_destSurface, Common::Point(0, frame.h - _destSurface.h));
 	_engine->drawGuests(frame);   // FUN_0042bc58, after the bar
+}
+
+void Atlantis_Toolbar::slideFrame(const Graphics::Surface *original) {
+	Graphics::ManagedSurface frame;
+	composeSlideFrame(frame, original);
 	g_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 	g_system->updateScreen();
 	// [UNKNOWN] the slides have no timer of their own; the port's pace.
@@ -381,10 +390,7 @@ void Atlantis_Toolbar::presentBarFrame(const Graphics::Surface *original) {
 		return;
 	}
 	Graphics::ManagedSurface frame(view->w, view->h, view->format);
-	frame.blitFrom(*view);
-	drawToolbar(&frame.rawSurface());
-	frame.blitFrom(_destSurface, Common::Point(0, frame.h - _destSurface.h));
-	_engine->drawGuests(frame);   // FUN_0042bc58, after the bar
+	composeBarFrame(frame, view);
 	g_system->copyRectToScreen(frame.getPixels(), frame.pitch, 0, 0, frame.w, frame.h);
 }
 
