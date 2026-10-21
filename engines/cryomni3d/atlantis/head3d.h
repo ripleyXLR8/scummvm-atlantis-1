@@ -95,6 +95,8 @@ public:
 	~DialogHead();
 
 private:
+	// test/engines/cryomni3d/atlantis/video_mouth.h (depthInsert near ties)
+	friend struct DialogHeadTestAccess;
 	struct Entry;
 	// An edge record of the original (0x58 / 0x64 bytes, kept in the loaded
 	// block between frames): one per face corner, shared by the two faces

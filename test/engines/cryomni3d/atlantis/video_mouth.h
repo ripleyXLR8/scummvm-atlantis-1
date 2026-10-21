@@ -13,6 +13,67 @@
 
 #include "cryomni3d/atlantis/head3d.h"
 
+namespace CryOmni3D {
+namespace Atlantis {
+
+// DialogHead's private depth insert FUN_0045b824 on the near ties of
+// atlantis-re tools/emu/video_head_near_tie.py (friend of DialogHead).
+struct DialogHeadTestAccess {
+	typedef DialogHead::Edge Edge;
+	typedef DialogHead::Entry Entry;
+	static Edge edge(int32 x, float iz, float dizdx, Edge *next) {
+		Edge e;
+		memset(&e, 0, sizeof(e));
+		e.x = x;
+		e.iz = iz;
+		e.dizdx = dizdx;
+		e.next = next;
+		return e;
+	}
+	static Entry entry(int32 xr, Edge *first, Edge *cur, Entry *behind) {
+		Entry n;
+		memset(&n, 0, sizeof(n));
+		n.xr = xr;
+		n.first = first;
+		n.cur = cur;
+		n.behind = behind;
+		return n;
+	}
+	// "inner ret_top top_behind_new new_behind_e7"
+	static Common::String inner() {
+		DialogHead h;
+		const int32 x = 10 << 16;
+		Edge endEdge = edge(0x7fffffff, 0.0f, 0.0f, nullptr);
+		Edge e0 = edge(x, 1000.0f, 0.0f, &endEdge);
+		uint32 bits = 0x3f7fffff;
+		float iz3;
+		memcpy(&iz3, &bits, 4);
+		Edge e3 = edge(x - (1 << 16), iz3, (float)(3.0 / 67108864.0), &endEdge);
+		Edge en = edge(x, 1.0f, 0.0f, &endEdge);
+		Entry e7 = entry(100 << 16, &e3, &e3, nullptr);
+		Entry t = entry(20 << 16, &e0, &e0, &e7);
+		Entry nw = entry(50 << 16, &en, &en, nullptr);
+		Entry *ret = h.depthInsert(&t, &nw, x);
+		return Common::String::format("inner ret_top %d top_behind_new %d new_behind_e7 %d",
+		                              ret == &t, t.behind == &nw, nw.behind == &e7);
+	}
+	// "top ret_new new_behind_top"
+	static Common::String top() {
+		DialogHead h;
+		const int32 x = 10 << 16;
+		Edge endEdge = edge(0x7fffffff, 0.0f, 0.0f, nullptr);
+		Edge e0 = edge(x, 67108960.0f, 0.0f, &endEdge);
+		Edge en = edge(x, 67108864.0f, 1.0f, &endEdge);
+		Entry t = entry(60 << 16, &e0, &e0, nullptr);
+		Entry nw = entry(50 << 16, &en, &en, nullptr);
+		Entry *ret = h.depthInsert(&t, &nw, x);
+		return Common::String::format("top ret_new %d new_behind_top %d", ret == &nw, nw.behind == &t);
+	}
+};
+
+} // End of namespace Atlantis
+} // End of namespace CryOmni3D
+
 namespace VideoMouth {
 
 class BigSource : public CryOmni3D::Atlantis::HeadFileSource {
@@ -98,6 +159,29 @@ public:
 	// Lip-sync, head animation, camera, object walk and projection: the
 	// projected visible vertices of every traced frame, and the value
 	// FUN_0044e860 returned.
+	// FUN_0045b824 compares the unrounded x87 depth (FST 0x0045b8f7, FCOMP
+	// 0x0045b8fb) and the unrounded znew + 100 (0x0045b86a..0x0045b874):
+	// two constructed near ties, expected values from the original under
+	// emulation (atlantis-re tools/emu/video_head_near_tie.py -> golden
+	// video_head_near_tie.txt).
+	void test_depth_insert_near_ties() {
+		if (AtlantisTest::goldenDir().empty()) {
+			TS_WARN("video_mouth: no golden directory configured, near-tie test skipped");
+			return;
+		}
+		Common::Array<Common::String> golden;
+		TS_ASSERT(AtlantisTest::loadGoldenLines("video_head_near_tie.txt", golden));
+		Common::String wantInner, wantTop;
+		for (uint i = 0; i < golden.size(); i++) {
+			if (golden[i].hasPrefix("inner "))
+				wantInner = golden[i];
+			else if (golden[i].hasPrefix("top "))
+				wantTop = golden[i];
+		}
+		TS_ASSERT_EQUALS(CryOmni3D::Atlantis::DialogHeadTestAccess::inner(), wantInner);
+		TS_ASSERT_EQUALS(CryOmni3D::Atlantis::DialogHeadTestAccess::top(), wantTop);
+	}
+
 	void test_projection_vs_original() {
 		using namespace VideoMouth;
 		if (!AtlantisTest::haveData()) {

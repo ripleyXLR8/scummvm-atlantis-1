@@ -106,7 +106,11 @@ const TrigTables &trig() {
 // FUN_0045d460: slerp of two 1.15 quaternions, weight 0..256.
 void slerp(const int32 *q0, const int32 *q1, int w, int32 *out) {
 	const TrigTables &T = trig();
-	const int64 dot = ((int64)q0[0] * q1[0] + (int64)q0[1] * q1[1] + (int64)q0[2] * q1[2] + (int64)q0[3] * q1[3]) >> 15;
+	// 32-bit IMUL / ADD then SAR 15 (0x0045d46a..0x0045d493)
+	const int32 dot = wrap32((int64)q0[0] * q1[0] + (int64)q0[1] * q1[1] + (int64)q0[2] * q1[2] + (int64)q0[3] * q1[3]) >> 15;
+	// The opposite-quaternion branch (0x0045d5ab) is not ported: no rotation
+	// key pair of the shipped *A.3DA files reaches it (minimum dot + 0x8000 is
+	// 65176 over 5008 pairs; atlantis-re functions/video-FUN_0044c9c0.md).
 	if (dot + 0x8000 <= 20)
 		warning("Atlantis head: FUN_0045d460 opposite-quaternion branch (0x0045d5ab) not ported");
 	const int e = 256 - w;
@@ -258,9 +262,24 @@ bool DialogHead::load3dc(const Common::Array<byte> &f) {
 		const uint32 nv = (uint32)rd32(f, s + 0x7c);
 		const uint32 va = R + (uint32)rd32(f, s + 0x80);
 		n.verts.resize(nv * 3);
-		for (uint32 v = 0; v < nv; v++)
+		bool vflag80 = false;
+		for (uint32 v = 0; v < nv; v++) {
+			// +0: the vertex flags; only 0x80 survives FUN_004618b0's mask
+			if ((uint32)rd32(f, va + 0x28 * v) & 0x80)
+				vflag80 = true;
 			for (int k = 0; k < 3; k++)
 				n.verts[3 * v + k] = rd32(f, va + 0x28 * v + 4 + 4 * k);
+		}
+		// Not ported, no shipped .3DC sets these flags (172 nodes and 12196
+		// vertices, all flags 0; atlantis-re functions/video-FUN_0044c9c0.md):
+		// node flag 0x10 (FUN_00463398 0x004634a1..0x004634f3: a culled node is
+		// drawn when its parent is not, and FUN_004619f0 transforms the parent's
+		// 0x80 vertices) and vertex flag 0x80 (FUN_004618b0: visible, 0x40, as
+		// soon as z >= near).
+		if (n.flags & 0x10)
+			warning("Atlantis head: node flag 0x10 (FUN_00463398 0x004634a1) not ported");
+		if (vflag80)
+			warning("Atlantis head: vertex flag 0x80 (FUN_004618b0, FUN_004619f0) not ported");
 		const uint32 npl = (uint32)rd32(f, s + 0x94);
 		const uint32 pa = R + (uint32)rd32(f, s + 0x98);
 		n.planes.resize(npl * 3);
@@ -575,11 +594,17 @@ void DialogHead::neutral() {
 	const int32 *e = _phon[26];
 	for (uint r = 0; r < _meshes.size(); r++) {
 		const Common::Array<int> &row = _rows[r];
-		morph(_meshes[r], row[e[0]], 255);
+		// the >= 0 tests of 0x0044e55d / 0x0044e5a7 are on the mapped row value
+		int32 s1 = -1, s2 = -1;
 		if (e[2] >= 0 && e[3] >= 0)
-			morph(_meshes[r], row[e[2]], e[3]);
+			s1 = row[e[2]];
 		if (e[4] >= 0 && e[5] >= 0)
-			morph(_meshes[r], row[e[4]], e[5]);
+			s2 = row[e[4]];
+		morph(_meshes[r], row[e[0]], 255);
+		if (s1 >= 0)
+			morph(_meshes[r], s1, e[3]);
+		if (s2 >= 0)
+			morph(_meshes[r], s2, e[5]);
 	}
 	headAnim();
 	reset();
@@ -619,11 +644,14 @@ int DialogHead::lipsync(int32 t) {
 		const Common::Array<int> &row = _rows[r];
 		const double w[6] = { (double)(255 - _blend), (double)(Pp[3] * (255 - _blend)) * C, (double)(Pp[5] * (255 - _blend)) * C,
 		                      (double)_blend, (double)(Nn[3] * _blend) * C, (double)(Nn[5] * _blend) * C };
-		const int32 s[6] = { Pp[0], Pp[2], Pp[4], Nn[0], Nn[2], Nn[4] };
+		// the row value, -1 for a negative table index; the >= 0 test of
+		// 0x0044f054 is on this mapped value
+		const int32 s[6] = { Pp[0] < 0 ? -1 : row[Pp[0]], Pp[2] < 0 ? -1 : row[Pp[2]], Pp[4] < 0 ? -1 : row[Pp[4]],
+		                     Nn[0] < 0 ? -1 : row[Nn[0]], Nn[2] < 0 ? -1 : row[Nn[2]], Nn[4] < 0 ? -1 : row[Nn[4]] };
 		for (int k = 0; k < 6; k++) {
 			if (0.0 > w[k] || s[k] < 0)
 				continue;
-			morph(_meshes[r], row[s[k]], truncd(w[k]));
+			morph(_meshes[r], s[k], truncd(w[k]));
 		}
 	}
 	headAnim();
@@ -654,6 +682,8 @@ bool DialogHead::nodeCulled(const Node &n) const {
 }
 
 void DialogHead::draw(Node &n) {
+	// FUN_00463398 also draws a culled node with flag 0x10 under a shown
+	// parent (0x004634a1); not ported, see the loader.
 	if (nodeCulled(n))
 		return;
 	const int32 *W = n.W, *wp = n.wp;
@@ -666,6 +696,8 @@ void DialogHead::draw(Node &n) {
 		int32 *c = &cam[3 * v];
 		for (int i = 0; i < 3; i++)
 			c[i] = tsar15((int64)W[3 * i] * p[0] + (int64)W[3 * i + 1] * p[1] + (int64)W[3 * i + 2] * p[2]) + wp[i];
+		// the original keeps the record's flag 0x80 and sets 0x40 for it when
+		// z >= near; not ported, see the loader
 		uint32 fl = 0;
 		if (c[2] < _near)
 			fl |= 0x10;
@@ -739,9 +771,11 @@ void DialogHead::draw(Node &n) {
 		const int32 *c = &cam[3 * v];
 		pv.flags = vf[v];
 		if (vf[v] & 0x40) {
-			pv.x = tdiv((int64)c[0] * _fx, c[2]) + _cx;
-			pv.y = tdiv((int64)c[1] * _fy, c[2]) + _cy;
-			pv.iz = (float)((double)1073741824.0f / (double)(float)c[2]);
+			// 32-bit IMUL then CDQ / IDIV (0x00463084, 0x004630a8); FILD of the
+			// exact z (0x00463091)
+			pv.x = tdiv(wrap32((int64)c[0] * _fx), c[2]) + _cx;
+			pv.y = tdiv(wrap32((int64)c[1] * _fy), c[2]) + _cy;
+			pv.iz = (float)((double)1073741824.0f / (double)c[2]);
 		} else {
 			pv.x = pv.y = 0;
 			pv.iz = 0.0f;
@@ -1041,8 +1075,11 @@ DialogHead::Entry *DialogHead::depthInsert(Entry *top, Entry *nw, int32 x) {
 	Edge *edge = top->cur;
 	const double ztop = f32((double)(((int64)x - edge->x) >> 16) * (double)edge->dizdx + (double)edge->iz);
 	const double znew = nw->first->iz, dznew = nw->first->dizdx;
+	// 0x0045b86a: znew + 100 stays on the x87 stack (not rounded to float);
+	// 0x0045b8b7: the inner loop's limit is stored as a float.
+	const double limTop = znew + kEps;
 	const double lim = f32(znew + kEps);
-	if (ztop < znew || (ztop < lim && (double)edge->dizdx < dznew)) {
+	if (ztop < znew || (ztop < limTop && (double)edge->dizdx < dznew)) {
 		Entry *e = top;
 		while (e->xr <= nw->xr)
 			e = e->behind;
@@ -1061,8 +1098,11 @@ DialogHead::Entry *DialogHead::depthInsert(Entry *top, Entry *nw, int32 x) {
 					e7->cur = e3->next;
 					e3 = e7->cur;
 				}
-				const double z7 = f32((double)(((int64)x - e3->x) >> 16) * (double)e3->dizdx + (double)e3->iz);
-				if (z7 < znew || (z7 < lim && (double)e3->dizdx < dznew)) {
+				// 0x0045b8f7: FST keeps the unrounded value for the compare with
+				// znew; the limit test reloads the float store (0x0045b904).
+				const double z7x = (double)(((int64)x - e3->x) >> 16) * (double)e3->dizdx + (double)e3->iz;
+				const double z7 = f32(z7x);
+				if (z7x < znew || (z7 < lim && (double)e3->dizdx < dznew)) {
 					e6->behind = nw;
 					nw->behind = e7;
 					return top;
