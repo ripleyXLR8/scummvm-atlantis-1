@@ -118,7 +118,7 @@ static const int kUiOrigVolumeDefault[4] = {92,95,98,110};
 // FUN_0041d5f4 @ 0x0041d706: DAT_004960a8 (1 = subtitles ON) after each of 12
 // clicks on the SUBTITLES toggle, from the static initial state a=0, counter=0.
 static const int kUiOrigSubtitleClicks[12] = {1,0,1,0,0,1,0,0,1,0,0,1};
-// Same block, OMNI 3D toggle (DAT_004960ac) after each of 4 clicks from 0.
+// FUN_0041d5f4 @ 0x0041d764 (record 5), OMNI 3D toggle (DAT_004960ac) after each of 4 clicks from 0.
 static const int kUiOrigOmniClicks[4] = {1,0,1,0};
 // FUN_004211f0 grid hit-test samples: {x0,y0,cellW,cellH,cols,rows,order, mx,my, result}
 static const int kUiOrigGrid[][10] = {
@@ -1079,6 +1079,42 @@ public:
 	void test_layout_edge_uppercase_fin() { checkWalkCase(*findCase("uppercase_fin")); }
 	void test_layout_edge_toggle_outside_options() { checkWalkCase(*findCase("toggle_outside_options")); }
 
+	// Redraw with a stored sprite record: FUN_004207c0 keeps a non-zero
+	// stored x / y (0x00420910, 0x004209b0) and blits there; w / h are
+	// written again.  Expected values from tools/emu/ui_menus.py
+	// MenuEmu.run(1, text, keep_table=True) with record 0 pre-set to
+	// (50, 77, 0, 0) (Fable pass 2, 2026-10-21): record (50,77,30,40),
+	// sprite 3 blitted at (50,77); a fresh table gives (100,200).
+	void test_walk_redraw_keeps_stored_position() {
+		const char *text = "/spr=3,100,200,30,40\r\n<5,9>X\r\n/fin\r\n";
+		CryOmni3D::Atlantis::MenuWalk walk;
+		CryOmni3D::Atlantis::MenuWalkRecord pre = { 50, 77, 0, 0 };
+		walk.records.push_back(pre);
+		CryOmni3D::Atlantis::walkMenuText((const byte *)text, strlen(text), 1, -1, 0, 0, walk);
+		TS_ASSERT_EQUALS(walk.records.size(), 2u);
+		if (walk.records.size() < 2)
+			return;
+		TS_ASSERT_EQUALS(walk.records[0].x, 50);
+		TS_ASSERT_EQUALS(walk.records[0].y, 77);
+		TS_ASSERT_EQUALS(walk.records[0].w, 30);
+		TS_ASSERT_EQUALS(walk.records[0].h, 40);
+		TS_ASSERT_EQUALS(walk.records[1].x, -6);
+		TS_ASSERT_EQUALS(walk.records[1].y, -19);
+		TS_ASSERT_EQUALS(walk.records[1].w, 22);
+		TS_ASSERT_EQUALS(walk.records[1].h, 28);
+		bool sawSprite = false;
+		for (uint k = 0; k < walk.ops.size(); k++) {
+			const CryOmni3D::Atlantis::MenuWalkOp &op = walk.ops[k];
+			if (!op.sprite)
+				continue;
+			sawSprite = true;
+			TS_ASSERT_EQUALS(op.index, 3);
+			TS_ASSERT_EQUALS(op.x, 50);
+			TS_ASSERT_EQUALS(op.y, 77);
+		}
+		TS_ASSERT(sawSprite);
+	}
+
 	// Sound menu OK: the port's menuVolumeFromKnob vs the original FPU code,
 	// which uses __CHP (FUN_00451d6e, round toward zero) before FISTP.
 	void test_volume_conversion() {
@@ -1089,6 +1125,25 @@ public:
 				mismatches++;
 		}
 		TSM_ASSERT_EQUALS("knob X values (of 212) where the port's volume differs", mismatches, 0);
+	}
+
+	// The port's rescale of the SONMENU volumes (a port mechanism, no
+	// original value): the menu stores menuMixerFromAilVolume(a) in
+	// ScummVM's 0..kMaxMixerVolume scale and the readers (effectsVolume127,
+	// musicSyncVolume) take menuAilFromMixerVolume(v); every AIL volume
+	// 0..127 the menu can set reads back unchanged (127 -> 256 -> 127).
+	void test_volume_rescale_round_trip() {
+		const int maxMixer = 256;   // Audio::Mixer::kMaxMixerVolume
+		int bad = 0;
+		for (int a = 0; a <= 127; a++) {
+			const int v = CryOmni3D::Atlantis::menuMixerFromAilVolume(a, maxMixer);
+			if (v < 0 || v > maxMixer || CryOmni3D::Atlantis::menuAilFromMixerVolume(v, maxMixer) != a)
+				bad++;
+		}
+		TS_ASSERT_EQUALS(bad, 0);
+		TS_ASSERT_EQUALS(CryOmni3D::Atlantis::menuMixerFromAilVolume(127, maxMixer), 256);
+		// a fresh config: the mixer's registered default 192 reads as 95
+		TS_ASSERT_EQUALS(CryOmni3D::Atlantis::menuAilFromMixerVolume(192, maxMixer), 95);
 	}
 
 	// Default knob X (SONMENU.TXT 460/465/470/490) through the port's
@@ -1114,8 +1169,8 @@ public:
 		}
 	}
 
-	// OMNI 3D toggle (FUN_0041d5f4 @ 0x0041d706, DAT_004960ac =
-	// (DAT_004960ac == 0)) vs the port's omniToggleClick, the step
+	// OMNI 3D toggle (FUN_0041d5f4 @ 0x0041d764, DAT_004960ac =
+	// (DAT_004960ac == 0) stored at 0x0041d794) vs the port's omniToggleClick, the step
 	// displayOptionsMenu (menus.cpp) runs on a click.  OPTMENU.TXT's toggle
 	// has two options; the port starts on option 1 (inverted look) as the
 	// original starts on DAT_004960ac == 0 (MODE 1), and option 0 is the
