@@ -31,7 +31,8 @@
 //   /con, /Con       — player-triggered entry (FUN_004281f8); /conN allows N
 //                      plays, /con* any number
 //   /tim1, /Tim1, /tim2, /Tim2 — timer entries (FUN_0042bef4, FUN_0042bfa4)
-//   /sujN            — dialog subject gate of the entry it follows
+//   /Suj, /suj       — subject gate of a /con entry, only as the first line
+//                      of its body (FUN_00425828)
 //   /set, /Set       — game-state command; /go, /Go — jump to "/N"
 //   [Speaker,params] text — dialog line
 //   #                — comment
@@ -59,12 +60,18 @@ struct ConLine {
 	// code, atlantis-re functions/video-FUN_0042ee88.md; FUN_00451915 stores
 	// the angles of the current view; the address 0x004283e7 cited here
 	// before is only a byte inside FUN_0042831c, the disp8 of the CMP at
-	// 0x004283e5, from an older decompilation).  Syntax in CON files:
-	//   [Speaker, X, Y, camN] text       — X,Y present (hasAngle = true)
-	//   [Speaker, camN] text             — no numeric tokens (hasAngle = false)
-	// X is a panorama-pixel offset for the horizontal angle; Y is the vertical
-	// offset.  The dialog renderer converts them to radians using the
-	// panorama dimensions (no hardcoded scale factor).
+	// 0x004283e5, from an older decompilation).  Shipped form:
+	//   [Speaker,X,Y,camN] text          — X,Y present (hasAngle = true)
+	//   [Speaker,camN] text              — no number (hasAngle = false)
+	// FUN_0042844c @ 0x0042852b..0x004285fa: hasAngle when the byte right
+	// after the line's first ',' (before its ']') is a digit, with no blank
+	// or sign skipped; Y is read after the next ',' when that one is also
+	// before the ']' and followed by a digit, else Y = X.
+	// X and Y are angles in degrees (integers, parsed with atoi, FUN_00451b7a).
+	// The original converts each as value * pi / 180 (FMUL pi @ 0x00bcb594,
+	// FDIV 180.0f @ 0x004bc639 / 0x004bc63d, FUN_0042844c @ 0x00428587 /
+	// 0x004285d7) into the alpha/beta hints at 0x00496090 / 0x00496094.  The
+	// port does the same in dialog.cpp (angle * M_PI / 180.0).
 	bool hasAngle = false;
 	int  angleX   = 0;
 	int  angleY   = 0;
@@ -81,15 +88,6 @@ struct ConSectionItem {
 	int32          offset = -1;  // position of the "/set" in ConScript::text()
 };
 
-// One term of an entry line's condition, used only to find ClicPerso and
-// ClicZone; the evaluation itself reads the text (con_eval.cpp).
-struct ConCondition {
-	Common::String key;    // lowercase key name
-	char           op;     // '=', '<', '>', '!' (not equal)
-	int            value;
-	char           nextSep = '\0';  // '&', '|', or '\0' (end of cond list)
-};
-
 // An entry point found by one of the original's scanners (/sel, /con,
 // /tim1, /tim2), or a section header that no scanner reaches (isEntry false:
 // only reachable through /go).  See atlantis-re: formats/scripts-con.md.
@@ -101,24 +99,20 @@ struct ConSection {
 	int  conLimit  = 1;       // /conN : plays allowed by the counter (0 -> 1)
 	bool isTimer   = false;   // /tim1, /Tim1, /tim2, /Tim2
 	int  timerNum  = 0;       // 1 or 2
-	int  clicPerso = 0;       // ClicPerso=N from conditions (0 = none); kept for interactNPC()
-	int  clicZone  = 0;       // ClicZone=N from conditions (0 = none); for zone-click /con* sections
-	int  sujId     = 0;       // /sujN subject gate (0 = always available;
-	                          // first id from a comma-list; see sujIds)
+	int  sujId     = 0;       // first id of the /suj list (see sujIds)
 	int  gotoId    = 0;       // /goN redirect (0 = no redirect)
 	int32 condOffset = -1;    // where the scanner starts the evaluation (-1 = none)
 	int32 lineOffset = -1;    // start of the entry line, or of the header
 	int32 bodyOffset = -1;    // where the executor starts
 
-	// /suj supports a comma-separated list (`/suj1,2` means "this
-	// section fires when ANY of subjects 1 or 2 is enabled for the
-	// clicked perso").  CHAPI005 section 113 is the canonical example:
-	// `/con(FlagChp8=2)&(...) /suj1,2 /go89` -- the game-over branch is
-	// only reachable when interactNPC() treats the section as available
-	// for either suj 1 OR suj 2.  sujId == sujIds[0] for the menu icon.
+	// The subject gate of a /con entry: non-empty when its body starts with
+	// "/Suj" or "/suj" (FUN_00425828 @ 0x00425ad3..0x00425af9, 4 bytes, those
+	// two spellings only; a /suj line further down the body is plain text).
+	// The numbers FUN_004264a8 reads from 4 bytes on, in its order
+	// (`/suj1,2`: the entry fits the chosen subject 1 or 2, when that subject
+	// is enabled for the clicked perso).  sujId == sujIds[0].
 	Common::Array<int>             sujIds;
 
-	Common::Array<ConCondition>    conditions;  // terms of the entry line
 	Common::Array<ConSectionItem>  items;       // what the section executor runs, up to /go
 };
 
@@ -177,7 +171,7 @@ inline bool conGameOverNarrator(const Common::Array<ConSectionItem> &items, uint
 }
 
 // The 1999 build's alternative game-over narrations (FUN_00426570 of
-// atlantis-gog-714752 @ 0x004267ce..0x00426882 and 0x004269e3; the 2001
+// atlantis-gog-fr-714752 @ 0x004267ce..0x00426882 and 0x004269e3; the 2001
 // reference resets the counter before the test, 0x004267d9).  `count` is
 // the per-section byte 0x6cccac[section]: 2 or more -> 0; n > 0 -> the
 // line n lines after the first narrator line is used when it is also a

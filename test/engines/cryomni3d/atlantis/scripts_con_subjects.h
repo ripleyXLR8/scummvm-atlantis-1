@@ -6,7 +6,10 @@
 // per shipped CON file, every EnableSuj / DisableSuj line replayed in file
 // order (golden scripts_suj.txt).
 //
-// Port: ConSubjects (con_eval.h), called directly.
+// Port: each line goes through parseConSet (the key looked up by prefix in
+// VARIAS.CON, as FUN_00429d20) and applyConSubjectSet (the ENABLESUJ /
+// DISABLESUJ dispatch of FUN_0042a100) to ConSubjects (con_eval.h), so the
+// tests need the game data (VARIAS.CON).
 
 #ifndef TEST_ATLANTIS_SCRIPTS_CON_SUBJECTS_H
 #define TEST_ATLANTIS_SCRIPTS_CON_SUBJECTS_H
@@ -37,31 +40,14 @@ inline Common::String canon(const ConSubjects &t) {
 	return s;
 }
 
-// One /set line as the harness runs it (the line, then "\r\n/1\r\n"):
-// FUN_0042a100's key up to one of "=<>!#,", the value at the first digit
-// among the 16 bytes from there.  The key is matched by prefix
-// (FUN_00429d20), so "Enable" names ENABLESUJ.
+// One /set line as the harness runs it (the line, then "\r\n/1\r\n"),
+// through the port's /set parse and subject dispatch.
 inline void apply(ConSubjects &t, const Common::String &line) {
 	Common::String text = line + "\r\n/1\r\n";
 	Common::Array<char> buf(text.c_str(), text.size());
-	uint32 p = 0;
-	while (p < buf.size() && buf[p] != '(')
-		p++;
-	p++;
-	Common::String key;
-	while (p < buf.size() && !strchr("=<>!#,", buf[p]))
-		key += buf[p++];
-	key.toLowercase();
-	uint32 v = p;
-	for (uint i = 0; i < 16; i++)
-		if (buf[p + i] >= '0' && buf[p + i] <= '9') {
-			v = p + i;
-			break;
-		}
-	if (key.hasPrefix("enable"))
-		t.enable(buf, v);
-	else if (key.hasPrefix("disable"))
-		t.disable(buf, v);
+	CryOmni3D::Atlantis::ConSetCommand set;
+	CryOmni3D::Atlantis::parseConSet(ScriptsTest::variasNames(), buf, 0, set);
+	CryOmni3D::Atlantis::applyConSubjectSet(t, set, buf);
 }
 
 struct SujCase {
@@ -84,6 +70,12 @@ static const SujCase kSujCases[] = {
 	{ "sixteen", { "/set(enableSuj,700=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17)", "/set(disableSuj,700=1)" }, { "700:1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17", "700:2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17" } },
 	{ "prefix_key", { "/set(Enable,601=3)" }, { "601:3" } },
 	{ "space_after_comma", { "/set(enableSuj,600=1, 2)" }, { "RUNAWAY" } },
+	// Fable pass 2 (2026-10-21), same harness (SujEmu.apply): no digit in
+	// the 16 bytes after the key (FUN_0042a100 returns 0 without a call),
+	// a list of letters, and a key that names the variable DISABLE.
+	{ "no_digit", { "/set(enableSuj,600=4)", "/set(enableSuj,abcdefghijklmnopq)" }, { "600:4", "600:4" } },
+	{ "letters_list", { "/set(enableSuj,600=abcdefghijklmnopq)" }, { "600:0" } },
+	{ "disable_key_not_disablesuj", { "/set(enableSuj,600=4)", "/set(Disable,600=4)" }, { "600:4", "600:4" } },
 };
 
 } // End of namespace ScriptsSubjects
@@ -95,6 +87,10 @@ public:
 
 	void test_subject_sequences_match_original() {
 		using namespace ScriptsSubjects;
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("scripts_con_subjects: no game data configured (VARIAS.CON), skipped");
+			return;
+		}
 		for (uint c = 0; c < ARRAYSIZE(kSujCases); c++) {
 			const SujCase &sc = kSujCases[c];
 			ConSubjects t;
@@ -111,6 +107,10 @@ public:
 	// Lookups outside 0x200..0x2ff find nothing; an EnableSuj for such a
 	// perso (the original writes outside the table) changes nothing.
 	void test_subject_lookup_outside_table() {
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("scripts_con_subjects: no game data configured (VARIAS.CON), skipped");
+			return;
+		}
 		CryOmni3D::Atlantis::ConSubjects t;
 		ScriptsSubjects::apply(t, "/set(enableSuj,999=1)");
 		ScriptsSubjects::apply(t, "/set(enableSuj,600=4)");

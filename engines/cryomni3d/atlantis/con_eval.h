@@ -101,6 +101,16 @@ private:
 	Common::Array<uint8> _none;
 };
 
+// FUN_0042a100 @ 0x0042a4ef..0x0042a560: a /set whose key names ENABLESUJ
+// runs FUN_00425f6c, one that names DISABLESUJ runs FUN_0042606c, on the
+// text from the first digit after the key (set.valuePos).  The key is
+// matched by VARIAS.CON index (parseConSet's prefix lookup), so a key such
+// as "Disable" that names another variable is not a subject command.
+// Returns false (and does nothing) when the command is invalid or names
+// another variable.
+bool applyConSubjectSet(ConSubjects &subjects, const ConSetCommand &set,
+                        const Common::Array<char> &text);
+
 // The track list of LoadMusik / DelMusik (atlantis.exe FUN_0041f1d0 /
 // FUN_0041faa0) from pos, the first digit after the key: track indexes
 // (value - 1, a byte) while the byte before the pointer is not ')' and the
@@ -115,17 +125,26 @@ Common::Array<uint8> conMusicList(const Common::Array<char> &text, uint32 pos);
 // every listed track but the playing one.
 // The English build of 1997 (firstValueRule; atlantis-cd-en-688128 FUN_00429044 @
 // 0x00429b12, 0x00429b85): neither command does anything when its first
-// value is the playing track, and DelMusik (FUN_0041ee78) removes every
-// listed track, the playing one too (the reference's test @ 0x0041fb08 is
-// absent).  What a player hears from a deleted playing track is [UNKNOWN]
-// (atlantis-re experiment 2026-10-18-01 item 12); the port only drops it
-// from the set.
+// value is the playing track.  DelMusik (FUN_0041ee78) calls DeleteFileA
+// on the playing track too (no test as the reference's @ 0x0041fb08), but
+// that file is open with share mode 0 (FUN_00431558); the outcome is
+// [UNKNOWN] (atlantis-re experiment 2026-10-18-01 item 12), and the port
+// keeps the reference (playing track spared).
 // The French build of May 1997 (allOrNothing; atlantis-cd-fr-688640
 // LoadMusik FUN_0041e830, experiment 2026-10-18-04 M1): LoadMusik copies
 // nothing when the first listed track is there (FUN_0041ee40 @ 0x0041e86e)
-// or playing (0x0041e878..0x0041e891), else every listed track below 32,
-// present or playing, without a test (copy FUN_0041e9d0 @ 0x0041e93c in
-// the loop 0x0041e926..0x0041e96e).  DelMusik is unchanged.
+// or playing (0x0041e878..0x0041e891), else it calls the copy FUN_0041e9d0
+// (@ 0x0041e93c, in the loop 0x0041e926..0x0041e96e) for every listed track
+// below 32, present ones included.  For the playing track that copy is
+// attempted but fails before its read loop [INFERRED: Win32 share rules]:
+// FUN_004316cc holds the installed file open with share 0 (@ 0x00431747),
+// so the CREATE_ALWAYS open @ 0x0041eb3a and the CreateDirectoryA on the
+// existing folder @ 0x0041eb74 fail and it returns 0; the track stays
+// installed and is not queued in `copies`.  Not modelled: after a failed
+// StartMusik, or after FUN_0041a638 closes the handle (@ 0x0041ab67),
+// 0x007e1f01 still names a track that is no longer held open and its copy
+// would succeed; the port's StartMusik does not fail (decision 0014).
+// DelMusik is unchanged.
 void conMusicApply(bool load, const Common::Array<uint8> &list, int current, uint32 &onDisk,
                    Common::Array<uint8> &copies, bool firstValueRule = false,
                    bool allOrNothing = false);
@@ -165,7 +184,7 @@ struct ConClocks {
 // Evaluates the condition line of a CON section (/sel, /con, /tim) the way
 // atlantis.exe FUN_004298ac does: on the script text itself, against the
 // variables named in VARIAS.CON and the inventory.  Keys whose value comes
-// from live engine state (vue, departvue, ...) are supplied by liveValue(),
+// from live engine state (vue, objetenmain) are supplied by liveValue(),
 // which the engine overrides.  See atlantis-re: functions/scripts-FUN_004298ac.md.
 class ConEvaluator {
 public:

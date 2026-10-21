@@ -192,8 +192,10 @@ namespace {
 // The list walk of FUN_00425f6c / FUN_0042606c: a subject id is a byte
 // (atoi truncated), the pointer then steps 2, +1 above 9, +1 above 99 (on
 // the byte), until the byte before it is ')'.  The original reads on past
-// the line when no ')' falls there (a malformed list); the port stops at
-// the end of the text.
+// the line when no ')' falls there (a malformed list, atlantis-re
+// experiment 2026-10-14-08 byte_subject / space_after_comma); the port
+// stops at the end of the text.  Not reproduced: kEnhGameBreakingBugFixes
+// (atlantis-re decisions/0016 R3; functions/scripts-FUN_00425f6c.md).
 template<typename Fn>
 void walkSubjectList(const TextCursor &t, uint32 p, Fn fn) {
 	for (;;) {
@@ -221,7 +223,10 @@ void ConSubjects::enable(const Common::Array<char> &text, uint32 pos) {
 	// 3-digit perso and '=').
 	const int32 record = atoiAt(t, pos) - 0x200;
 	if (record < 0 || record >= (int32)kRecords) {
-		// The original writes outside the table.
+		// The original writes outside the table (no range test between
+		// 0x00425f96 and 0x00425fc2); unreachable with the shipped CON
+		// files (persos 520..688).  Not reproduced: kEnhGameBreakingBugFixes
+		// (atlantis-re decisions/0016 R3; functions/scripts-FUN_00425f6c.md).
 		warning("CON EnableSuj: perso %d outside the subject table", record + 0x200);
 		return;
 	}
@@ -247,6 +252,23 @@ void ConSubjects::disable(const Common::Array<char> &text, uint32 pos) {
 				return;
 			}
 	});
+}
+
+bool applyConSubjectSet(ConSubjects &subjects, const ConSetCommand &set,
+                        const Common::Array<char> &text) {
+	// FUN_0042a100 returns 0 without a call when no digit follows the key
+	// (0x0042a2e5..0x0042a2eb -> 0x0042b27d): parseConSet leaves it invalid.
+	if (!set.valid)
+		return false;
+	if (set.name == "enablesuj") {
+		subjects.enable(text, set.valuePos);
+		return true;
+	}
+	if (set.name == "disablesuj") {
+		subjects.disable(text, set.valuePos);
+		return true;
+	}
+	return false;
 }
 
 const Common::Array<uint8> &ConSubjects::subjects(int persoId) const {
@@ -303,16 +325,26 @@ void conMusicApply(bool load, const Common::Array<uint8> &list, int current, uin
 		for (uint i = 0; i < list.size(); i++) {
 			if (list[i] >= 32)
 				continue;
-			copies.push_back(list[i]);
+			// The copy FUN_0041e9d0 of the playing track fails before its
+			// read loop: FUN_004316cc holds the installed file open with
+			// share 0 (@ 0x00431747), the CREATE_ALWAYS open @ 0x0041eb3a
+			// fails, CreateDirectoryA on the existing folder @ 0x0041eb74
+			// fails and it returns 0 [INFERRED: Win32 share rules].  The
+			// track stays installed; nothing goes through the IX buffer.
+			if ((int)list[i] + 1 != current)
+				copies.push_back(list[i]);
 			onDisk |= 1u << list[i];
 		}
 		return;
 	}
 	for (uint i = 0; i < list.size(); i++) {
 		const uint idx = list[i];
-		// LoadMusik's copy FUN_0041f1d0 skips the playing track in every
-		// build; DelMusik only in the 2001 and 1999 ones.
-		if (((int)idx + 1 == current && (load || !firstValueRule)) || idx >= 32)
+		// LoadMusik's copy FUN_0041f1d0 and DelMusik (reference @ 0x0041fb08)
+		// skip the playing track.  atlantis-cd-en-688128 FUN_0041ee78 has no
+		// such test, but the playing file is held open (FUN_00431558, share
+		// 0), so the outcome of its DeleteFileA is [UNKNOWN]; the port keeps
+		// the reference.
+		if ((int)idx + 1 == current || idx >= 32)
 			continue;
 		const uint32 bit = 1u << idx;
 		if (load) {

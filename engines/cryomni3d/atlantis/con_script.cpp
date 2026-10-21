@@ -44,62 +44,6 @@ static void rtrim(Common::String &s) {
 	}
 }
 
-// Parse a compound condition string of the form:
-//   (key op val)&(key op val)&...
-// where op is '=', '<', or '>'.
-// Keys are lowercased. Unknown/malformed fragments are silently skipped.
-static void parseConditions(const Common::String &str, Common::Array<ConCondition> &out) {
-	const char *p = str.c_str();
-	while (*p) {
-		// Skip to the next '('
-		while (*p && *p != '(') p++;
-		if (!*p) break;
-		p++; // consume '('
-
-		// Find matching ')'
-		const char *start = p;
-		while (*p && *p != ')') p++;
-		if (!*p) break;
-		Common::String cond(start, (uint32)(p - start));
-		p++; // consume ')'
-
-		// Find the operator character
-		const char *cp = cond.c_str();
-		const char *opPtr = nullptr;
-		char op = '=';
-		for (const char *q = cp; *q; q++) {
-			if (*q == '=' || *q == '<' || *q == '>' || *q == '!') {
-				opPtr = q;
-				op = *q;
-				break;
-			}
-		}
-		if (!opPtr) continue;
-
-		ConCondition cc;
-		cc.key = Common::String(cp, (uint32)(opPtr - cp));
-		cc.key.toLowercase();
-		cc.op    = op;
-		cc.value = atoi(opPtr + 1);
-
-		// Record the separator that FOLLOWS this condition, so the evaluator
-		// can decide whether it is an AND-link or an OR-link.  See the comment
-		// on ConCondition for the left-to-right short-circuit semantics this
-		// drives (mirrors atlantis.exe FUN_004298ac).
-		while (*p == ' ') p++;
-		if (*p == '|') {
-			cc.nextSep = '|';
-			p++;
-		} else if (*p == '&') {
-			cc.nextSep = '&';
-			p++;
-		}
-		while (*p == ' ') p++;
-
-		out.push_back(cc);
-	}
-}
-
 // [Speaker,params] text — dialog line.
 static ConLine parseDialogLine(const Common::String &line) {
 	uint close = 1;
@@ -123,48 +67,25 @@ static ConLine parseDialogLine(const Common::String &line) {
 	}
 	cl.text = text;
 
-	// Extract optional numeric angle tokens.  The original CON
-	// syntax is `[Speaker, X, Y, camN]` — the two tokens after
-	// the speaker are pixel-space panorama offsets that the
-	// engine writes directly into the cyclo view (see header
-	// comment on ConLine).  When only `camN` or `off` follows
-	// the speaker, no angle is encoded.
-	//
-	// Implementation: split params by comma, recognise a leading
-	// pair of integer-only tokens as (X, Y).  Anything else (a
-	// "camN", "off", or trailing string token) terminates the
-	// scan.  Tokens are trimmed of surrounding whitespace.
-	if (!cl.params.empty()) {
-		Common::Array<Common::String> partTok;
-		const char *q = cl.params.c_str();
-		while (*q) {
-			while (*q == ' ' || *q == '\t') q++;
-			const char *qe = q;
-			while (*qe && *qe != ',') qe++;
-			const char *trimEnd = qe;
-			while (trimEnd > q &&
-			       (trimEnd[-1] == ' ' || trimEnd[-1] == '\t'))
-				trimEnd--;
-			partTok.push_back(
-			    Common::String(q, (uint32)(trimEnd - q)));
-			if (*qe == ',') q = qe + 1;
-			else q = qe;
-		}
-		auto isIntToken = [](const Common::String &s) -> bool {
-			if (s.empty()) return false;
-			uint i = 0;
-			if (s[0] == '-' || s[0] == '+') i = 1;
-			if (i >= s.size()) return false;
-			for (; i < s.size(); ++i)
-				if (!Common::isDigit(s[i])) return false;
-			return true;
-		};
-		if (partTok.size() >= 2 &&
-		    isIntToken(partTok[0]) && isIntToken(partTok[1])) {
-			cl.hasAngle = true;
-			cl.angleX   = atoi(partTok[0].c_str());
-			cl.angleY   = atoi(partTok[1].c_str());
-		}
+	// The header angles, FUN_0042844c @ 0x0042852b..0x004285fa: the first
+	// ',' and the first ']' from the '[' (strchr); when that ',' comes
+	// before the ']' and the byte right after it is a digit, X = atoi there
+	// (no blank or sign skipped before the digit).  Then the next ',': when
+	// it also comes before the ']' and is followed by a digit, Y = atoi
+	// there, else Y = X (0x004285ee).  Shipped form: [Speaker,X,Y,camN].
+	// The original's strchr runs on past the line; the port looks in the
+	// line only (every shipped header has its ']' on its line).
+	const uint32 comma1 = line.find(',');
+	if (comma1 != Common::String::npos && comma1 < close && comma1 + 1 < line.size() &&
+	        Common::isDigit(line[comma1 + 1])) {
+		cl.hasAngle = true;
+		cl.angleX = atoi(line.c_str() + comma1 + 1);
+		const uint32 comma2 = line.find(',', comma1 + 1);
+		if (comma2 != Common::String::npos && comma2 < close && comma2 + 1 < line.size() &&
+		        Common::isDigit(line[comma2 + 1]))
+			cl.angleY = atoi(line.c_str() + comma2 + 1);
+		else
+			cl.angleY = cl.angleX;
 	}
 
 	return cl;
@@ -327,6 +248,13 @@ void trackSection(const ConText &t, uint32 pos, int &id) {
 // The scanners FUN_004280f8 (/sel) and FUN_004281f8 (/con), walked with an
 // evaluator that always fails and no play counter, so that every entry they
 // can reach is listed in the order they meet it.
+// The port lists entries with the evaluate-failed walk (resume at +6 after
+// /con: 0x004282bf..0x004282c3, then 0x004282ed); the original resumes at +5
+// when the play counter blocks the entry (JGE 0x004282c6 @ 0x0042829b), so a
+// /con whose byte +5 starts a /digit or /con header would be seen by the
+// original only in the blocked case.  No shipped CON has such a byte (byte
+// +4 is always '(' or '*', byte +5 never '/' or '#'), so the difference is
+// unreachable.
 void scanSelCon(const ConText &t, bool con, Common::Array<Entry> &out) {
 	int id = 0;
 	uint32 pos = 0;
@@ -371,6 +299,30 @@ void scanTimer(const ConText &t, int n, Common::Array<Entry> &out) {
 		}
 		pos++;
 	}
+}
+
+// FUN_00425828 @ 0x00425ad3..0x00425af9: a /con entry has a subject gate
+// when the 4 bytes at its body start are "/Suj" or "/suj" (FUN_0044a83f,
+// no case folding, no digit needed); a /suj line further down the body is
+// plain text that FUN_0042831c skips.  The list is what FUN_004264a8 reads
+// from 4 bytes on (0x004264e5..0x00426575): v = atoi(p), then p += 2, + 1
+// when v > 9, + 1 when v > 99, until the byte at p or the one before it is
+// a CR.  The port stops at the end of the text.
+void readSubjectGate(const ConText &t, ConSection &sec) {
+	const uint32 b = (uint32)sec.bodyOffset;
+	if (!t.match(b, "/Suj", 4) && !t.match(b, "/suj", 4))
+		return;
+	uint32 p = b + 4;
+	do {
+		const int32 v = t.atoi(p);
+		sec.sujIds.push_back(v);
+		p += 2;
+		if (v > 9)
+			p++;
+		if (v > 99)
+			p++;
+	} while (t.at(p) != '\r' && t.at(p - 1) != '\r' && p < t.size());
+	sec.sujId = sec.sujIds[0];
 }
 
 bool entryLess(const Entry &a, const Entry &b) {
@@ -463,16 +415,12 @@ void ConScript::parse(const char *buf, uint32 len) {
 			sec.timerNum = (en.kind == kEntryTim1) ? 1 : (en.kind == kEntryTim2) ? 2 : 0;
 			sec.condOffset = (int32)en.evalOffset;
 			sec.lineOffset = (int32)t.lineStart(en.evalOffset);
-			Common::String cond = t.line(en.evalOffset);
-			parseConditions(cond, sec.conditions);
-			for (const ConCondition &cc : sec.conditions) {
-				if (cc.key == "clicperso") sec.clicPerso = cc.value;
-				if (cc.key == "cliczone")  sec.clicZone  = cc.value;
-			}
 			// The evaluator stops at the end of the line; the body starts two
 			// bytes later (callers of FUN_004298ac add 2).
 			sec.bodyOffset = (int32)t.lineEnd(en.evalOffset) + 2;
 			readBody(t, (uint32)sec.bodyOffset, sec);
+			if (sec.isCon)
+				readSubjectGate(t, sec);
 		} else {
 			const Header &hd = headers[h++];
 			sec.id = hd.id;
@@ -481,29 +429,6 @@ void ConScript::parse(const char *buf, uint32 len) {
 			readBody(t, hd.offset, sec);
 		}
 		_sections.push_back(sec);
-	}
-
-	// /sujN[,M,...] lines: the subject gate of the entry they follow.
-	for (uint32 pos = 0; pos < t.size(); pos = t.lineEnd(pos) + 1) {
-		Common::String line = t.line(pos);
-		rtrim(line);
-		if (line.size() >= 5 && scumm_strnicmp(line.c_str(), "/suj", 4) == 0
-		        && Common::isDigit(line[4])) {
-			ConSection *owner = nullptr;
-			for (ConSection &sec : _sections)
-				if (sec.isEntry && sec.lineOffset < (int32)pos)
-					owner = &sec;
-			if (!owner)
-				continue;
-			const char *ids = line.c_str() + 4;
-			while (*ids) {
-				owner->sujIds.push_back(atoi(ids));
-				while (*ids && *ids != ',') ids++;
-				if (*ids == ',') ids++;
-			}
-			if (!owner->sujIds.empty())
-				owner->sujId = owner->sujIds[0];
-		}
 	}
 }
 

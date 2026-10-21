@@ -13,6 +13,15 @@
 // evidence/golden/scripts_con_parse.txt.  This test parses the same files
 // with the port and compares digests.
 //
+// What comes from the original: the entry points, the /set and /go
+// commands and the positions of the '[' lines the executor reaches.  Not
+// from it: the DLG rows' speaker / params / text split is the harness's
+// model canon_dlg (the hook at 0x004284dc skips the original's '[' branch,
+// same rules as the port's parseDialogLine); the /suj gate (sujIds) and the
+// header angles (hasAngle, angleX, angleY) are not in the dump, so they are
+// not compared with the original; the /set handler is stubbed (it always
+// returns past the CR).
+//
 // Optional: "scripts_dump=<dir>" in atlantis_test.cfg writes the port dumps.
 
 #include "scripts_con_common.h"

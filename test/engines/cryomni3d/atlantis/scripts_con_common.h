@@ -10,14 +10,17 @@
 //    as atlantis-re/tools/emu/scripts_con.py writes from the ORIGINAL
 //    interpreter (atlantis-cd-en-714240 @ 0x004280f8/0x004281f8/0x0042bef4/
 //    0x0042bfa4 entry scanners, 0x0042844c section executor, 0x00425eb0 /INIT).
+//    The DLG rows' speaker / params / text split is the harness's Python
+//    model (canon_dlg), not the original's '[' branch; the /suj gate
+//    (sujIds) and the header angles (hasAngle, angleX, angleY) are not in
+//    the dump.
 //  - portEval()         runs the REAL condition evaluator, ConEvaluator
 //    (con_eval.cpp), on one condition line laid out as the emulation harness
 //    lays it out (line + "\r\n"), with the VARIAS.CON names, a variable map
 //    and an inventory built with the real inventory unit (inventory.cpp).
 //    The engine's evalSelSection uses the same class; only the keys it reads
-//    from live engine state (departvue, vue, objetenmain, chaptertime,
-//    nbvisite, random) come from an engine subclass, and the test gives them
-//    through the variable map instead.
+//    from live engine state (vue, objetenmain) come from an engine subclass,
+//    and the test gives them through the variable map instead.
 //  - the deterministic variable-state generator mirrored from
 //    atlantis-re/tools/emu/scripts_eval.py.
 
@@ -39,7 +42,6 @@
 
 namespace ScriptsTest {
 
-using CryOmni3D::Atlantis::ConCondition;
 using CryOmni3D::Atlantis::ConScript;
 using CryOmni3D::Atlantis::ConSection;
 
@@ -246,16 +248,6 @@ inline void makeState(uint lineIdx, uint k, const Common::Array<Common::String> 
 		if (rnd(x) & 1)
 			st.inventory.push_back(inv[i]);
 	}
-}
-
-// Conditions of one raw condition line, parsed by the REAL port parser.
-inline void portParseLine(const Common::String &line, Common::Array<ConCondition> &out) {
-	Common::String text = "/1\r\n" + line + "\r\n";
-	ConScript script;
-	script.parse(text.c_str(), text.size());
-	out.clear();
-	if (!script.sections().empty())
-		out = script.sections()[0].conditions;
 }
 
 struct NullInventoryCb {

@@ -834,7 +834,7 @@ public:
 					warning("DepartVue after Vue=: %s", golden[g].c_str());
 			}
 		}
-		TS_ASSERT_EQUALS(rows, 327u);
+		TS_ASSERT_EQUALS(rows, 329u);   // 327 + CHAPI026's two sections /14 (Fable pass 2 r1:place-nav#3)
 		TS_ASSERT_EQUALS(mismatches, 0u);
 	}
 
