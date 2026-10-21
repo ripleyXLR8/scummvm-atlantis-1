@@ -19,6 +19,7 @@
  *
  */
 
+#include "common/events.h"
 #include "common/ptr.h"
 #include "common/stream.h"
 #include "common/system.h"
@@ -34,15 +35,18 @@ static const int kScreenW = 640;
 static const int kScreenH = 480;
 
 // The state atlantis.exe keeps in its memory between the stages: the
-// pieces, their count, the picture and the hand (the cursor animation is
-// shared by every puzzle: engine.h PuzzleCursorState).
+// pieces, their count, the picture and the grab offset (the cursor
+// animation is shared by every puzzle: engine.h PuzzleCursorState).  The
+// hand, 0x007bebf4 and the repeat counter are not kept: FUN_0043a1e0
+// clears 0x007bebf8 / 0x007bebf4 / 0x007bebf0 before every StartPuzzle
+// (atlantis-cd-en-714240 @ 0x0043a206..0x0043a21a).
 struct MetaMemory {
 	bool valid;
 	MetaGame::Piece pieces[MetaGame::kNumPieces];
 	int16 count, picture;
-	int32 grabX, grabY, repeat, unkF4, held;
+	int32 grabX, grabY;
 };
-static MetaMemory g_metaMemory = { false, {}, 0, 0, 0, 0, 0, 0, 0 };
+static MetaMemory g_metaMemory = { false, {}, 0, 0, 0, 0 };
 
 MetaPuzzle::MetaPuzzle(CryOmni3DEngine_Atlantis *engine, int stage)
 	: _engine(engine), _loaded(false), _prevButton(false), _bgDone(false), _variant(stage),
@@ -71,10 +75,12 @@ MetaPuzzle::MetaPuzzle(CryOmni3DEngine_Atlantis *engine, int stage)
 		picture = g_metaMemory.picture;
 		grabX = g_metaMemory.grabX;
 		grabY = g_metaMemory.grabY;
-		repeat = g_metaMemory.repeat;
-		unkF4 = g_metaMemory.unkF4;
-		held = g_metaMemory.held;
 	}
+	// FUN_0043a1e0 clears 0x007bebf8 / 0x007bebf4 / 0x007bebf0 before every
+	// StartPuzzle (0x0043a206..0x0043a21a).
+	repeat = 0;
+	unkF4 = 0;
+	held = 0;
 	_loaded = ok;
 }
 
@@ -85,9 +91,6 @@ MetaPuzzle::~MetaPuzzle() {
 	g_metaMemory.picture = picture;
 	g_metaMemory.grabX = grabX;
 	g_metaMemory.grabY = grabY;
-	g_metaMemory.repeat = repeat;
-	g_metaMemory.unkF4 = unkF4;
-	g_metaMemory.held = held;
 }
 
 int MetaPuzzle::play() {
@@ -121,15 +124,18 @@ void MetaPuzzle::readInput(int &mx, int &my, bool &click, bool &right) {
 	_engine->pollEvents();
 	const Common::Point m = _engine->getMousePos();
 	const uint btn = _engine->getCurrentMouseButton();
-	const bool now = (btn == 1), nowRight = (btn == 2);
+	const bool now = (btn == 1);
+	// GetAsyncKeyState(VK_RBUTTON) sees the right button whatever the left
+	// does; getCurrentMouseButton() prefers the left one.
+	const bool nowRight = (btn == 2) ||
+	                      (g_system->getEventManager()->getButtonState() & Common::EventManager::RBUTTON) != 0;
 	mx = m.x;
 	my = m.y;
 	click = now && !_prevButton;
-	// FUN_0041a298 reports the right button while it is down; FUN_00448084
-	// keeps its own repeat counter.
-	right = nowRight;
+	// FUN_0041a298 reports one right press per press (edge-mode VK_RBUTTON,
+	// MetaGame::rightPress); FUN_00448084's repeat counter never passes 1.
+	right = MetaGame::rightPress(nowRight, _prevRight, click);
 	_prevButton = now;
-	_prevRight = nowRight;
 }
 
 void MetaPuzzle::startInput(int &mx, int &my, bool &click, bool &right) {
@@ -174,8 +180,9 @@ void MetaPuzzle::drawBackground() {
 
 void MetaPuzzle::drawSprite(char bank, int x, int y, int frame) {
 	if (bank == 'C') {
-		// What FUN_00410430 does with frame -1 (the animation's last step)
-		// is unknown; nothing is drawn.
+		// FUN_00410430 reads the frame as an unsigned 16-bit word and draws
+		// nothing for an index >= the bank's count (0x0041045e..0x00410465),
+		// so frame -1 (the animation's last step) draws nothing.
 		if (frame < 0)
 			return;
 		if (const SprSprite *spr = _engine->cursorSprite((uint)frame))

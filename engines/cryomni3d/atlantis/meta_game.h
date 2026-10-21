@@ -52,7 +52,7 @@ public:
 	int16 picture;        // 0x007bec1e: 1..4
 	int16 variant;        // 0x007bec1c
 	int32 grabX, grabY;   // 0x007bebe8, 0x007bebec
-	int32 repeat;         // 0x007bebf0: right-button repeat counter
+	int32 repeat;         // 0x007bebf0: right-button repeat counter (0 or 1: rightPress)
 	int32 unkF4;          // 0x007bebf4
 	int32 held;           // 0x007bebf8: piece + 1, 0 when none
 	int16 cursorMode, cursorFrame, cursorStep;   // 0x00496ea8..0x00496eac
@@ -81,6 +81,21 @@ public:
 	// Pieces of the rules, public for the tests.
 	bool placePiece(int i, int x, int y);   // FUN_00448404
 	void turnBoard(bool advance);           // FUN_00448158
+
+	// The right flag FUN_0041a298 leaves for FUN_00448084 (0x00496120) and
+	// FUN_00440bfc (the toggle 0x004960c4).  FUN_0042e6dc puts VK_RBUTTON
+	// (0x006140c2) in edge mode, so FUN_0042e624 raises its bit 2 on the
+	// first poll of a press only, and FUN_0041a298 tests it only when the
+	// left button's bit 2 is clear (atlantis-cd-en-714240 @ 0x0041a2e9): one
+	// pass per press, lost when the left button goes down on the same poll;
+	// a held button turns once and the repeat counter never passes 1.
+	// down: the right button at this poll; prevDown: at the previous poll
+	// (updated); leftPress: the left button went down at this poll.
+	static bool rightPress(bool down, bool &prevDown, bool leftPress) {
+		const bool press = down && !prevDown && !leftPress;
+		prevDown = down;
+		return press;
+	}
 
 protected:
 	virtual void startInput(int &mx, int &my, bool &click, bool &right) = 0;

@@ -171,6 +171,83 @@ protected:
 	bool aborted() const override { return mismatches != 0; }
 };
 
+// One scenario of ui_puzzle_right_hold.txt (atlantis-re
+// tools/emu/ui_puzzle_right_hold.py: the ORIGINAL FUN_0042e6dc, then per
+// poll FUN_0041a298 and the right-button handler FUN_00448084 / FUN_00440bfc
+// of atlantis-cd-en-714240 under Unicorn, GetAsyncKeyState scripted): per
+// poll the buttons down, the flag FUN_0041a298 left, the repeat counter
+// 0x007bebf0 after the handler and whether it turned.
+struct HoldPoll {
+	int left, right, flag, counter, turn;
+};
+
+inline bool readHold(const char *name, Common::Array<HoldPoll> &out) {
+	Common::Array<Common::String> golden;
+	if (!AtlantisTest::loadGoldenLines("ui_puzzle_right_hold.txt", golden))
+		return false;
+	const Common::String head = Common::String::format("scenario %s ", name);
+	bool in = false;
+	for (uint i = 0; i < golden.size(); i++) {
+		const Common::String &l = golden[i];
+		if (l.hasPrefix("scenario ")) {
+			in = l.hasPrefix(head.c_str());
+			continue;
+		}
+		HoldPoll p;
+		int n;
+		if (in && sscanf(l.c_str(), "poll %d left %d right %d flag %d counter %d turn %d", &n, &p.left, &p.right,
+		                 &p.flag, &p.counter, &p.turn) == 6)
+			out.push_back(p);
+	}
+	return !out.empty();
+}
+
+// MetaGame fed with the buttons of a scenario, one poll per startInput /
+// boundary, through MetaGame::rightPress as MetaPuzzle::readInput does; per
+// pass the repeat counter after rightButton and whether it turned (sound 0).
+class Hold : public MetaGame {
+public:
+	const Data *data;
+	const Common::Array<HoldPoll> *polls;
+	uint next;
+	bool prevLeft, prevRight, turned;
+	Common::Array<int> counters, turns;
+
+	Hold() : data(nullptr), polls(nullptr), next(0), prevLeft(false), prevRight(false), turned(false) {}
+
+	void poll(int &mx, int &my, bool &click, bool &right) {
+		mx = 320;
+		my = 470;
+		const bool l = next < polls->size() && (*polls)[next].left;
+		const bool r = next < polls->size() && (*polls)[next].right;
+		next++;
+		click = l && !prevLeft;
+		prevLeft = l;
+		right = rightPress(r, prevRight, click);
+	}
+
+protected:
+	void startInput(int &mx, int &my, bool &click, bool &right) override { poll(mx, my, click, right); }
+	void boundary(int &mx, int &my, bool &click, bool &right) override {
+		counters.push_back(repeat);
+		turns.push_back(turned ? 1 : 0);
+		turned = false;
+		poll(mx, my, click, right);
+	}
+	void loadPicture(int) override {}
+	void reloadMap() override { map = data->map; }
+	void drawBackground() override {}
+	void drawSprite(char, int, int, int) override {}
+	void drawStandardCursor(int, int) override {}
+	void present() override {}
+	void playSound(int slot) override {
+		if (slot == 0)
+			turned = true;
+	}
+	int currentPlace() override { return 0; }
+	bool aborted() const override { return counters.size() >= polls->size(); }
+};
+
 } // End of namespace UiMeta
 
 class UiPuzzle9MetaTestSuite : public CxxTest::TestSuite {
@@ -290,5 +367,58 @@ public:
 		}
 		TS_ASSERT_EQUALS(frames, 48u);
 		TS_ASSERT_EQUALS(cov.size(), 48u);
+	}
+
+	// MetaGame::rightPress (the right flag MetaPuzzle::readInput and
+	// HexaPuzzle::readInput pass on) against the flag the ORIGINAL
+	// FUN_0041a298 left, poll by poll: the right button held for 60 polls,
+	// released and pressed again, and pressed on the poll the left button
+	// goes down, while it is held and alone.
+	void test_right_press_vs_original() {
+		using namespace UiMeta;
+		if (AtlantisTest::goldenDir().empty()) {
+			TS_WARN("ui_puzzle9_meta: no golden directory configured, skipped");
+			return;
+		}
+		static const char *const kScenarios[] = { "meta_hold", "hexa_hold", "meta_left" };
+		for (uint s = 0; s < ARRAYSIZE(kScenarios); s++) {
+			Common::Array<HoldPoll> polls;
+			TS_ASSERT(readHold(kScenarios[s], polls));
+			TS_ASSERT_EQUALS(polls.size(), 65u);
+			bool prevLeft = false, prevRight = false;
+			for (uint k = 0; k < polls.size(); k++) {
+				const bool leftPress = polls[k].left && !prevLeft;
+				prevLeft = polls[k].left;
+				const bool got = MetaGame::rightPress(polls[k].right, prevRight, leftPress);
+				TS_ASSERT_EQUALS(Common::String::format("%s poll %u flag %d", kScenarios[s], k + 1, got ? 1 : 0),
+				                 Common::String::format("%s poll %u flag %d", kScenarios[s], k + 1, polls[k].flag));
+			}
+		}
+	}
+
+	// The right button held through MetaGame: one board turn per press and a
+	// repeat counter that never passes 1, pass by pass against the ORIGINAL
+	// FUN_00448084 (ui_puzzle_right_hold.txt, scenario meta_hold).
+	void test_right_hold_vs_original() {
+		using namespace UiMeta;
+		if (AtlantisTest::goldenDir().empty() || AtlantisTest::dataDir().empty()) {
+			TS_WARN("ui_puzzle9_meta: no golden or data directory configured, skipped");
+			return;
+		}
+		Common::Array<HoldPoll> polls;
+		TS_ASSERT(readHold("meta_hold", polls));
+		Data data;
+		TS_ASSERT(readData(data));
+		if (polls.empty())
+			return;
+		Hold g;
+		TS_ASSERT(g.loadCoverage(data.spr.data(), data.spr.size()));
+		g.data = &data;
+		g.polls = &polls;
+		TS_ASSERT_EQUALS(g.run(1), 2);
+		TS_ASSERT_EQUALS(g.counters.size(), polls.size());
+		for (uint k = 0; k < polls.size() && k < g.counters.size(); k++)
+			TS_ASSERT_EQUALS(Common::String::format("pass %u counter %d turn %d", k + 1, g.counters[k], g.turns[k]),
+			                 Common::String::format("pass %u counter %d turn %d", k + 1, polls[k].counter, polls[k].turn));
 	}
 };

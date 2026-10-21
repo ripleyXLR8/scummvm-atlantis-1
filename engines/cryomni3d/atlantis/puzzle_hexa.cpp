@@ -19,6 +19,7 @@
  *
  */
 
+#include "common/events.h"
 #include "common/ptr.h"
 #include "common/stream.h"
 #include "common/system.h"
@@ -97,15 +98,18 @@ void HexaPuzzle::readInput(int &mx, int &my, bool &click, bool &right) {
 	_engine->pollEvents();
 	const Common::Point m = _engine->getMousePos();
 	const uint btn = _engine->getCurrentMouseButton();
-	const bool now = (btn == 1), nowRight = (btn == 2);
+	const bool now = (btn == 1);
+	// GetAsyncKeyState(VK_RBUTTON) sees the right button whatever the left
+	// does; getCurrentMouseButton() prefers the left one.
+	const bool nowRight = (btn == 2) ||
+	                      (g_system->getEventManager()->getButtonState() & Common::EventManager::RBUTTON) != 0;
 	mx = m.x;
 	my = m.y;
 	click = now && !_prevButton;
-	// FUN_0041a298 reports the right button while it is down; FUN_00448084
-	// keeps its own repeat counter.
-	right = nowRight;
+	// FUN_0041a298 reports one right press per press (edge-mode VK_RBUTTON,
+	// MetaGame::rightPress); FUN_00440bfc's repeat counter never passes 1.
+	right = MetaGame::rightPress(nowRight, _prevRight, click);
 	_prevButton = now;
-	_prevRight = nowRight;
 }
 
 void HexaPuzzle::startInput(int &mx, int &my, bool &click, bool &right) {
@@ -140,8 +144,9 @@ void HexaPuzzle::drawBackground() {
 
 void HexaPuzzle::drawSprite(char bank, int x, int y, int frame) {
 	if (bank == 'C') {
-		// What FUN_00410430 does with frame -1 (the animation's last step)
-		// is unknown; nothing is drawn.
+		// FUN_00410430 reads the frame as an unsigned 16-bit word and draws
+		// nothing for an index >= the bank's count (0x0041045e..0x00410465),
+		// so frame -1 (the animation's last step) draws nothing.
 		if (frame < 0)
 			return;
 		if (const SprSprite *spr = _engine->cursorSprite((uint)frame))
@@ -156,8 +161,9 @@ void HexaPuzzle::present() {
 	_bgDone = false;
 	g_system->copyRectToScreen(_working.getPixels(), _working.pitch, 0, 0, kScreenW, kScreenH);
 	g_system->updateScreen();
-	// The original loop has no wait; its pace on the machines of the time
-	// is unknown.
+	// [UNKNOWN] pace: the original loop has no wait (atlantis-cd-en-714240
+	// FUN_004404fc @ 0x004405c8..0x004406b3), so its speed was the machine's;
+	// the port runs a pass every 15 ms (atlantis-re decisions/0013-unpaced-loops.md).
 	g_system->delayMillis(15);
 }
 
