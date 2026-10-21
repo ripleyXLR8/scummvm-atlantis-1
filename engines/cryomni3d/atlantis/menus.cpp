@@ -958,6 +958,14 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 		const int scroll = sb.offset;
 
 		int rowHover = -1;
+		// The sprite-row builds light a row from the grid's row alone: the
+		// row drawer FUN_004205a4, called @ 0x0041d299 with EDX = FUN_00420c08's
+		// row, compares it with i - offset (atlantis-cd-zh-tw-696832 @
+		// 0x0042061a..0x0042062c), so a drawn row past the file count (the
+		// offset is not clamped to count - 11, loadPickerScrollFrame) lights
+		// up too (golden ui_load_list_zh_tw.txt `R 12 3 10`); only the pick
+		// tests row + offset < count (@ 0x0041d2fb..0x0041d30b).
+		int gridRow = -1;
 		{
 			// 0x0041d37b: row + offset < count is the only bound, so the
 			// grid's inclusive far edges (x 445, y 350), which give indices
@@ -972,6 +980,7 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 			// test (atlantis-cd-fr-687104 @ 0x0041cb0b..0x0041cb1b,
 			// loadPickerClamp).
 			const int g = menuGridHit(45, 108, 400, 22, 1, kVisible, true, mouse.x, mouse.y);
+			gridRow = g;
 			if (g >= 0 && scroll + g < (int)saves.size())
 				rowHover = scroll + g;
 		}
@@ -1049,7 +1058,7 @@ uint CryOmni3DEngine_Atlantis::displaySavePicker(bool saveMode, Common::String &
 			// FUN_004205a4 and FUN_004208bc mode 1 (load_list.h); the blit
 			// draws nothing past a bank's frames (0x00410462).
 			Common::Array<LoadListBlit> blits;
-			loadListRowBlits((uint)saves.size(), (uint)scroll, rowHover >= 0 ? rowHover - scroll : -1, blits);
+			loadListRowBlits((uint)saves.size(), (uint)scroll, gridRow, blits);
 			LoadListBlit t;
 			if (!title.empty() && titleEntry >= 0 && loadListTitleBlit((uint)titleEntry, _loadListWidths, t))
 				blits.push_back(t);
