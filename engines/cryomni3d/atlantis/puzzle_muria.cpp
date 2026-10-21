@@ -113,8 +113,9 @@ void MuriaPuzzle::present() {
 	_bgDone = false;
 	g_system->copyRectToScreen(_working.getPixels(), _working.pitch, 0, 0, kScreenW, kScreenH);
 	g_system->updateScreen();
-	// The original loop has no wait; its pace on the machines of the time
-	// is unknown.
+	// [UNKNOWN] pace: the original loop has no wait (atlantis-cd-en-714240
+	// @ 0x0043ee54), so its speed was the machine's; the port runs a pass every
+	// 15 ms (atlantis-re decisions/0013-unpaced-loops.md).
 	g_system->delayMillis(15);
 }
 

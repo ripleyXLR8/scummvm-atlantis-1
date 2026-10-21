@@ -82,8 +82,9 @@ void ThronePuzzle::drawBackground() {
 
 void ThronePuzzle::drawSprite(char bank, int x, int y, int frame) {
 	if (bank == 'C') {
-		// What FUN_00410430 does with the cursor animation's frame -1 is
-		// unknown; nothing is drawn.
+		// FUN_00410430 reads the frame as an unsigned 16-bit word and draws
+		// nothing when it is not below the sprite count (0x0041045e..0x00410465),
+		// so frame -1 shows no cursor (atlantis-re functions/graphics-FUN_00410430.md).
 		if (frame < 0)
 			return;
 		if (const SprSprite *spr = _engine->cursorSprite((uint)frame))
@@ -98,8 +99,9 @@ void ThronePuzzle::present() {
 	_bgDone = false;
 	g_system->copyRectToScreen(_working.getPixels(), _working.pitch, 0, 0, kScreenW, kScreenH);
 	g_system->updateScreen();
-	// The original loop has no wait; its pace on the machines of the time
-	// is unknown.
+	// [UNKNOWN] pace: the original loop has no wait (atlantis-cd-en-714240
+	// @ 0x0043fcb4), so its speed was the machine's; the port runs a pass every
+	// 15 ms (atlantis-re decisions/0013-unpaced-loops.md).
 	g_system->delayMillis(15);
 }
 

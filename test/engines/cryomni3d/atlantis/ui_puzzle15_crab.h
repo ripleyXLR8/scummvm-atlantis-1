@@ -5,6 +5,7 @@
 #include "common/str.h"
 
 #include "cryomni3d/atlantis/crab_game.h"
+#include "cryomni3d/atlantis/random.h"
 
 // ui audit — puzzle 15 (the crab race), whole runs.
 //
@@ -15,9 +16,11 @@
 // of the state (crab records, state, hand, last comment, cursor animation,
 // result, LCG seed, click flag).  A comment keeps its sample busy for
 // kCommentFrames passes; rand is the Watcom generator of FUN_00453cd1
-// (1103515245, 12345) from a seed set by the scenario.
+// (1103515245, 12345; the port's crtRandNext, random.h) from a seed set by
+// the scenario.
 //
-// Port code exercised directly: CrabGame (crab_game.cpp).
+// Port code exercised directly: CrabGame (crab_game.cpp), crtRandNext
+// (random.h).
 
 namespace UiCrab {
 
@@ -123,8 +126,7 @@ protected:
 	}
 	bool commentBusy() override { return (int)frames < commentUntil; }
 	int rand32767() override {
-		randSeed = randSeed * 1103515245u + 12345u;
-		return (int)((randSeed >> 16) & 0x7fff);
+		return CryOmni3D::Atlantis::crtRandNext(randSeed);
 	}
 	bool aborted() const override { return mismatches != 0; }
 };
