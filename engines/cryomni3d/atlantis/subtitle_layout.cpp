@@ -213,6 +213,146 @@ void splitSubtitleBitmap(const SubtitleTextBuffer &buf, Common::Array<Common::St
 			lines[i] = lines[i].substr(0, 0x55) + lines[i + 1];
 }
 
+// FUN_0042f424's cut marks: whether the scan stops at the pair (lead,
+// trail) (atlantis-cd-zh-tw-696832 @ 0x0042f510..0x0042f574,
+// atlantis-cd-zh-cn-692736 @ 0x0042f510..0x0042f568).
+static bool cjkCutAt(CjkBreaker breaker, byte lead, byte trail) {
+	// A CR as the lead byte, in both (@ 0x0042f56c / 0x0042f55c).
+	if (lead == '\r')
+		return true;
+	if (breaker == kCjkBreakerBig5)
+		// Big5 A1 41 `，`, A1 43 `。`, A1 46 `；`, A1 48 `？`, A1 49 `！`,
+		// A1 4B `…`.
+		return lead == 0xa1 && (trail == 0x41 || trail == 0x43 || trail == 0x46 || trail == 0x48 ||
+		                        trail == 0x49 || trail == 0x4b);
+	// GB2312 A1 A1 (the ideographic space), A3 AC `，`, A1 A3 `。`, A3 BF `？`,
+	// A3 A1 `！`.
+	return (lead == 0xa1 && trail == 0xa1) || (lead == 0xa3 && trail == 0xac) ||
+	       (lead == 0xa1 && trail == 0xa3) || (lead == 0xa3 && trail == 0xbf) ||
+	       (lead == 0xa3 && trail == 0xa1);
+}
+
+void splitSubtitleCjk(const Common::String &buf, Common::Array<Common::String> &lines, CjkBreaker breaker,
+                      bool minorBugFixes) {
+	lines.clear();
+	// The locals of FUN_0042f424 (atlantis-cd-zh-tw-696832; zh-cn has the
+	// same frame): left [ebp-0x30] = strlen of the buffer, the space
+	// included (@ 0x0042f47d), less each row's share; s [ebp-0x14], where the
+	// row starts, first 0x00603cc1 (the text, without the space); e
+	// [ebp-0x18], the scan's window end, first 0x00603d0b (buffer + 75); k
+	// [ebp-0x28], how far back from e the scan is.  Indices here are from
+	// 0x00603cc0.
+	const int kWindow = 0x4b;
+	const int len = (int)buf.size();
+	// 0x0042f4a7: up to 75 bytes, strcpy of the whole buffer to the first row
+	// (@ 0x0042f69a; zh-cn @ 0x0042f674).
+	if (len <= kWindow) {
+		lines.push_back(buf);
+		return;
+	}
+	// Nothing past the NUL is read: while left is over 75 the window ends at
+	// least two bytes before it (left falls by 76 - k a row, the start by 75
+	// - k or 76 - k), and the checks below read e - k + 2 at most.
+	auto at = [&](int i) -> byte {
+		return i >= 0 && i < len ? (byte)buf[i] : 0;
+	};
+	// strncpy of `n` bytes from `s` (0x0042f635; zh-cn 0x0042f60f): it stops
+	// at the NUL; the rows were zeroed (memset of 8 x 0x6e bytes @
+	// 0x0042f4b1).
+	auto row = [&](int s, int n) -> Common::String {
+		s = CLIP(s, 0, len);
+		n = CLIP(n, 0, len - s);
+		return buf.substr(s, n);
+	};
+	int left = len, s = 1, e = kWindow;
+	for (;;) {
+		// 0x0042f4dd: 75 bytes or fewer left, strcpy of the rest from s
+		// (@ 0x0042f660; zh-cn @ 0x0042f63a), the last row.
+		if (left <= kWindow) {
+			lines.push_back(buf.substr(MIN(s, len)));
+			break;
+		}
+		// 0x0042f4f3..0x0042f578: k = 1, 2, ... until the pair (e - k,
+		// e - k + 1) is a cut.  There is no lower bound: after a cut the scan
+		// finds it again at k = 75 at the latest (a later window without a
+		// mark gives rows of 0 or 1 byte and left one less each, until the
+		// rest is the last row; past 8 rows the original writes beyond its
+		// row buffers, effects [UNKNOWN]; no shipped text does it).
+		int k = 1;
+		while (k <= kWindow && !cjkCutAt(breaker, at(e - k), at(e - k + 1)))
+			k++;
+		int count, skip = 2;
+		if (k <= kWindow) {
+			// 0x0042f57e..0x0042f59c: the checks read c0 = s[75 - k] and c1 =
+			// s[74 - k]: the mark's trail and lead bytes in the first row
+			// (s = e - 74), but the byte after the mark and its trail byte in
+			// the later ones (s = e - 73).  add [ebp-0x20] = 0, skip
+			// [ebp-0x1c] = 2 (@ 0x0042f59f; zh-cn @ 0x0042f58b).
+			const byte c0 = at(s + kWindow - k), c1 = at(s + kWindow - 1 - k);
+			int add = 0;
+			if (breaker == kCjkBreakerBig5) {
+				// 0x0042f5ad..0x0042f615: add 1 when c0 is 41 43 46 48 49 4B.
+				if (c0 == 0x41 || c0 == 0x43 || c0 == 0x46 || c0 == 0x48 || c0 == 0x49 || c0 == 0x4b)
+					add = 1;
+			} else {
+				// zh-cn @ 0x0042f599..0x0042f5d3: add 1 when (c1, c0) is
+				// A3 AC, A1 A3, A3 BF or A3 A1.
+				if ((c1 == 0xa3 && c0 == 0xac) || (c1 == 0xa1 && c0 == 0xa3) || (c1 == 0xa3 && c0 == 0xbf) ||
+				        (c1 == 0xa3 && c0 == 0xa1))
+					add = 1;
+				// zh-cn @ 0x0042f5da..0x0042f5ef: A1 A1 (the ideographic
+				// space), the row ends before it (add -1) and the next starts
+				// one byte past its lead byte (skip 1), on its second byte:
+				// that row reads its pairs one byte out of step (72 rows of
+				// 50 shipped lines, atlantis-re
+				// evidence/golden/video_subtitles_zh_cn.txt).  With the minor
+				// bug fixes the skip is the other marks' 2 (decision 0025 D2):
+				// the 27 rows started on a space mended; the other 45 follow
+				// a mark read across two characters (22 cuts: 20 the trail
+				// byte of `。` and the lead byte of `　`, A3 A1, read as `！`;
+				// 2 A3 BF read as `？`), as the original with the skip patched
+				// to 2 (the golden's scan).
+				if (c1 == 0xa1 && c0 == 0xa1) {
+					add = -1;
+					skip = minorBugFixes ? 2 : 1;
+				}
+			}
+			// 0x0042f61c: a count of 75 - k + add (a count of -1, k = 75
+			// with A1 A1, would be a strncpy of 4 GB; no text gives one).
+			count = kWindow - k + add;
+		} else {
+			// No cut within 75 bytes: the original's scan goes on below the
+			// buffer's start, into what lies before 0x00603cc0; under
+			// emulation it never returns, what the game does is [UNKNOWN]
+			// (zh-tw: one shipped line, CHAPI084's game-over narration, 80
+			// bytes).  The port cuts the row at the last character boundary
+			// within 75 bytes (lead bytes 0x81..0xfe in code pages 950 and
+			// 936) and goes on as if a two-byte mark ended there (decision
+			// 0025 D3, a deviation).
+			int c = s;
+			while (c < len) {
+				const int w = at(c) >= 0x81 && at(c) <= 0xfe ? 2 : 1;
+				if (c + w - s > kWindow)
+					break;
+				c = MIN(c + w, len);
+			}
+			count = c - s;
+			k = e - (c - 2);
+		}
+		lines.push_back(row(s, count));
+		// 0x0042f63a..0x0042f65a (zh-cn 0x0042f614..0x0042f634): left -= 76
+		// - k; s = e - k + skip; e = e - k + 75; then 0x0042f68e: on while
+		// left is positive.
+		left -= kWindow - k + 1;
+		s = e - k + skip;
+		e = e - k + kWindow;
+		// (left falls by at least one a row; the second test only bounds
+		// the loop)
+		if (left <= 0 || (int)lines.size() > len)
+			break;
+	}
+}
+
 int subtitleLineYBitmap(uint i, uint n) {
 	return 0x1ce - (int)(n - i + 1) * kSubtitleBitmapRowStep;
 }

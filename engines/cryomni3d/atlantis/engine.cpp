@@ -170,7 +170,16 @@ const Graphics::Font *CryOmni3DEngine_Atlantis::subtitleFont() {
 }
 
 void CryOmni3DEngine_Atlantis::subtitleRows(const Common::String &text, Common::Array<Common::String> &rows) const {
-	if (_exeBuild->bitmapSubtitles)
+	if (_exeBuild->cjkBreaker != kCjkBreakerNone)
+		// atlantis-cd-zh-tw-696832 / atlantis-cd-zh-cn-692736 FUN_0042f424
+		// (zh-tw's calls @ 0x0042e747, 0x0042f897, 0x0042fc08, 0x0042fea4 and
+		// the game over's @ 0x004262f2): on the text buffer as the dialog
+		// code and the game over fill it (the byte after ']', the text and
+		// its final blanks); zh-cn's row after an ideographic space in step
+		// with the minor bug fixes (decision 0025 D2)
+		splitSubtitleCjk(_subtitleText.text(), rows, _exeBuild->cjkBreaker,
+		                 enhancementEnabled(kEnhMinorBugFixes));
+	else if (_exeBuild->bitmapSubtitles)
 		// atlantis-cd-en-688128 FUN_0042e970; atlantis-cd-sv-688128
 		// FUN_0042ea7c (backward cuts only): on the text buffer, its tail
 		// included (the forward scan runs past the NUL)

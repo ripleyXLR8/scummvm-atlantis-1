@@ -866,13 +866,15 @@ private:
 	// per run: loading a game or starting a new one keeps it); written for
 	// every `[` line the section executor runs and for a game-over narrator
 	// line (dialog.cpp playConSection), whether the subtitles are shown or
-	// not.  The 1997 breakers read its bytes past the NUL.
+	// not.  The 1997 breakers read its bytes past the NUL; the Chinese
+	// builds' breaker reads it up to the NUL (its final blanks counted).
 	SubtitleTextBuffer _subtitleText;
 	// The subtitles of this build (subtitle_layout.h): the rows of `text`
-	// (the GDI builds; the bitmap builds break _subtitleText, which the
-	// caller has just filled with that text), the y of row i of n, whether
-	// its font is there, and the rows drawn on `dst` with their shadow, y
-	// moved by offY (the TTF text cut at widthBudget).
+	// (the GDI builds; the bitmap builds and the Chinese builds' breaker
+	// break _subtitleText, which the caller has just filled with that text),
+	// the y of row i of n, whether its font is there, and the rows drawn on
+	// `dst` with their shadow, y moved by offY (the TTF text cut at
+	// widthBudget).
 	void subtitleRows(const Common::String &text, Common::Array<Common::String> &rows) const;
 	int subtitleRowY(uint i, uint n) const;
 	int subtitleRowStep() const;

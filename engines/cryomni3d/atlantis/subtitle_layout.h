@@ -25,6 +25,8 @@
 #include "common/array.h"
 #include "common/str.h"
 
+#include "cryomni3d/atlantis/exe_build.h"
+
 namespace CryOmni3D {
 namespace Atlantis {
 
@@ -105,6 +107,24 @@ void splitSubtitleBitmap(const SubtitleTextBuffer &buf, Common::Array<Common::St
 // text, a NUL, zeros.
 void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::String> &lines,
                          bool backOnly = false);
+
+// The Chinese CDs' breaker FUN_0042f424 (atlantis-cd-zh-tw-696832, Big5
+// marks; atlantis-cd-zh-cn-692736, GB2312 marks: exe_build.h cjkBreaker;
+// atlantis-re experiment 2026-10-19-01, decision 0025 D) on the subtitle
+// text buffer 0x00603cc0, `buf` = its bytes up to the NUL: the byte after
+// the line's ']' (a space), the text and its final blanks, as the dialog
+// code (FUN_00427cc0 @ 0x00427ff9..0x00428014) and the game over
+// (FUN_00425e80 @ 0x004262d4..0x004262ef) copy it up to the CR in both
+// builds.  Up to 75 bytes the buffer is one row, its space included;
+// otherwise each 75-byte window is cut backwards after a double-byte
+// punctuation mark (see the code for the original's arithmetic, kept as it
+// is, and zh-cn's row started one byte out of step after an ideographic
+// space).  minorBugFixes (kEnhMinorBugFixes, decision 0025 D2): zh-cn's row
+// after an ideographic space starts past the whole space.  A window with no
+// mark within 75 bytes is cut at the last character boundary (decision 0025
+// D3, a deviation: the original's scan runs on below the buffer).
+void splitSubtitleCjk(const Common::String &buf, Common::Array<Common::String> &lines, CjkBreaker breaker,
+                      bool minorBugFixes);
 
 // FUN_0042eb3c: row i of n at y = 0x1ce - (n - i + 1) * 10, drawn with
 // FUN_00410800 at (6, y + 1) in black, then at (5, y) in white.
