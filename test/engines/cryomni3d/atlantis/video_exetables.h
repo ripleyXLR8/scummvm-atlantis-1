@@ -14,6 +14,8 @@
 //              FUN_0041a72c @ 0x0041ab0d)
 //   0x00496080 per-camera FOV floats, read as [0x00496078 + 4*cam], cam 2..5
 //              (FUN_0042844c @ 0x00428a0e / 0x00428ad4)
+//   0x00496884 guest portrait sprite ids, dwords scanned until -1
+//              (FUN_0042b480)
 // The expected values are read from atlantis.exe in the test itself (file
 // offset = VA - 0x400000 - 0x90000 + 0x71200, DGROUP), following the
 // ORIGINAL consumer's rules; the port side is the REAL loadAtlantisExeTables /
@@ -136,6 +138,29 @@ public:
 		for (uint i = common; i < orig.size(); i++)
 			TS_WARN(Common::String::format("slot %u: object id %d missing in the port",
 			                               i, orig[i]).c_str());
+	}
+
+	// Guest sprite ids: the original scans dwords until -1 (FUN_0042b480);
+	// port = _guestSpriteIds (exetables.cpp, capped at 64).
+	void test_guest_sprite_ids() {
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("no game data configured; skipping");
+			return;
+		}
+		VideoExeTest::Exe exe;
+		TS_ASSERT(exe.open());
+		VideoPeek::Eng *e = VideoExeTest::loadedEngine();
+		Common::Array<int32> orig;
+		for (uint i = 0; i < 64; i++) {
+			int32 v = (int32)exe.u32(0x00496884 + 4 * i);
+			if (v == -1)
+				break;
+			orig.push_back(v);
+		}
+		TS_ASSERT_EQUALS(orig.size(), 9u);
+		TS_ASSERT_EQUALS(e->_guestSpriteIds.size(), orig.size());
+		for (uint i = 0; i < MIN<uint>(orig.size(), e->_guestSpriteIds.size()); i++)
+			TS_ASSERT_EQUALS(e->_guestSpriteIds[i], orig[i]);
 	}
 
 	// Credits widths: same 256 bytes; advance of a space is 6 in the original.

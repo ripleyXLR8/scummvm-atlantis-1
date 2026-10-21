@@ -67,6 +67,8 @@ struct CryOmni3DGameDescription;
 
 namespace Atlantis {
 
+struct VideoSkipState;   // video_skip.h
+
 // Logical file categories.  Each maps to a sub-directory inside the BigFile
 // archive (see kBigFileSubdirs in engine.cpp); openBigFileStream() resolves a
 // bare file name within one of these.
@@ -365,6 +367,12 @@ private:
 	}
 	bool _arrivalScanPending = false;
 	uint _arrivalFromVue = 0;
+	// A left press during the start-up wait between LOGO15N and the next
+	// video (atlantis.exe @ 0x00419662..0x0041967c): the next video's first
+	// poll sees it as a press edge (FUN_0042e624 fills the key table from
+	// GetAsyncKeyState, which loses no press during the wait).  Consumed by
+	// playTransitionVideo.
+	bool _videoLeftEdgePending = false;
 	// Set by a chapter load (loadGame, the new game): the next arrival scan
 	// reads ArriveeVue = LastVue and is skipped when it is 0
 	// (arrivalAfterChapterLoad).  See atlantis-re: functions/ui-FUN_0042de5c.md.
@@ -382,7 +390,8 @@ private:
 	// [0, count) and clears nothing, so an entry past the count keeps what an
 	// earlier WAM of the run wrote there (atlantis-re
 	// experiments/2026-10-15-08-chapi062-864.md).  Kept for the whole process:
-	// FUN_004239f4's memsets (load, new game) do not cover it.
+	// the boot-time clear FUN_004239f4 (WinMain @ 0x004195b7) does not cover it,
+	// and nothing clears it on a load or a new game.
 	Common::Array<Common::Array<AtlantisTransition> > _placeTableSlots;
 	void recordPlaceTable();
 	// Entry i of record r as the original reads it (zeroed if never written).
@@ -442,9 +451,10 @@ private:
 
 	// --- Dialog playback (dialog.cpp) -------------------------------------
 	// Resolve a dialog line's speaker name to a perso ID.  Transcribes the
-	// speaker-name → persoId strncmp chain from atlantis.exe (VA 0x428f58):
-	// a fixed table keyed by a case-insensitive prefix of the speaker name.
-	// The player character ("Seth") always resolves to _heroPersoId.
+	// speaker-name -> persoId strncmp (FUN_0044a83f) chain of atlantis.exe FUN_00428f58
+	// (atlantis-cd-en-714240 @ 0x00428f58): literals compared case-sensitively
+	// in code order, every test runs and the last hit wins ("Seth" -> 514);
+	// no hit -> 0.
 	int resolveSpeakerPersoId(const Common::String &speaker) const;
 	// Parse DIALOG\INITDIAL.TXT into _dialInitData (per-perso resource table).
 	void loadDialInitData();
@@ -518,9 +528,12 @@ private:
 	int  creditStringWidth(const Common::String &text) const;
 	void drawCreditText(Graphics::ManagedSurface &dst, const Common::String &text,
 	                    int anchorX, int anchorY, bool blue) const;
-	// Quit credits slideshow: CREDIT01..10.TGA + CREDITS.TXT overlay text
-	// (+ 04GENERI.APC on discs that have it), skippable by key or click.
-	void playQuitOutro();
+	// The credits, atlantis.exe FUN_0041a72c (credits_layout.h).  Escape
+	// ends them under FUN_0041a298's conditions; `input` is the poll state
+	// the END.TGA wait of FUN_0041a66c leaves (the bar and menu requests),
+	// nullptr after the quit path, where the in-game menu's exit cleared
+	// them (0x0041cbff / 0x0041cc09).
+	void playQuitOutro(const VideoSkipState *input = nullptr);
 
 	// --- Music playlist (music.cpp) ----------------------------------------
 	// The CON commands startmusik=N / stopmusik start and stop the track;
@@ -575,8 +588,10 @@ private:
 	// disc = discIdx + 1, clamped to 4) over the dimmed screen, until OK or
 	// 1000 ticks; then the disc becomes the current one.
 	void changeDisc(uint discIdx);
-	// 0x00772913: the disc in use, 1 at boot (WinMain takes the first of
-	// bigcd1..4.big that opens; all are present here).
+	// 0x00772913: the disc in use.  The original boots from the disc in the
+	// first CD-ROM drive (FUN_0041a550 tests only GetDriveTypeA; WinMain @
+	// 0x00418fb0..0x004190b2 takes the first of bigcd1..4.big on it).  The
+	// port models disc 1 in the drive at start-up.
 	uint8 _currentDisc = 1;
 	// Options menu over `bg`: SUBTITLES + OMNI 3D (look-Y) toggles, persisted.
 	void displayOptionsMenu(const Graphics::ManagedSurface &bg);
@@ -754,7 +769,6 @@ private:
 		Common::String anim3DABase;
 	};
 	Common::HashMap<int, DialInitEntry> _dialInitData;
-	int _heroPersoId;          // player character's persoId (INITDIAL "hero" row)
 
 	// Random camera selection per dialog line, and the previous line's cam so
 	// consecutive lines never reuse the same shot (atlantis.exe FUN_0042844c).

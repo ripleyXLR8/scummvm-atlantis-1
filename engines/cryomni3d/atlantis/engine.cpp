@@ -51,6 +51,7 @@
 #include "cryomni3d/atlantis/omni3d.h"
 #include "cryomni3d/atlantis/place_loop_vars.h"
 #include "cryomni3d/atlantis/subtitle_layout.h"
+#include "cryomni3d/atlantis/video_skip.h"
 
 #include "graphics/fontman.h"
 #include "graphics/fonts/ttf.h"
@@ -96,8 +97,7 @@ CryOmni3DEngine_Atlantis::CryOmni3DEngine_Atlantis(OSystem *syst,
 	_loadedSave(0),
 	_conInitRunning(false),
 	_currentPlayer(0),
-	_heroPersoId(0),
-	_crtRandSeed(1), _puzzleLcgSeed(0),
+	_crtRandSeed(kCrtRandStartSeed), _puzzleLcgSeed(0),
 	_lastDialCam(0),
 	_dialogGivenObjSprite(-1),
 	_musicCurrentFile(nullptr),
@@ -249,8 +249,9 @@ Common::String CryOmni3DEngine_Atlantis::getSaveStateName(int slot) const {
 }
 
 Common::Error CryOmni3DEngine_Atlantis::loadGameState(int slot) {
-	// FUN_0042de5c sets LastVue to 1 (0x0042e285).
-	_lastVue = 1;
+	// LastVue comes from the checkpoint (loadGame, as FUN_0042de5c reads
+	// .gam field 0x116); the stores of 1 at 0x0042e285 / 0x0042e29e are its
+	// no-file branch (place.cpp).
 	// The slot's block identifies its owning player.
 	_currentPlayer = slot / (int)kPlayerSlotStride;
 	if (loadGame((uint)slot + 1)) {
@@ -284,8 +285,10 @@ Common::SeekableReadStream *CryOmni3DEngine_Atlantis::openBigFileStream(FileType
 
 	Common::String fullName = kBigFileSubdirs[typeIdx];
 	fullName += baseName;
-	// The BigFile stores names case-sensitively as they appear in the DOS archive.
-	// Convert to uppercase to match archive entries.
+	// cryo.dll upper-cases a-z of both the stored names (FUN_00415dac,
+	// cryo-dll-543d8db2 @ 0x00415dd3) and the query (_GL_OpenFileBigFile @
+	// 0x0041637d, FUN_0041d0d9) before a plain strcmp, so lookups ignore
+	// case; BigFileArchive stores upper-case names, so upper-case the query.
 	fullName.toUppercase();
 
 	Common::SeekableReadStream *s = _bigFile.createReadStreamForMember(fullName);
@@ -294,8 +297,9 @@ Common::SeekableReadStream *CryOmni3DEngine_Atlantis::openBigFileStream(FileType
 }
 
 // The original has one archive open: the first bigcdN.big WinMain finds at
-// boot (atlantis-cd-en-714240 @ 0x00418fb0..0x0041907d; with every archive
-// at hand, as here, disc 1), then the one the disc prompt reopens
+// boot (atlantis-cd-en-714240 @ 0x00418fb0..0x0041907d; the disc in the
+// first CD-ROM drive, FUN_0041a550 testing only GetDriveTypeA; the port
+// models disc 1 there), then the one the disc prompt reopens
 // (FUN_0041eda8; atlantis-cd-nl-688128 FUN_0041e46c).  The port merges the
 // four with disc 1's copy first, which is the start-up disc's for what the
 // original loads once at start-up and never again (the disc prompt
@@ -306,8 +310,13 @@ Common::SeekableReadStream *CryOmni3DEngine_Atlantis::openBigFileStream(FileType
 // start-up videos; atlantis-cd-nl-688128 `preintro.tga` 0x004abc3c @
 // 0x00419608, loaded by FUN_0041b300 @ 0x0041961c) and, but in the
 // en-688128 code family, CREDITS.TXT.  What it loads later comes from the
-// current disc: FONTMIN / FONTMIN2 (loadFontMinSprites) and, where
-// creditsPerRun (exe_build.h), CREDITS.TXT.  Of the shipped archives only
+// current disc: FONTMIN / FONTMIN2 (loadFontMinSprites), SPRMENU.SPR (on
+// each entry to FUN_0041c838 @ 0x0041c8b4, FUN_0041dea4 @ 0x0041dfc7,
+// FUN_0041eda8 @ 0x0041ee20, FUN_0041f1d0 @ 0x0041f22e and FUN_0042d6b8 @
+// 0x0042d73f), CREDBLAN / CREDBLEU (each credits run, FUN_0041a72c @
+// 0x0041a77e / 0x0041a7e4) and, where creditsPerRun (exe_build.h),
+// CREDITS.TXT.  The port loads SPRMENU / CREDBLAN / CREDBLEU once from
+// disc 1: every shipped build has one copy of each on all four discs.  Of the shipped archives only
 // the Dutch CD's disc 2 (an older text revision) holds other copies of
 // these (atlantis-re experiment 2026-10-18-08, decision 0022 F): its
 // FONTMIN / FONTMIN2 (the reference's files) and its CREDITS.TXT (one line
@@ -348,12 +357,17 @@ void CryOmni3DEngine_Atlantis::syncSoundSettings() {
 	int master = ConfMan.hasKey("atlantis_master_volume")
 	             ? ConfMan.getInt("atlantis_master_volume") : maxVol;
 	master = CLIP(master, 0, maxVol);
+	// kPlainSoundType carries the six ambient / puzzle sample handles
+	// (ambient_output.cpp), which the original scales by the Miles digital
+	// master alone (MSS32.DLL 0x2000dc60), not by the effects volume; the
+	// base class leaves it at kMaxMixerVolume, so it ends at the master.
 	static const Audio::Mixer::SoundType kTypes[] = {
+		Audio::Mixer::kPlainSoundType,
 		Audio::Mixer::kMusicSoundType,
 		Audio::Mixer::kSFXSoundType,
 		Audio::Mixer::kSpeechSoundType,
 	};
-	for (int i = 0; i < 3; i++)
+	for (uint i = 0; i < ARRAYSIZE(kTypes); i++)
 		_mixer->setVolumeForSoundType(kTypes[i],
 		    _mixer->getVolumeForSoundType(kTypes[i]) * master / maxVol);
 }
@@ -536,6 +550,10 @@ bool CryOmni3DEngine_Atlantis::pollEvents() {
 Common::Error CryOmni3DEngine_Atlantis::run() {
 	CryOmni3DEngine::run();
 
+	// WinMain @ 0x004193e8 -> FUN_0041b7f0 -> FUN_00451cec (0x0041b80d): the
+	// game clock FUN_00451d0c starts at boot.
+	_clockEpoch = g_system->getMillis();
+
 	// The original's 200 Hz timer runs the music fades (FUN_0042f7a8,
 	// FUN_0042f974); 0x00495e72 follows the music volume setting.
 	musicSyncVolume();
@@ -664,15 +682,28 @@ Common::Error CryOmni3DEngine_Atlantis::run() {
 	if (bootSlot < 0) {
 		// atlantis.exe @ 0x0041960a..0x004196cc: both through the transition
 		// player at the cinema pace (65 ms), with a 200-tick (1 s) busy wait
-		// between them that reads no input.
+		// between them (0x00419662..0x0041967c, no call).  The wait reads no
+		// input but loses none: FUN_0042e624 fills the key table from
+		// GetAsyncKeyState, so the next video's first FUN_0041a298 poll sees
+		// a left button or Escape that went down during the wait as a press
+		// edge (click: 0x0049611c = 1; Escape: 0x00496124 = 0), unless it was
+		// already down at LOGO15N's last poll (bit 1 of its entry latched,
+		// FUN_0042e6dc / FUN_0042e624).  pollEvents() keeps an Escape keydown
+		// queued for that poll; a left press goes through
+		// _videoLeftEdgePending.  A press released within the wait counts
+		// through GetAsyncKeyState's "pressed since the last call" bit
+		// [INFERRED].
 		playTransitionVideo("LOGO15N.HNM", uint(-1), uint(-1), kCinemaFrameMs);
+		const bool leftHeldAtLogoEnd = getCurrentMouseButton() == 1;
+		bool waitLeft = false;
 		const uint32 waitStart = g_system->getMillis();
 		while (g_system->getMillis() - waitStart < 1000 && !shouldAbort()) {
-			Common::Event ev;
-			while (g_system->getEventManager()->pollEvent(ev)) {
-			}
+			pollEvents();
+			if (getCurrentMouseButton() == 1)
+				waitLeft = true;
 			g_system->delayMillis(10);
 		}
+		_videoLeftEdgePending = waitLeft && !leftHeldAtLogoEnd;
 		// atlantis-cd-nl-688128 only (decision 0022 C1): UBB_VUE\LOGORP.HNM
 		// (the R&P logo, 60 frames) after the wait, by the same start-up
 		// player FUN_00423444 (@ 0x0041958d) and at the cinema pace (the
@@ -704,7 +735,7 @@ Common::Error CryOmni3DEngine_Atlantis::run() {
 			// menu in the original.
 			int chosen = displayPlayerScreen();
 			if (chosen < 0)
-				break;                    // quit (Escape / window close)
+				break;                    // quit (window close / GMM)
 			_currentPlayer = chosen;
 			uint resume = playerResumeSave((uint)chosen);
 			if (resume) {
@@ -773,13 +804,38 @@ Common::Error CryOmni3DEngine_Atlantis::run() {
 					end->free();
 					delete end;
 				}
+				// 0x0049611c = 0 (0x0041a6d8), then FUN_0041a298 polls until it
+				// sets it again or 0x578 ticks pass: a VK_LBUTTON press edge
+				// (FUN_0042e624: a button already down at the previous poll does
+				// not count).  The same polls take right presses and Escape
+				// (video_skip.h), whose state the credits inherit: a right press
+				// toggles the bar request 0x004960c4, which gates Escape there.
+				// The bar request starts from the port's mirror of 0x004960c4
+				// (_barSession): CHAPI085's Cinema=210 cleared it and 0x00496138
+				// (0x0042a939, 0x0042a925), and its narrator line runs in a
+				// clicked section (0x00496170 = 1), where a right press does not
+				// toggle it.  That section has ended (0x00496170 = 0 @
+				// 0x00425b7a), so here a right press toggles.
+				VideoSkipState endInput;
+				endInput.bowMode = _bowMode;
+				endInput.barRequest = _barSession.request;
+				endInput.objectInHand = _inventory.selectedObject() != nullptr ||
+				                        _gameVars.getValOrDefault("objetenmain", 0) != 0;
+				uint prevButton = getCurrentMouseButton();
 				uint32 start = g_system->getMillis();
-				while (!shouldQuit() && g_system->getMillis() - start < 0x578 * kSpriteTickMs &&
-				        getCurrentMouseButton() != 1) {
+				while (!shouldQuit() && g_system->getMillis() - start < 0x578 * kSpriteTickMs) {
 					pollEvents();
+					const uint button = getCurrentMouseButton();
+					const bool left = button == 1 && prevButton != 1;
+					const bool right = button == 2 && prevButton != 2;
+					prevButton = button;
+					const bool escape = checkKeysPressed(1, Common::KEYCODE_ESCAPE);
+					videoSkipPoll(endInput, left, right, escape);
+					if (endInput.click)
+						break;
 					g_system->delayMillis(10);
 				}
-				playQuitOutro();
+				playQuitOutro(&endInput);
 				stopGame = true;
 			} else {
 				warning("gameStep: Exit=%d, only 86 is handled", _gameVars.getValOrDefault("exit", 0));
@@ -819,8 +875,15 @@ void CryOmni3DEngine_Atlantis::playTestDialogLine() {
 	if (ConfMan.hasKey("atlantis_input_script"))
 		loadInputScript(ConfMan.get("atlantis_input_script"));
 	_pollCount = 0;
+	// The camera's FOV, set by the caller as FUN_0042844c does (dialog.cpp
+	// playConSection).
+	const double savedHFov = _omni3dMan.getHFov();
+	if (_warpLoaded)
+		_omni3dMan.setHFov((double)kDialogCamFovDeg[cam - 2] * M_PI / 180.0);
 	playSingleConLine(section, letter, "", "PERSO\\" + ubb + ".UBB", entry.camSPF[cam - 2],
 	                  false, 0, 0, cam, true, perso);
+	if (_warpLoaded)
+		_omni3dMan.setHFov(savedHFov);
 	warning("Atlantis: dialog line %d%c played", section, letter);
 }
 
@@ -903,8 +966,11 @@ void CryOmni3DEngine_Atlantis::gameStep() {
 			continue;
 		}
 
-		// Any other return is a click with no NPC under the crosshair
-		// (atlantis.exe FUN_00423ad8): the zone goes to ClicZone, and with a
+		// Any other return is a click with no NPC or object under the
+		// pointer: the original's warp loop returns every click (0x0041c71e)
+		// and FUN_00423ad8 runs FUN_004240fc then FUN_004278a0; the port's
+		// handleWarp handles an NPC / object click itself, puzzle zone first.
+		// Here (atlantis.exe FUN_00423ad8) the zone goes to ClicZone, and with a
 		// zone or an object in hand FUN_004278a0 runs the /con click scan
 		// (0x00427b8c..0x00427bc2).  A transition then needs an empty hand
 		// (0x00423d2b).
@@ -973,7 +1039,13 @@ void CryOmni3DEngine_Atlantis::gameStep() {
 				// A Vue= inside a departure section already entered its place
 				// (CHAPI005 /113, CHAPI062 /864, CHAPI077 /010); the place loop
 				// goes on with the turn and video of entry i of the new
-				// place's record.
+				// place's record.  ARRIVEEVUE = 0x006cd7c0 after the scan
+				// (0x00423def), which the Vue= set to the place entered
+				// (FUN_0042a100 @ 0x0042a6fd): the next pass's arrival scan
+				// runs with ArriveeVue = Vue = that place, LastVue = the place
+				// left.
+				_gameVars["arriveevue"] = (int)_currentPlaceId;
+				_arrivalFromVue = _currentPlaceId;
 				_nextPlaceId = uint(-1);
 				if (!shouldAbort() && !gameOver) {
 					transitionAfterDepartureVue(transitionIndex);
@@ -1006,12 +1078,24 @@ void CryOmni3DEngine_Atlantis::gameStep() {
 // functions/ui-FUN_0041a72c.md.
 
 // atlantis.exe FUN_0041a72c, the credits (credits_layout.h has the events).
-void CryOmni3DEngine_Atlantis::playQuitOutro() {
+void CryOmni3DEngine_Atlantis::playQuitOutro(const VideoSkipState *input) {
 	// OBJETENMAIN = 0 (0x0041a744); the ambient sounds stop (FUN_00431e98
 	// @ 0x0041a85e, when 0x00496980 == 1).
 	_gameVars["objetenmain"] = 0;
 	stopAmbient();
 	_inventory.setSelectedObject(nullptr);
+
+	// FUN_0041a298's state for the credits' polls (video_skip.h): the bar
+	// request 0x004960c4 and the menu request 0x00496138 as the END.TGA
+	// wait left them, both 0 on the quit path; OBJETENMAIN is 0 now; bow
+	// mode 0x00496164 as it stands; no line (0x00496188) and no section
+	// (0x00496170) plays.  0x00496124 = 1 before the loop (step 5).
+	VideoSkipState skip;
+	if (input) {
+		skip.barRequest = input->barRequest;
+		skip.menuRequest = input->menuRequest;
+	}
+	skip.bowMode = _bowMode;
 
 	// Music (0x0041a83e..0x0041a916): only when the music handle 0x006ce0c0
 	// is set and the track 0x00772915 is not 22 (04GENERI.APC, set by
@@ -1021,8 +1105,13 @@ void CryOmni3DEngine_Atlantis::playQuitOutro() {
 	// -1 (set) and 0x00772915 still names the previous track, so the test
 	// uses those two, not the selected _musicTrackId.
 	// See atlantis-re: functions/ui-FUN_0041a72c.md step 4.
-	if (_musicHandleSet && _musicOpenTrack != 22)
+	if (_musicHandleSet && _musicOpenTrack != 22) {
+		// The same branch clears the input flags (0x0041a8b1..0x0041a8e3).
+		skip.barRequest = false;
+		skip.menuRequest = false;
 		musicSwitchTrack(26);
+	}
+	skip.keepRunning = true;
 
 	Common::Array<byte> txt;
 	{
@@ -1044,11 +1133,22 @@ void CryOmni3DEngine_Atlantis::playQuitOutro() {
 	const uint32 start = g_system->getMillis();
 
 	// Waits until the tick; false when Escape ends the credits (FUN_0041a298
-	// clears 0x00496124 on an Escape edge; a click does nothing here).
+	// clears 0x00496124 on an Escape edge while 0x00496164, 0x004960c4 and
+	// OBJETENMAIN are 0).  A left click does nothing; a right press toggles
+	// the bar request 0x004960c4, which gates Escape (FUN_0041a298 @
+	// 0x0041a2e9..0x0041a337, 0x0041a3f1).  Edges as FUN_0042e624: a button
+	// already down at the previous poll does not count.
+	uint prevButton = getCurrentMouseButton();
 	auto waitUntil = [&](uint32 tick) {
 		while (g_system->getMillis() - start < tick * kSpriteTickMs && !shouldAbort()) {
 			pollEvents();
-			if (checkKeysPressed(1, Common::KEYCODE_ESCAPE))
+			const uint button = getCurrentMouseButton();
+			const bool left = button == 1 && prevButton != 1;
+			const bool right = button == 2 && prevButton != 2;
+			prevButton = button;
+			const bool escape = checkKeysPressed(1, Common::KEYCODE_ESCAPE);
+			videoSkipPoll(skip, left, right, escape);
+			if (!skip.keepRunning)
 				return false;
 			g_system->delayMillis(10);
 		}

@@ -185,8 +185,10 @@ public:
 	// several discs is read from the current disc.  This checks, for every
 	// name on disc d, that the merged index returns disc d's bytes.  The menu
 	// files (SPRLIST\*MENU.TXT, WAIT, ERROR*) are the exception: FUN_00426f20
-	// reads them once, at start-up (call @ 0x00419439), from the boot disc,
-	// which is disc 1 when every disc is present, as in the port.
+	// reads them once, at start-up (call @ 0x00419439), from the boot disc:
+	// the disc in the first CD-ROM drive (FUN_0041a550 tests only the drive
+	// type).  The port boots as with disc 1 in the drive (a choice, not a value
+	// from the original).
 	void test_data_merged_index_vs_per_disc() {
 		if (!AtlantisTest::haveData()) {
 			TS_WARN("archive: no game data configured, skipping merged BIG test");
