@@ -213,6 +213,22 @@ inline void showScreenBuffer(const byte *screenBuffer, byte *surface, uint pitch
 		memcpy(surface + y * pitch, screenBuffer + y * kOff1RowBytes, kOff1RowBytes);
 }
 
+// The same screen in the Chinese builds (AtlantisExeBuild::off1FlatCopy):
+// atlantis-cd-zh-tw-696832 FUN_0042fe7c and atlantis-cd-zh-cn-692736
+// FUN_0042fe58 (atlantis-pe-2018-695296 FUN_0042f974, the 1997 code line's
+// version of FUN_00430884) have no work buffer: under the surface Lock they
+// make one call FUN_00410f36(0x004860d4, FUN_0041a24c(), 0x1e0, 0x500)
+// (zh-tw @ 0x00430074..0x0043008a, zh-cn @ 0x00430050..0x00430066), and
+// their FUN_00410f36 (0x00410f36..0x00410f71) copies rows x pitch bytes, 16
+// at a time, contiguously in both buffers: the 0x96000 bytes of the screen
+// buffer from the surface's first byte, whatever its pitch (lPitch is not
+// read); on a wider surface the rows land 0x500 bytes apart and its last
+// rows keep what they had (atlantis-re tools/emu/video_dialog_off1_zh.py,
+// golden video_dialog_off1_zh.txt).  The surface must hold 0x96000 bytes.
+inline void showScreenBufferFlat(const byte *screenBuffer, byte *surface) {
+	memcpy(surface, screenBuffer, kOff1Rows * kOff1RowBytes);
+}
+
 // The voice step of a dialog line, as playSingleConLine runs it once the
 // .APC has been looked up: apcFile is the file, or null when it is absent
 // (FUN_00418920 returned 0).  The voice is decoded by makeAtlantisAPCStream,
@@ -222,14 +238,20 @@ inline void showScreenBuffer(const byte *screenBuffer, byte *surface, uint pitch
 // gets the screen buffer on its screen (showScreenBuffer) here, so before
 // the caller can start the voice with the returned stream (FUN_00430884
 // copies at 0x00430a86..0x00430abb, starts the sample after).  screen null:
-// any other line, nothing drawn.
+// any other line, nothing drawn.  flatCopy: the Chinese builds' copy
+// (showScreenBufferFlat; the same voice gate, FUN_00417cc4, zh-tw
+// 0x0042ff8d..0x0042ffaa).
 inline Audio::AudioStream *loadLineVoice(Common::SeekableReadStream *apcFile,
-		const byte *screenBuffer, byte *screen, uint pitch) {
+		const byte *screenBuffer, byte *screen, uint pitch, bool flatCopy = false) {
 	if (!apcFile)
 		return nullptr;
 	Audio::AudioStream *apc = makeAtlantisAPCStream(*apcFile);
-	if (apc && screen && screenBuffer)
-		showScreenBuffer(screenBuffer, screen, pitch);
+	if (apc && screen && screenBuffer) {
+		if (flatCopy)
+			showScreenBufferFlat(screenBuffer, screen);
+		else
+			showScreenBuffer(screenBuffer, screen, pitch);
+	}
 	return apc;
 }
 

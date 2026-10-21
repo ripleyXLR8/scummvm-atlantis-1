@@ -339,6 +339,17 @@ struct AtlantisExeBuild {
 	// 114-byte file; writers atlantis-cd-zh-tw-696832 FUN_0041dd14 @
 	// 0x0041e574, FUN_0041e65c @ 0x0041e9b0, FUN_0042cb1c @ 0x0042d147).
 	uint8 playersNamesBlock;
+	// The off1 dialog player's screen copy: the 2001 / 1999 code's
+	// FUN_00430884 copies the screen buffer 0x004960d4 to its work buffer
+	// 0x004960d8, then to the surface row by row at its pitch
+	// (0x00430a86..0x00430abb; DialogView::showScreenBuffer); the Chinese
+	// builds' (atlantis-cd-zh-tw-696832 FUN_0042fe7c, atlantis-cd-zh-cn-692736
+	// FUN_0042fe58, from atlantis-pe-2018-695296 FUN_0042f974, the 1997 code
+	// line without a work buffer) copy it to the surface as one block,
+	// `push 0x500; push 0x1e0` + FUN_00410f36 of rows x pitch contiguous bytes
+	// (zh-tw @ 0x00430074..0x0043008a; DialogView::showScreenBufferFlat).
+	// The 1997 CD builds have no off1 player (their data no off1 header).
+	bool off1FlatCopy;
 
 	uint32 fileOffset(uint32 va) const { return va - dgroupVA + dgroupRawPtr; }
 };
@@ -390,7 +401,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	// subtitleBreakBackOnly, nameSwedishLetters; menuPosItemByteWidth,
 	// emptyNameEndsPlayerRows, menuRecordsPerMenu; cjkBreaker,
 	// subtitleRowStep, menuSpriteBanks, menuToggleSprites; loadList;
-	// cinemaCaptions; subtitlesOnAtStart, playersNamesBlock.
+	// cinemaCaptions; subtitlesOnAtStart, playersNamesBlock, off1FlatCopy.
 	{ "atlantis-cd-en-714240", 714240, 0x3b8275d6, 0x00490000, 0x71200,
 	  0x004967b0, 0x00496884, 0x004966fc, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
@@ -404,7 +415,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	{ "atlantis-gog-fr-714752", 714752, 0x385a4dc6, 0x00490000, 0x71200,
 	  0x004967b4, 0x00496888, 0x00496700, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
@@ -418,7 +429,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	{ "atlantis-cd-en-688128", 688128, 0x33886fd1, 0x00480000, 0x6c400,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
@@ -432,7 +443,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	{ "atlantis-cd-fr-687104", 687104, 0x33ef1516, 0x00480000, 0x6ba00,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861cc, 0x004a0000, 0x004b0000,
 	  0x00486546, false,
@@ -446,7 +457,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	{ "atlantis-cd-fr-688640", 688640, 0x33818054, 0x00480000, 0x6c600,
 	  0x0048678c, 0x00486860, 0x004866d9, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
@@ -460,7 +471,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	// atlantis-re experiment 2026-10-18-07 (binaries/atlantis-cd-de-687104.md,
 	// decision 0021 A1): the German CD's executable (1997-08-18), the same
 	// size as atlantis-cd-fr-687104, told apart by its PE timestamp.  Its
@@ -488,7 +499,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	// atlantis-re experiment 2026-10-18-10 (binaries/atlantis-cd-es-687104.md,
 	// decision 0024 A1): the Spanish CD's executable (1997-08-28), the same
 	// size as atlantis-cd-fr-687104 and atlantis-cd-de-687104, told apart by
@@ -518,7 +529,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	// atlantis-re experiment 2026-10-18-10 (binaries/atlantis-cd-it-687104.md,
 	// decision 0024 A1, C2): the Italian CD's executable (1997-07-31, eleven
 	// days before fr-687104), the same size, told apart by its PE timestamp.
@@ -550,7 +561,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	// atlantis-re experiment 2026-10-18-08 (binaries/atlantis-cd-nl-688128.md,
 	// decision 0022 A1): the Dutch CD's executable (1997-06-05), the same
 	// size as atlantis-cd-en-688128, told apart by its PE timestamp.  821 of
@@ -583,7 +594,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	// atlantis-re experiment 2026-10-18-09 (binaries/atlantis-cd-sv-688128.md,
 	// decision 0023 A1): the Swedish CD's executable (1997-06-11), the same
 	// size as atlantis-cd-en-688128 and atlantis-cd-nl-688128, told apart by
@@ -622,7 +633,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	// atlantis-re experiment 2026-10-18-06 (binaries/atlantis-patch-fr-714240.md):
 	// the executable of Cryo's patch AT1CDINT.EXE ("1.01", 1999-12-17), the
 	// same size as the reference, told apart by its PE timestamp (GOG's).
@@ -649,7 +660,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
 	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
 	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
-	  false, 85 },
+	  false, 85, false },
 	// atlantis-re experiment 2026-10-19-01 (binaries/atlantis-cd-zh-tw-696832.md,
 	// decision 0025 A1): the Traditional Chinese CD's executable
 	// (1998-07-17).  Its parent is atlantis-pe-2018-695296 (the "Perfect
@@ -691,7 +702,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  { kLoadListSprites, { "EPICHI1.SPR", "EPICHI2.SPR" }, 0x00486619, 0x00486663, 74 },
 	  { 20, "SUBCHINE.SPR", 10, 430, 1200, 18800,
 	    { 2200, 4400, 5000, 7200, 7800, 9400, 10600, 12600, 14800, 16400 } },
-	  true, 102 },
+	  true, 102, true },
 	// atlantis-re experiment 2026-10-19-01 (binaries/atlantis-cd-zh-cn-692736.md,
 	// decision 0025 A1): the Simplified Chinese CD's executable
 	// (1999-03-18), atlantis-cd-zh-tw-696832's program with two functions
@@ -716,7 +727,7 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  { kLoadListSprites, { "EPICHI1.SPR", "EPICHI2.SPR" }, 0x00486619, 0x00486663, 74 },
 	  { 20, "SUBCHINE.SPR", 10, 430, 1200, 18800,
 	    { 2200, 4400, 5000, 7200, 7800, 9400, 10600, 12600, 14800, 16400 } },
-	  true, 102 },
+	  true, 102, true },
 };
 
 // The build of an executable of `size` bytes and PE timestamp

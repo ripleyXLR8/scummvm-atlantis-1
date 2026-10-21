@@ -489,7 +489,11 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 		// playSingleConLine puts _ixVideoBuffers under the subtitle
 		// (_dialShowScreenBuffer; atlantis-re tools/emu/video_dialog_off1.py).
 		// The reference's CON files have no off1 header; the GOG.com
-		// release's have 30 (CHAPI031, 036, 048, 058, 062).
+		// release's have 30 (CHAPI031, 036, 048, 058, 062), the Chinese
+		// releases' 29 (CHAPI021, 031, 050, 058, 062, 063), which their
+		// executor flags the same way (atlantis-cd-zh-tw-696832 and
+		// atlantis-cd-zh-cn-692736 FUN_00427cc0 @ 0x00427f6a..0x00427f8d)
+		// and their FUN_0042e2ec hands to their off1 player (@ 0x0042e3a6).
 		const bool off1 = cast.off1;
 		_dialKeepScreen = cast.off0 || off1;
 
@@ -1187,12 +1191,17 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 	// off1 (FUN_00430884): with the voice loaded, the screen buffer becomes
 	// the screen, before the voice starts and the subtitle is drawn
 	// (DialogView::loadLineVoice); a missing voice or a bad header draws
-	// nothing.  keptScreen is what drawFrame shows under the subtitle.
+	// nothing.  keptScreen is what drawFrame shows under the subtitle.  The
+	// Chinese builds copy the screen buffer as one block of 0x96000 bytes
+	// (atlantis-cd-zh-tw-696832 FUN_0042fe7c @ 0x00430074..0x0043008a,
+	// DialogView::showScreenBufferFlat), the same picture on keptScreen,
+	// whose rows are 0x500 bytes.
 	const bool off1Screen = _dialShowScreenBuffer && _dialKeepScreen && _ixVideoBuffers &&
 	                        keptScreen.w == 640 && keptScreen.h == 480 &&
 	                        keptScreen.format.bytesPerPixel == 2;
 	Audio::AudioStream *apc = DialogView::loadLineVoice(apcFile, _ixVideoBuffers,
-	        off1Screen ? (byte *)keptScreen.getPixels() : nullptr, keptScreen.pitch);
+	        off1Screen ? (byte *)keptScreen.getPixels() : nullptr, keptScreen.pitch,
+	        _exeBuild->off1FlatCopy);
 
 	if (!apcFile) {
 		debugC(1, kDebugScript, "playSingleConLine: no %s, line skipped", apcName.c_str());
