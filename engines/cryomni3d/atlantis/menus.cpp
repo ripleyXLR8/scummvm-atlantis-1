@@ -353,20 +353,32 @@ void CryOmni3DEngine_Atlantis::renderMenuLayout(Graphics::ManagedSurface &dst,
 		// are the options menu's DAT_004960a8 / DAT_004960ac: 1 shows the
 		// first option (the port's selected 0).
 		int flags[2] = { 0, 0 };
-		uint nt = 0;
-		for (uint i = 0; i < layout.items.size() && nt < 2; i++)
-			if (layout.items[i].kind == MenuItem::kToggle)
-				flags[nt++] = layout.items[i].selected == 0 ? 1 : 0;
+		const bool toggleSprites = _exeBuild->menuToggleSprites;
+		if (toggleSprites) {
+			// The record parser reads the globals themselves, in every menu
+			// (atlantis-cd-zh-tw-696832 FUN_004201e8 @ 0x00420220, 0x00420234).
+			flags[0] = menuSubtitlesFlag();
+			flags[1] = menuOmniFlag();
+		} else {
+			uint nt = 0;
+			for (uint i = 0; i < layout.items.size() && nt < 2; i++)
+				if (layout.items[i].kind == MenuItem::kToggle)
+					flags[nt++] = layout.items[i].selected == 0 ? 1 : 0;
+		}
 		walkMenuText(layout.raw.data(), layout.raw.size(), layout.menu, hoveredTextIdx,
-		             flags[0], flags[1], layout.walk, menuPosItemByteWidth(), layout.table);
+		             flags[0], flags[1], layout.walk, menuPosItemByteWidth(), layout.table,
+		             toggleSprites, enhancementEnabled(kEnhMinorBugFixes));
 		for (const MenuWalkOp &op : layout.walk.ops) {
 			if (!op.sprite)
 				drawFontMaxText(dst, Common::String((char)(op.index + 0x20)), op.x, op.y, op.hoverFont);
 			else if (!op.altBank)
 				blitMenuSprite(dst, (uint)op.index, op.x, op.y);
-			// The /sprj= /sprr= /sprc= bank 0x006cd874 is never loaded by the
-			// exe (no write found, only the shutdown free in FUN_0041a5b0);
-			// no shipped file uses it.  [UNKNOWN] what such a blit would show.
+			else
+				blitMenuWord(dst, (uint)op.index, op.x, op.y, op.hoverBank);
+			// The reference's /sprj= /sprr= /sprc= bank 0x006cd874 is never
+			// loaded (no write found, only the shutdown free in FUN_0041a5b0)
+			// and no file of its release uses it: no bank, nothing drawn
+			// (loadMenuWordSprites).  [UNKNOWN] what such a blit would show.
 		}
 		for (const MenuWalkRecord &r : layout.walk.records) {
 			// FUN_004210c0's strict, u16 test as a half-open rect.
@@ -1051,9 +1063,22 @@ void CryOmni3DEngine_Atlantis::displayOptionsMenu(const Graphics::ManagedSurface
 		}
 	}
 
-	if (subIdx >= 0)
+	// The Chinese CDs' OPTMENU.TXT has no toggle line: its seven records are
+	// `/sprc=` words, the toggles drawn by id (renderMenuLayout).  Their loop
+	// atlantis-cd-zh-tw-696832 FUN_0041d5c0 tests the hovered record
+	// 0x006bd838: 3 SUBTITLES (@ 0x0041d623..0x0041d67a), 5 OMNI 3D (@
+	// 0x0041d681..0x0041d6b1), and ends on 1 or 6 (SOUND OPTIONS, OK; @
+	// 0x0041d6b6..0x0041d6cf).
+	const bool toggleSprites = _exeBuild->menuToggleSprites;
+	if (toggleSprites) {
+		soundIdx = 1;
+		subIdx = 3;
+		omniIdx = 5;
+		okIdx = 6;
+	}
+	if (subIdx >= 0 && !toggleSprites)
 		layout.items[subIdx].selected = showSubtitles() ? 0 : 1;
-	if (omniIdx >= 0)
+	if (omniIdx >= 0 && !toggleSprites)
 		layout.items[omniIdx].selected = omni3dInvertY() ? 1 : 0;
 
 	Graphics::PixelFormat fmt = g_system->getScreenFormat();
@@ -1078,8 +1103,13 @@ void CryOmni3DEngine_Atlantis::displayOptionsMenu(const Graphics::ManagedSurface
 		getNextKey();
 
 		int newHover = hitTestMenu(layout, hitRects, getMousePos());
+		// The labels SUBTITLES and OMNI 3D (records 2 and 4) light up too in
+		// the Chinese builds: the hovered bank is kept on those lines
+		// (walkMenuText hoverBank; atlantis-re ui_menus_zh_tw.txt `hover
+		// OPTMENU`); the reference's glyphs are not (the font reset).
+		const bool labelHover = toggleSprites && (newHover == 2 || newHover == 4);
 		if (newHover != soundIdx && newHover != okIdx &&
-		    newHover != subIdx && newHover != omniIdx)
+		    newHover != subIdx && newHover != omniIdx && !labelHover)
 			newHover = -1;
 		if (newHover != hovered) {
 			hovered = newHover;
@@ -1090,7 +1120,17 @@ void CryOmni3DEngine_Atlantis::displayOptionsMenu(const Graphics::ManagedSurface
 
 		if (getCurrentMouseButton() == 1 && hovered >= 0) {
 			waitMouseRelease();
-			if (hovered == okIdx) {
+			if (toggleSprites && hovered != soundIdx && hovered != okIdx) {
+				// FUN_0041d5c0: the three-click SUBTITLES counter 0x00486098
+				// and the OMNI 3D flip, on the globals; a label does nothing.
+				if (hovered == subIdx) {
+					bool on = showSubtitles();
+					subtitleToggleClick(on, _subtitleToggleCount);
+					ConfMan.setBool("subtitles", on);
+				} else if (hovered == omniIdx) {
+					ConfMan.setBool(kOmni3dInvertKey, !omni3dInvertY());
+				}
+			} else if (hovered == okIdx) {
 				done = true;
 			} else if (hovered == soundIdx) {
 				// The original leaves the options screen for good when SOUND
@@ -1218,7 +1258,9 @@ void CryOmni3DEngine_Atlantis::displaySoundMenu(const Graphics::ManagedSurface &
 		for (uint i = 0; i < layout.items.size(); i++) {
 			const MenuItem &it = layout.items[i];
 			int rx, ry, rw, rh;
-			if (it.kind == MenuItem::kSprite) {
+			// A `/sprc=` word's record is its line's {X, Y, W, H}, as a sprite's
+			// (atlantis-cd-zh-tw-696832 FUN_004201e8 @ 0x004202d5..0x0042046b).
+			if (it.kind == MenuItem::kSprite || it.bankWord) {
 				rx = it.hx;
 				ry = it.hy;
 				for (int t = 0; t < 4; t++)
@@ -1338,7 +1380,10 @@ void CryOmni3DEngine_Atlantis::displaySoundMenu(const Graphics::ManagedSurface &
 			// Any hovered text record highlights except the title (record 0
 			// never highlights outside the main menu — FUN_0041fb6c).
 			bool hover = ((int)i == hit) && ((int)i != titleIdx);
-			drawFontMaxText(surf, it.text, x, it.anchorY, hover);
+			if (it.bankWord)
+				blitMenuWord(surf, (uint)it.sprIdx, it.hx, it.hy, hover);
+			else
+				drawFontMaxText(surf, it.text, x, it.anchorY, hover);
 		}
 		g_system->copyRectToScreen(surf.getPixels(), surf.pitch, 0, 0, 640, 480);
 		g_system->updateScreen();

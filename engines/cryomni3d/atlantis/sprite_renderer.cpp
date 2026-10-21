@@ -151,6 +151,35 @@ void CryOmni3DEngine_Atlantis::blitMenuSprite(Graphics::ManagedSurface &dst, uin
 	drawSprSprite(*dst.surfacePtr(), _menuSprites[idx], hx, hy);
 }
 
+// atlantis-cd-zh-tw-696832 FUN_0042676c (the start-up loader of the menus
+// and EPI.TXT, the reference's FUN_00426f20) loads `sprite\2d\sprchi1.spr`
+// (0x00486556) into 0x006bd874 and `sprchi2.spr` (0x00486562) into
+// 0x006bd878 @ 0x004267a2..0x00426874, once, from the start-up disc: the
+// port reads disc 1's (the four discs' copies are one file, atlantis-re
+// binaries/atlantis-cd-zh-tw-696832.md Archives).  FONTMAX / FONTMAX2 are
+// not loaded there; the port keeps them loaded, unused: no menu of these
+// releases holds a text line (atlantis-re evidence/golden/
+// ui_menus_zh_tw.txt: no FONTMAX blit).
+void CryOmni3DEngine_Atlantis::loadMenuWordSprites() {
+	for (int b = 0; b < 2; b++) {
+		_menuWordSprites[b].clear();
+		if (_exeBuild && _exeBuild->menuSpriteBanks[b])
+			loadFontSpriteSet(_exeBuild->menuSpriteBanks[b], _menuWordSprites[b]);
+	}
+}
+
+// FUN_004201e8 (atlantis-cd-zh-tw-696832): the blit FUN_00410430 of frame
+// `idx` at the record's x / y from 0x006bd874, or 0x006bd878 when the
+// hovered-bank flag 0x004860a0 is set (@ 0x004204fa..0x00420543); a frame
+// the bank does not hold is not drawn (FUN_00410430's count test).
+void CryOmni3DEngine_Atlantis::blitMenuWord(Graphics::ManagedSurface &dst, uint idx,
+        int x, int y, bool hovered) const {
+	const Common::Array<SubjSprite> &bank = _menuWordSprites[hovered ? 1 : 0];
+	if (idx >= bank.size())
+		return;
+	drawSprSprite(*dst.surfacePtr(), bank[idx], x, y);
+}
+
 void CryOmni3DEngine_Atlantis::loadInventoryBarSprite() {
 	// OBJETS0.SPR holds the single ~599x82 inventory-bar background (golden
 	// line + 9 slot ornaments).  Same SPR format as the other 2D sprites.

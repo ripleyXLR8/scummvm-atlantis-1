@@ -122,6 +122,34 @@ bool MenuLayout::loadFromStream(Common::ReadStream &s) {
 			continue;
 		}
 
+		// /sprj= /sprr= /sprc=I,X,Y,W,H: a word of the menu bank, a click item
+		// as the text line it replaces (the Chinese CDs' menus; the walk
+		// FUN_0041f5a0 numbers its records with the lines,
+		// atlantis-cd-zh-tw-696832 @ 0x0041fb79..0x0041fbae).
+		if (startsWithIgnoreCase(line, "/sprj=") || startsWithIgnoreCase(line, "/sprr=") ||
+		    startsWithIgnoreCase(line, "/sprc=")) {
+			const char *p = line.c_str() + 6;
+			int v[5];
+			bool ok = true;
+			for (int k = 0; k < 5 && ok; k++) {
+				ok = consumeInt(p, v[k]);
+				if (ok && k < 4)
+					ok = (*p++ == ',');
+			}
+			if (!ok)
+				continue;
+			MenuItem it;
+			it.kind = MenuItem::kText;
+			it.bankWord = true;
+			it.sprIdx = v[0];
+			it.hx = it.anchorX = v[1];
+			it.hy = it.anchorY = v[2];
+			it.w = v[3];
+			it.h = v[4];
+			items.push_back(it);
+			continue;
+		}
+
 		// <X,Y>TEXT — X may be empty meaning "centered".
 		// The original game encodes the empty form as a literal "<>", then
 		// continues with ",Y>TEXT" (so the full line is e.g. "<>,230>LOAD
@@ -533,7 +561,7 @@ int menuNumber(const char *fileName) {
 
 void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
                   int toggleA, int toggleB, MenuWalk &walk, int posItemByteWidth,
-                  MenuRecordTable *table) {
+                  MenuRecordTable *table, bool toggleSprites, bool toggleStepFix) {
 	walk.ops.clear();
 	if (menu < 0 || menu >= MenuRecordTable::kMenus)
 		table = nullptr;
@@ -569,6 +597,10 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 	while (p < size && !walkAt(t, size, p, "/fin")) {
 		bool draw = true;         // EBP-0x18
 		bool hover = (line == hoverLine && line != 0) || (line == hoverLine && menu == 0);
+		// The hovered sprite bank keeps the test before the options menu's
+		// exception (atlantis-cd-zh-tw-696832 0x004860a0 @ 0x0041f707, the
+		// font alone reset @ 0x0041f725).
+		const bool hoverBank = hover;
 		if ((line == 2 || line == 4) && menu == 2)
 			hover = false;
 		if (walkAt(t, size, p, "<>")) {             // 0x0041fd08
@@ -633,7 +665,19 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 				continue;
 			p += (v < 3) ? 6 : 5;
 			// FUN_004207c0: I (1-2 digits), X, Y, W (1-3 digits), H
-			const int idx = walkAtoi(t, size, p);
+			int idx = walkAtoi(t, size, p);
+			if (toggleSprites) {
+				// atlantis-cd-zh-tw-696832 FUN_004201e8 @ 0x00420212..0x0042022b:
+				// id 9 in menu 2 is 9 + SUBTITLES, the pointer one byte back.
+				if (idx == 9 && menu == 2) {
+					idx = 9 + toggleA;
+					if (!(toggleStepFix && idx == 9))
+						p--;
+				}
+				// @ 0x0042022e..0x00420242: id 12 is 13 with OMNI 3D 1.
+				if (idx == 12 && toggleB == 1)
+					idx = 13;
+			}
 			p = walkStep(p, idx, 2, false);
 			const int x = walkAtoi(t, size, p);
 			p = walkStep(p, x, 2);
@@ -659,7 +703,7 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 				by = r.y;
 			r.w = (int16)w;
 			r.h = (int16)h;
-			MenuWalkOp op = { true, v < 3, false, (int16)bx, (int16)by, idx, line, (int)count };
+			MenuWalkOp op = { true, v < 3, false, hoverBank, (int16)bx, (int16)by, idx, line, (int)count };
 			walk.ops.push_back(op);
 			put(r);
 			p = toCr(p) + 1;                          // past the CR
@@ -684,7 +728,7 @@ void walkMenuText(const byte *t, uint32 size, int menu, int hoverLine,
 		}
 		c -= 0x20;
 		if (draw) {
-			MenuWalkOp op = { false, false, hover, (int16)penX, (int16)penY, c, line, (int)count - 1 };
+			MenuWalkOp op = { false, false, hover, hoverBank, (int16)penX, (int16)penY, c, line, (int)count - 1 };
 			walk.ops.push_back(op);
 			penX += (c >= 0 && c < (int)ARRAYSIZE(kFontMaxMeasureWidths)) ? kFontMaxMeasureWidths[c] : 0;
 		}

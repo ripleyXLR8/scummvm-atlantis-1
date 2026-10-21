@@ -583,6 +583,16 @@ private:
 	// SPRMENU.SPR — the menu/toolbar decorative golden overlays.
 	void loadMenuSprites();
 	void blitMenuSprite(Graphics::ManagedSurface &dst, uint idx, int hx, int hy) const;
+	// The menu bank of the `/sprj=` `/sprr=` `/sprc=` records
+	// (AtlantisExeBuild::menuSpriteBanks: SPRCHI1 / SPRCHI2 in the Chinese
+	// builds, none elsewhere) and its blit, from the second bank when
+	// hovered; nothing without a bank.
+	void loadMenuWordSprites();
+	void blitMenuWord(Graphics::ManagedSurface &dst, uint idx, int x, int y, bool hovered) const;
+	// The options menu's toggles as the walk takes them, 0x004960a8 /
+	// 0x004960ac (1 = SUBTITLES on, OMNI 3D MODE 2).
+	int menuSubtitlesFlag() const { return showSubtitles() ? 1 : 0; }
+	int menuOmniFlag() const { return omni3dInvertY() ? 0 : 1; }
 	// Parse a SPRLIST\*MENU.TXT layout file (base name only) into `out`.
 	bool loadMenuLayout(const char *baseName, MenuLayout &out) const;
 	// Render a parsed menu onto `dst` (SPRMENU sprites, then FONTMAX labels /
@@ -959,6 +969,7 @@ private:
 	// loadAtlantisExeTables; empty for the other builds.
 	Common::Array<byte> _loadListChapters, _loadListWidths;
 	Common::Array<SubjSprite> _menuSprites;
+	Common::Array<SubjSprite> _menuWordSprites[2];
 
 	// Animated warp-view cursors (CURSEURS.SPR) + current group/frame state.
 	Common::Array<CursorSpr> _cursorSprites;

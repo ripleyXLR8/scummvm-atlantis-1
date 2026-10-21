@@ -44,6 +44,12 @@ namespace Atlantis {
 //                        carries its real pixel size for blitting.
 //   <X,Y>//A&&B[&&C…]   — a toggle: a text anchor whose value cycles through
 //                        the &&-separated option labels.  Parsed as kToggle.
+//   /sprj= /sprr= /sprc=I,X,Y,W,H — a word of the menu bank (bankWord):
+//                        sprite I of SPRCHI1.SPR (SPRCHI2.SPR hovered) at
+//                        (X, Y), the Chinese CDs' menu lines (no text line
+//                        in their files).  Parsed as kText with no text, so
+//                        a menu finds it by the ordinal of the label it
+//                        replaces (the records are in the same order).
 //   /fin or /FIN       — end of file.  Anything after is ignored.
 //
 // Blank lines and CR characters are tolerated.
@@ -68,6 +74,11 @@ struct MenuItem {
 	int sprIdx;
 	int hx, hy;
 	int w, h;
+	// A `/sprj=` `/sprr=` `/sprc=` record (kText): sprIdx, hx, hy, w, h as
+	// for a sprite, drawn from the menu bank (AtlantisExeBuild::
+	// menuSpriteBanks; FUN_004201e8 with 0x0048609c = 1 in
+	// atlantis-cd-zh-tw-696832) and hit-tested by its record {X, Y, W, H}.
+	bool bankWord;
 
 	// Toggle item fields (kToggle).  `options` holds the label of each
 	// state; `selected` indexes the currently active one.
@@ -76,7 +87,7 @@ struct MenuItem {
 
 	MenuItem()
 	    : kind(kText), centerX(false), anchorX(0), anchorY(0), rawLen(0),
-	      sprIdx(0), hx(0), hy(0), w(0), h(0), selected(0) {}
+	      sprIdx(0), hx(0), hy(0), w(0), h(0), bankWord(false), selected(0) {}
 };
 
 // atlantis.exe FUN_0041fb6c, the menu walk: the text is not parsed ahead of
@@ -94,6 +105,15 @@ struct MenuWalkOp {
 	bool sprite;        // a sprite of SPRMENU.SPR (or of the alternate bank)
 	bool altBank;       // /sprj= /sprr= /sprc=: bank 0x006cd874
 	bool hoverFont;     // glyph in FONTMAX2 (the hovered line)
+	// The hovered-bank flag 0x004860a0 of atlantis-cd-zh-tw-696832's walk
+	// FUN_0041f5a0 (atlantis-pe-2018-695296's): set at each byte while the
+	// line is the hovered one and (line != 0 or menu 0) (@ 0x0041f6c9..
+	// 0x0041f707); the options menu's lines 2 and 4 reset only the glyph
+	// font (@ 0x0041f711..0x0041f72a), so a `/sprc=` label there is drawn
+	// hovered.  A `/sprj=` `/sprr=` `/sprc=` record is blitted from the
+	// second bank 0x006bd878 when it is set (FUN_004201e8 @ 0x004204fa..
+	// 0x00420543).
+	bool hoverBank;
 	int16 x, y;         // pen (glyph) or record position (sprite)
 	int index;          // glyph c - 0x20, or the sprite index
 	int line;           // the walk's line counter at the op
@@ -151,9 +171,24 @@ private:
 // stored records from it and writes them back, `walk.records` receives a
 // copy of the menu's count records.  Null: per-menu records in
 // `walk.records` only, unbounded (kEnhMinorBugFixes, or no menu number).
+// toggleSprites (AtlantisExeBuild::menuToggleSprites): the sprite record's
+// id rules of atlantis-cd-zh-tw-696832 FUN_004201e8, for every record kind:
+//  - id 9 in menu 2 becomes 9 + toggleA (SUBTITLES: 9 off, 10 on) and the
+//    parse pointer steps one byte back (@ 0x00420212..0x0042022b), then on
+//    by the new id's digits (@ 0x00420245..0x00420252): right for 10, one
+//    byte short for 9, so with SUBTITLES 0 the record's x is atoi(",X..")
+//    = 0, y the last digits of X, w Y and h W (OPTMENU `/sprc=9,336,255,
+//    50,32`: x 0, y 36, w 255, h 50; the x / y a record already holds
+//    win, FUN_004201e8 @ 0x004202ff / 0x0042039f; atlantis-re
+//    evidence/golden/ui_menus_zh_tw.txt `toggles`);
+//  - id 12 becomes 13 when toggleB (OMNI 3D) is 1, in any menu (@
+//    0x0042022e..0x00420242).
+// toggleStepFix (kEnhMinorBugFixes): an id 9 left at 9 steps past its digit
+// as written, so the record reads the file's x, y, w, h.
 void walkMenuText(const byte *text, uint32 size, int menu, int hoverLine,
                   int toggleA, int toggleB, MenuWalk &walk, int posItemByteWidth = 22,
-                  MenuRecordTable *table = nullptr);
+                  MenuRecordTable *table = nullptr, bool toggleSprites = false,
+                  bool toggleStepFix = false);
 // atlantis.exe FUN_004210c0: the first record strictly containing the
 // mouse, coordinates read as u16 (a negative x / y is never hit), sprite
 // records included; -1 for none (the original's 0xff).

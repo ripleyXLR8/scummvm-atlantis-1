@@ -648,6 +648,8 @@ Common::Error CryOmni3DEngine_Atlantis::run() {
 	// The executable's tables first: the player-row marker is needed to read
 	// an original players.atl (exe_build.h, exetables.cpp).
 	loadAtlantisExeTables();
+	// The build's menu bank (SPRCHI1 / SPRCHI2 of the Chinese CDs).
+	loadMenuWordSprites();
 
 	// Episode checkpoint names + player profiles (per-episode save backend).
 	loadEpisodeNames();
