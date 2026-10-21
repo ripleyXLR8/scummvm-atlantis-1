@@ -334,7 +334,7 @@ public:
 		copies.clear();
 		disk = (1u << 4) | (1u << 6);
 		conMusicApply(false, list, 7, disk, copies, true);
-		TS_ASSERT_EQUALS(disk, 0u);
+		TS_ASSERT_EQUALS(disk, 1u << 6);
 		disk = (1u << 4) | (1u << 6);
 		conMusicApply(false, list, 7, disk, copies);
 		TS_ASSERT_EQUALS(disk, 1u << 6);

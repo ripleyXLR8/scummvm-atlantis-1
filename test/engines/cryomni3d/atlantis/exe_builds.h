@@ -84,7 +84,7 @@ public:
 	void test_build_by_size() {
 		using namespace CryOmni3D::Atlantis;
 		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714240).name), "atlantis-cd-en-714240");
-		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714752).name), "atlantis-gog-714752");
+		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714752).name), "atlantis-gog-fr-714752");
 		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(1).name), "atlantis-cd-en-714240");
 		TS_ASSERT(atlantisExeBuild(714240).cursorIdRule && atlantisExeBuild(714240).rheaCamera2);
 		TS_ASSERT(!atlantisExeBuild(714240).altGameOverNarration);
@@ -102,6 +102,10 @@ public:
 		TS_ASSERT(b97.ratFrameDeadline && !b97.ratT0023Restart && b97.gameOverVoiceAtEntry);
 		TS_ASSERT_EQUALS(b97.muriaPlacedFrames, 1);
 		TS_ASSERT_EQUALS(b97.fileOffset(0x004861d0), 0x725d0u);
+		// players.atl rows end at the marker only (0x00419194..0x004191b1);
+		// 16 menu records per menu (stride 0x81, FUN_0041ef34 @ 0x0041ef84)
+		TS_ASSERT(!b97.emptyNameEndsPlayerRows);
+		TS_ASSERT_EQUALS(b97.menuRecordsPerMenu, 16);
 		// The reference and GOG keep the 2001 behaviour of all of them.
 		for (uint32 size = 714240; size <= 714752; size += 512) {
 			const AtlantisExeBuild &b = atlantisExeBuild(size);
@@ -112,6 +116,19 @@ public:
 			TS_ASSERT(!b.ratFrameDeadline && b.ratT0023Restart && !b.gameOverVoiceAtEntry);
 			TS_ASSERT_EQUALS(b.muriaPlacedFrames, 2);
 			TS_ASSERT_EQUALS(b.fileOffset(0x004961e0), 0x773e0u);
+			TS_ASSERT(b.emptyNameEndsPlayerRows);
+			TS_ASSERT_EQUALS(b.menuRecordsPerMenu, 20);
+		}
+		// Every build: the empty-name row end only in the 2001 / 1999 code
+		// (the reference, GOG, the patch: a second strcmp against "", as
+		// atlantis-cd-en-714240 @ 0x004192ae); 16 menu records only in
+		// en-688128 and fr-688640 (the only builds with `imul ...,0x81`).
+		for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++) {
+			const AtlantisExeBuild &b = kAtlantisExeBuilds[i];
+			TSM_ASSERT_EQUALS(b.name, b.emptyNameEndsPlayerRows, b.size >= 714240);
+			const Common::String n = b.name;
+			TSM_ASSERT_EQUALS(b.name, b.menuRecordsPerMenu,
+			                  (n == "atlantis-cd-en-688128" || n == "atlantis-cd-fr-688640") ? 16 : 20);
 		}
 		// The French build of August 1997 (experiment 2026-10-18-03,
 		// decision 0019): en-688128's 1997 code but the reference's GDI
@@ -454,7 +471,9 @@ public:
 
 	// Each GOG language's executable: its build is the GOG one, and the
 	// three tables at the GOG addresses equal the reference's tables; the
-	// player-row strings at 0x00496570 (marker, then label).
+	// player-row marker at 0x00496570, then names[0] of the players.atl
+	// image, which the port takes as the label (exe_build.h
+	// playerLabelAfterMarker) because it is the marker without its '#'.
 	void test_gog_tables_equal_reference_tables() {
 		using namespace CryOmni3D::Atlantis;
 		const Common::String gog = AtlantisTest::configValue("gog");
@@ -463,6 +482,7 @@ public:
 		TS_ASSERT(readExe(AtlantisTest::dataDir() + "/atlantis.exe", ref));
 		const AtlantisExeBuild &rb = atlantisExeBuild(ref.size());
 		TS_ASSERT_EQUALS(cstr(ref, fileOff(0x00496570)), "#New Player");
+		TS_ASSERT_EQUALS(cstr(ref, fileOff(0x0049657c)), "New Player");
 		static const char *const kLangs[] = { "en-US", "fr-FR", "de-DE", "es-ES", "it-IT" };
 		for (uint l = 0; l < ARRAYSIZE(kLangs); l++) {
 			Common::Array<byte> g;
@@ -470,14 +490,15 @@ public:
 			if (g.empty())
 				continue;
 			const AtlantisExeBuild &gb = atlantisExeBuild(g.size());
-			TSM_ASSERT_EQUALS(kLangs[l], Common::String(gb.name), "atlantis-gog-714752");
+			TSM_ASSERT_EQUALS(kLangs[l], Common::String(gb.name), "atlantis-gog-fr-714752");
 			TS_ASSERT(!memcmp(&ref[fileOff(rb.inventoryVA)], &g[fileOff(gb.inventoryVA)], 52 * 4));
 			TS_ASSERT(!memcmp(&ref[fileOff(rb.guestVA)], &g[fileOff(gb.guestVA)], 64 * 4));
 			TS_ASSERT(!memcmp(&ref[fileOff(rb.creditWidthsVA)], &g[fileOff(gb.creditWidthsVA)], 256));
 			const Common::String marker = cstr(g, fileOff(0x00496570));
 			TS_ASSERT(marker.hasPrefix("#"));
-			// the label follows the marker's NUL
-			TS_ASSERT(!cstr(g, fileOff(0x00496570) + marker.size() + 1).empty());
+			// names[0] follows the marker's NUL: the marker without '#'
+			// (the row FUN_00420d8c draws skips the '#', @ 0x00420eff)
+			TS_ASSERT_EQUALS(cstr(g, fileOff(0x00496570) + marker.size() + 1), Common::String(marker.c_str() + 1));
 			if (l == 1)
 				TS_ASSERT_EQUALS(marker, "#NOUVEAU JOUEUR");
 		}
@@ -496,7 +517,7 @@ public:
 		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714240, 0x3b8275d6).name), "atlantis-cd-en-714240");
 		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714240, 0).name), "atlantis-cd-en-714240");
 		// GOG's timestamp with GOG's size stays GOG
-		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714752, 0x385a4dc6).name), "atlantis-gog-714752");
+		TS_ASSERT_EQUALS(Common::String(atlantisExeBuild(714752, 0x385a4dc6).name), "atlantis-gog-fr-714752");
 		TS_ASSERT(!p.cursorIdRule && !p.rheaCamera2 && p.altGameOverNarration);
 		TS_ASSERT_EQUALS(p.dgroupVA, g.dgroupVA);
 		TS_ASSERT_EQUALS(p.dgroupRawPtr, g.dgroupRawPtr);
@@ -527,6 +548,8 @@ public:
 		TS_ASSERT_EQUALS(p.musicLoadMinVolume, g.musicLoadMinVolume);
 		TS_ASSERT_EQUALS(p.musicStartSameTrackNoop, g.musicStartSameTrackNoop);
 		TS_ASSERT_EQUALS(p.conCodePage, g.conCodePage);
+		TS_ASSERT_EQUALS(p.emptyNameEndsPlayerRows, g.emptyNameEndsPlayerRows);
+		TS_ASSERT_EQUALS(p.menuRecordsPerMenu, g.menuRecordsPerMenu);
 	}
 
 	// The patch executable and the reference read through the port's

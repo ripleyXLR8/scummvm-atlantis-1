@@ -357,4 +357,54 @@ public:
 		TS_ASSERT_EQUALS(tRows, 85u);
 		TS_ASSERT_EQUALS(bad, 0u);
 	}
+
+	// The LOAD knob is record 4 (/spr=13) of menu 1: FUN_0041cf78 writes its
+	// y (0x7b at entry, mouse y - 10 while dragging) and, with 11 files or
+	// fewer, its x (0xffce); FUN_004207c0 then draws the knob at the stored
+	// x / y.  Port: walkMenuText with walk.records[4] preset as
+	// displaySavePicker writes it.  Expected: the original FUN_0041fb6c
+	// (golden ui_menus.txt keys LOADMENU.TXT.knob.*, atlantis-re
+	// tools/emu/ui_menus_vectors.py golden: MenuEmu.run(keep_table=True)).
+	void test_load_knob_stored_record_vs_original() {
+		using namespace CryOmni3D::Atlantis;
+		if (!AtlantisTest::haveData()) {
+			TS_WARN("ui_saves: no game data configured, skipping");
+			return;
+		}
+		AtlantisTest::Golden golden;
+		TS_ASSERT(AtlantisTest::loadGolden("ui_menus.txt", golden));
+		Common::Array<byte> text;
+		TS_ASSERT(UiSaves::readBigMember("SPRLIST\\LOADMENU.TXT", text));
+		if (text.empty())
+			return;
+		static const struct { const char *key; bool setX; int16 x; bool setY; int16 y; } kCases[] = {
+			{ "LOADMENU.TXT.knob.fresh", false, 0, false, 0 },
+			{ "LOADMENU.TXT.knob.y7b", false, 0, true, 0x7b },
+			{ "LOADMENU.TXT.knob.xffce_y7b", true, -50, true, 0x7b },
+			{ "LOADMENU.TXT.knob.y190", false, 0, true, 190 },
+		};
+		for (uint k = 0; k < ARRAYSIZE(kCases); k++) {
+			MenuWalk walk;
+			for (uint i = 0; i <= 4; i++) {
+				MenuWalkRecord r = { 0, 0, 0, 0 };
+				walk.records.push_back(r);
+			}
+			if (kCases[k].setX)
+				walk.records[4].x = kCases[k].x;
+			if (kCases[k].setY)
+				walk.records[4].y = kCases[k].y;
+			walkMenuText(text.data(), text.size(), 1, -1, 0, 0, walk);
+			Common::String got;
+			for (uint i = 0; i < walk.ops.size(); i++) {
+				const MenuWalkOp &op = walk.ops[i];
+				if (!op.sprite || op.index != 13)
+					continue;
+				if (!got.empty())
+					got += ";";
+				got += Common::String::format("%d,%d", op.x, op.y);
+			}
+			TSM_ASSERT(kCases[k].key, golden.contains(kCases[k].key));
+			TSM_ASSERT_EQUALS(kCases[k].key, got, golden[kCases[k].key]);
+		}
+	}
 };

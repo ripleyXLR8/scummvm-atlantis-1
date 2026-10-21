@@ -21,7 +21,8 @@
 // Port code exercised directly: conMusicApply / conLoadMusikVolumeOk
 // (con_eval.cpp), AtlantisMusicFade::tick (music_fade.h),
 // splitSubtitleBitmap / subtitleLineYBitmap / drawSubtitleBitmapRow
-// (subtitle_layout.cpp), atlantisExeBuild (exe_build.h), fontMinBlits
+// (subtitle_layout.cpp), atlantisExeBuild / loadMusikMinVolume /
+// loadMusikAllOrNothing (exe_build.h), fontMinBlits
 // (menu_layout.cpp), ConScript, conGameOverNarrator, gameOverVoiceName.
 // Real files: `frmay1997` in atlantis_test.cfg (ATLANTIS.EXE and the four
 // May BIGCD*.BIG); the golden video_subtitles_fr688640.txt / .png; skipped
@@ -118,22 +119,30 @@ public:
 		TS_ASSERT_EQUALS(copies.size(), 3u);
 		if (copies.size() == 3)
 			TS_ASSERT(copies[0] == 4 && copies[1] == 6 && copies[2] == 8);
-		// the playing track copied too when it is not first
+		// the playing track's copy is attempted when it is not first but
+		// fails before its read loop (its install copy is held open with
+		// share 0, FUN_004316cc @ 0x00431747; CREATE_ALWAYS @ 0x0041eb3a
+		// fails) [INFERRED]: not queued, still on disk
 		copies.clear();
 		disk = 0;
 		conMusicApply(true, list, 7, disk, copies, b.musicFirstValueRule, b.musicLoadAllOrNothing);
-		TS_ASSERT_EQUALS(copies.size(), 3u);
+		TS_ASSERT_EQUALS(copies.size(), 2u);
+		if (copies.size() == 2)
+			TS_ASSERT(copies[0] == 4 && copies[1] == 8);
+		TS_ASSERT_EQUALS(disk, (1u << 4) | (1u << 6) | (1u << 8));
 		// ... and nothing when it is first
 		copies.clear();
 		disk = 0;
 		conMusicApply(true, list, 5, disk, copies, b.musicFirstValueRule, b.musicLoadAllOrNothing);
 		TS_ASSERT_EQUALS(disk, 0u);
 		TS_ASSERT(copies.empty());
-		// DelMusik keeps en-688128's rule (FUN_0041eee8 deletes the playing
-		// track when it is not first)
+		// DelMusik: FUN_0041eee8 has no playing test, but the playing file
+		// is held open with share 0 (FUN_004316cc), so its DeleteFileA's
+		// outcome is [UNKNOWN]; the port keeps the reference (spared), as
+		// for en-688128
 		disk = (1u << 4) | (1u << 6) | (1u << 8);
 		conMusicApply(false, list, 7, disk, copies, b.musicFirstValueRule, b.musicLoadAllOrNothing);
-		TS_ASSERT_EQUALS(disk, 0u);
+		TS_ASSERT_EQUALS(disk, 1u << 6);
 		// a first index of 0x20 or more: nothing, as in every build
 		Common::Array<uint8> high;
 		high.push_back(0x20);
@@ -184,9 +193,14 @@ public:
 		TS_ASSERT(!conLoadMusikVolumeOk(low.cur, b.musicLoadMinVolume));
 	}
 
-	// Decision 0020 B: with kEnhMinorBugFixes the port copies per track
-	// (music.cpp execMusicList: allOrNothing off, no volume test): the
-	// rule of FUN_0041f1d0, each listed track not on disk and not playing.
+	// Decision 0020 B: the rules music.cpp execMusicList applies, through
+	// the gating helpers it calls (exe_build.h loadMusikMinVolume /
+	// loadMusikAllOrNothing).  Without kEnhMinorBugFixes this build's M1
+	// and M2 (the values of test_music_load_all_or_nothing and
+	// test_music_load_volume_rule); with it the port copies per track: the
+	// rule of FUN_0041f1d0, each listed track not on disk and not playing;
+	// M2's volume test stays (decision 0020 B, Fable pass 2
+	// opus-gap3-builds-1997-en-fr#4).
 	void test_music_minor_bug_fix_rule() {
 		using namespace CryOmni3D::Atlantis;
 		const AtlantisExeBuild &b = UiFrMay1997::may();
@@ -194,14 +208,37 @@ public:
 		list.push_back(4);
 		list.push_back(6);
 		list.push_back(8);
-		Common::Array<uint8> copies;
-		uint32 disk = 1u << 4;
-		conMusicApply(true, list, 9, disk, copies, b.musicFirstValueRule, false);
-		TS_ASSERT_EQUALS(disk, (1u << 4) | (1u << 6));
-		TS_ASSERT_EQUALS(copies.size(), 1u);
-		if (copies.size() == 1)
-			TS_ASSERT_EQUALS(copies[0], 6);
-		TS_ASSERT(conLoadMusikVolumeOk(0, 0));
+		// the original's rules (fixed = false)
+		{
+			const uint8 minVolume = loadMusikMinVolume(b, false);
+			TS_ASSERT_EQUALS(minVolume, 5);
+			TS_ASSERT(!conLoadMusikVolumeOk(0, minVolume));
+			const bool allOrNothing = loadMusikAllOrNothing(b, false);
+			TS_ASSERT(allOrNothing);
+			Common::Array<uint8> copies;
+			uint32 disk = 1u << 4;
+			conMusicApply(true, list, 9, disk, copies, b.musicFirstValueRule, allOrNothing);
+			TS_ASSERT_EQUALS(disk, 1u << 4);
+			TS_ASSERT(copies.empty());
+		}
+		// kEnhMinorBugFixes (fixed = true)
+		{
+			TS_ASSERT_EQUALS(loadMusikMinVolume(b, true), 5);
+			TS_ASSERT(!conLoadMusikVolumeOk(0, loadMusikMinVolume(b, true)));
+			const bool allOrNothing = loadMusikAllOrNothing(b, true);
+			TS_ASSERT(!allOrNothing);
+			Common::Array<uint8> copies;
+			uint32 disk = 1u << 4;
+			conMusicApply(true, list, 9, disk, copies, b.musicFirstValueRule, allOrNothing);
+			TS_ASSERT_EQUALS(disk, (1u << 4) | (1u << 6));
+			TS_ASSERT_EQUALS(copies.size(), 1u);
+			if (copies.size() == 1)
+				TS_ASSERT_EQUALS(copies[0], 6);
+		}
+		// the other builds: no gating either way
+		const AtlantisExeBuild &en = atlantisExeBuild(688128);
+		TS_ASSERT_EQUALS(loadMusikMinVolume(en, false), 0);
+		TS_ASSERT(!loadMusikAllOrNothing(en, false));
 	}
 
 	// A1: the emulated breaker FUN_0042eab4 on every dialog line of the May

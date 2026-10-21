@@ -233,7 +233,8 @@ void CryOmni3DEngine_Atlantis::importOriginalSaves() {
 		Common::InSaveFile *orig = _saveFileMan->openForLoading(kOrigPlayersFile);
 		if (!orig)
 			return;
-		const bool ok = readOriginalPlayersLetters(*orig, letters, _newPlayerMarker);
+		const bool ok = readOriginalPlayersLetters(*orig, letters, _newPlayerMarker,
+		                                           _exeBuild->emptyNameEndsPlayerRows);
 		delete orig;
 		if (!ok)
 			return;
@@ -241,6 +242,11 @@ void CryOmni3DEngine_Atlantis::importOriginalSaves() {
 	loadConVarNames();
 	uint imported = 0;
 	for (uint p = 0; p < kMaxPlayers; p++) {
+		// An empty name is the port's absent player.  A 1997 build counts a
+		// row with an empty name before the marker as a player
+		// (emptyNameEndsPlayerRows false); the port reads the rows after it
+		// but has no such player, so that row's checkpoints are not
+		// imported (atlantis-re formats/ui-players-atl.md, DIFFERS).
 		if (_players[p].empty())
 			continue;
 		for (uint ch = 2; ch < kPlayerSlotStride; ch++) {
@@ -495,7 +501,12 @@ bool CryOmni3DEngine_Atlantis::loadGame(uint saveNum) {
 		_conPlayCounters[i] = (i < savedConCounters.size()) ? savedConCounters[i] : 0;
 
 	// Guests: from the save, or none for saves written before they were kept.
-	_guests = hasGuests ? savedGuests : AtlantisGuests();
+	{
+		// 0x00496144 (AtlantisGuests::talk) is not saved and a load keeps it.
+		const bool talk = _guests.talk;
+		_guests = hasGuests ? savedGuests : AtlantisGuests();
+		_guests.talk = talk;
+	}
 	_guestsShown = hasGuests ? savedGuestsShown : true;
 	_incPersoCount = savedIncPerso;
 
@@ -565,7 +576,9 @@ bool CryOmni3DEngine_Atlantis::loadGame(uint saveNum) {
 	// The player's chapter byte (0x006ce246) and players.atl are not touched
 	// here: FUN_0042de5c reads the byte only; a row click of the load picker
 	// sets it, and only the checkpoint writer FUN_0042d6b8 and the player
-	// screen FUN_0041dea4 write the file.
+	// screen (FUN_0041dea4 @ 0x0041e77c on create, its delete helper
+	// FUN_0041e8a8 @ 0x0041ebb8) write the file (atlantis-re
+	// formats/ui-players-atl.md).
 
 	debugC(1, kDebugScript, "loadGame: restored slot %u (chapter %u, place %u)",
 	      saveNum, chapter, placeId);
@@ -598,7 +611,7 @@ void CryOmni3DEngine_Atlantis::loadPlayers() {
 		in = _saveFileMan->openForLoading(kOrigPlayersFile);
 	if (!in)
 		return;
-	if (!readPlayersFile(*in, _players, _playerChapter, _newPlayerMarker))
+	if (!readPlayersFile(*in, _players, _playerChapter, _newPlayerMarker, _exeBuild->emptyNameEndsPlayerRows))
 		warning("loadPlayers: unrecognised players file");
 	delete in;
 }
@@ -652,16 +665,16 @@ bool CryOmni3DEngine_Atlantis::saveSlotExists(int absSlot) const {
 uint CryOmni3DEngine_Atlantis::playerResumeSave(uint player) const {
 	if (player >= kMaxPlayers)
 		return 0;
+	// FUN_0042de5c opens only the checkpoint of the player's chapter byte
+	// (atlantis-cd-en-714240 @ 0x0042dee7); when it is missing (a new
+	// player's chapter 0 included) it takes the no-file branch, atlan1.wam
+	// chapter 1 (0x0042e249..0x0042e29e), and tries no other file.
 	int ch = _playerChapter[player];
 	if (ch >= 1 && ch < (int)kPlayerSlotStride) {
 		int slot = episodeSaveSlot(player, (uint)ch);
 		if (saveSlotExists(slot))
 			return (uint)slot + 1;
 	}
-	// Fallback: a save written by the pre-episode build sat at local slot 0.
-	int legacy = episodeSaveSlot(player, 0);
-	if (saveSlotExists(legacy))
-		return (uint)legacy + 1;
 	return 0;
 }
 

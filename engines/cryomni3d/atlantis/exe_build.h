@@ -35,7 +35,10 @@ namespace Atlantis {
 // (atlantis-cd-en-714240); another build is described by its differences
 // (atlantis-re binaries/, decisions 0017 to 0024).
 struct AtlantisExeBuild {
-	const char *name;        // atlantis-re binaries/ name
+	// atlantis-re binaries/ name.  The GOG row serves the five GOG language
+	// executables, atlantis-gog-fr-714752 with one string changed
+	// (atlantis-re binaries/README.md; decision 0017).
+	const char *name;
 	uint32 size;             // file size of atlantis.exe
 	// The PE header's TimeDateStamp (IMAGE_FILE_HEADER at e_lfanew + 8):
 	// tells apart builds of the same size (the reference and
@@ -50,8 +53,19 @@ struct AtlantisExeBuild {
 	// names up to "FIN"), and the range its string pointers fall in.
 	uint32 newSoundTableVA, newSoundPtrMin, newSoundPtrMax;
 	// The player-row string: the marker players.atl holds after the last
-	// name; the label shown follows its NUL when playerLabelAfterMarker,
-	// else the marker itself is the label.
+	// name.  The new-player row the original shows is that marker, drawn
+	// by the player list with '#' (and spaces) skipped (atlantis-cd-en-714240
+	// FUN_00420d8c, `cmp byte [eax+0x49657c],0x23` @ 0x00420eff); no code
+	// reads a label.  playerLabelAfterMarker: the port takes the label from
+	// the string after the marker's NUL, which is not a label but the
+	// initial content of names[0] of the players.atl image (0x55 bytes at
+	// 0x0049657c in the reference, 0x00496580 in the 1999 code), overwritten
+	// before any draw by the file (ReadFile @ 0x00419221) or by the marker
+	// (strcpy @ 0x004191f6).  It equals the marker without its '#' in every
+	// build that has it (the reference, atlantis-patch-fr-714240 and the
+	// five GOG executables, GOG's trailing-space padding included), so the
+	// row draws the same.  Without it the marker is the label: the 1997
+	// builds' marker has no '#'.
 	uint32 playerRowVA;
 	bool playerLabelAfterMarker;
 	// FUN_00422fcc @ 0x0042313d: ids 0x219 / 0x21a get the navigate cursor.
@@ -91,7 +105,8 @@ struct AtlantisExeBuild {
 	// 7: a drag above the bar puts the knob back at 0x7b, offset 0, and a
 	// row click tests row + offset < count (FUN_0041cf78; also
 	// atlantis-cd-fr-687104 FUN_0041c708 @ 0x0041ca60..0x0041ca76,
-	// 0x0041cb0b..0x0041cb1b; atlantis-cd-en-688128 has neither).
+	// 0x0041cb0b..0x0041cb1b; atlantis-cd-en-688128, atlantis-cd-fr-688640 and
+	// atlantis-cd-nl-688128 have neither).
 	bool loadPickerClamp;
 	// 8: the hexagon puzzle's entry forces OBJETENMAIN to 402 (FUN_004406fc
 	// @ 0x0044076e), so its pieces are always there.
@@ -178,6 +193,27 @@ struct AtlantisExeBuild {
 	// atlantis-cd-it-687104 (its FUN_0041ecb4 `mov ebx,[ebp-0x28]; shl
 	// ebx,4` @ 0x0041f068, stored @ 0x0041f098; decision 0024 C2).
 	uint8 menuPosItemByteWidth;
+	// players.atl's row count (WinMain): the reference stops at the first
+	// name equal to the marker or empty (atlantis-cd-en-714240 @
+	// 0x0041928f..0x004192cf, a second strcmp against "" 0x004bbc38; also
+	// atlantis-patch-fr-714240 and the GOG executables).  false: at the
+	// marker only, one strcmp (atlantis-cd-en-688128 @
+	// 0x00419194..0x004191b1, atlantis-cd-fr-687104 @ 0x00418da7..0x00418dc4;
+	// the same loop in the other 1997 builds), so a row with an empty name
+	// before the marker is a player row (emulated 2026-10-21, Fable pass 2
+	// r1:saves-exe#0: names ALICE, "", BOB, marker give a count of 4 rows
+	// in en-688128 and fr-687104, 2 in the reference).
+	bool emptyNameEndsPlayerRows;
+	// The menu layout records per menu of the original's single static
+	// table (count byte + N x 8 bytes per menu, 0x006026b0 + menu x
+	// stride, no bound on the count, so extra records spill into the next
+	// menu's block): 16 (stride 0x81) in atlantis-cd-en-688128
+	// (FUN_0041ef34, `imul eax,eax,0x81` @ 0x0041ef84) and
+	// atlantis-cd-fr-688640 (FUN_0041efa4 @ 0x0041eff4), 20 (0xa1) in every
+	// other build.  SONMENU.TXT has 18 records, so in the two 16-record
+	// builds its records 16 and 17 overwrite SUREMENU's count and first
+	// records (Fable pass 2 opus-gap2-per-build-flags#0).
+	uint8 menuRecordsPerMenu;
 
 	uint32 fileOffset(uint32 va) const { return va - dgroupVA + dgroupRawPtr; }
 };
@@ -226,7 +262,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	// ratFrameDeadline, ratT0023Restart, musicFirstValueRule,
 	// muriaPlacedFrames; musicLoadAllOrNothing, musicLoadMinVolume,
 	// musicStartSameTrackNoop, conCodePage; rpLogoVideo, creditsPerRun;
-	// subtitleBreakBackOnly, nameSwedishLetters; menuPosItemByteWidth.
+	// subtitleBreakBackOnly, nameSwedishLetters; menuPosItemByteWidth,
+	// emptyNameEndsPlayerRows, menuRecordsPerMenu.
 	{ "atlantis-cd-en-714240", 714240, 0x3b8275d6, 0x00490000, 0x71200,
 	  0x004967b0, 0x00496884, 0x004966fc, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
@@ -235,8 +272,9 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
 	  false, false,
-	  22 },
-	{ "atlantis-gog-714752", 714752, 0x385a4dc6, 0x00490000, 0x71200,
+	  22,
+	  true, 20 },
+	{ "atlantis-gog-fr-714752", 714752, 0x385a4dc6, 0x00490000, 0x71200,
 	  0x004967b4, 0x00496888, 0x00496700, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
 	  false, false, true,
@@ -244,7 +282,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
 	  false, false,
-	  22 },
+	  22,
+	  true, 20 },
 	{ "atlantis-cd-en-688128", 688128, 0x33886fd1, 0x00480000, 0x6c400,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
@@ -253,7 +292,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kWindows1252,
 	  false, true,
 	  false, false,
-	  22 },
+	  22,
+	  false, 16 },
 	{ "atlantis-cd-fr-687104", 687104, 0x33ef1516, 0x00480000, 0x6ba00,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861cc, 0x004a0000, 0x004b0000,
 	  0x00486546, false,
@@ -262,7 +302,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
 	  false, false,
-	  22 },
+	  22,
+	  false, 20 },
 	{ "atlantis-cd-fr-688640", 688640, 0x33818054, 0x00480000, 0x6c600,
 	  0x0048678c, 0x00486860, 0x004866d9, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
@@ -271,7 +312,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  true, 5, true, Common::kDos850,
 	  false, true,
 	  false, false,
-	  22 },
+	  22,
+	  false, 16 },
 	// atlantis-re experiment 2026-10-18-07 (binaries/atlantis-cd-de-687104.md,
 	// decision 0021 A1): the German CD's executable (1997-08-18), the same
 	// size as atlantis-cd-fr-687104, told apart by its PE timestamp.  Its
@@ -294,7 +336,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
 	  false, false,
-	  22 },
+	  22,
+	  false, 20 },
 	// atlantis-re experiment 2026-10-18-10 (binaries/atlantis-cd-es-687104.md,
 	// decision 0024 A1): the Spanish CD's executable (1997-08-28), the same
 	// size as atlantis-cd-fr-687104 and atlantis-cd-de-687104, told apart by
@@ -319,7 +362,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
 	  false, false,
-	  22 },
+	  22,
+	  false, 20 },
 	// atlantis-re experiment 2026-10-18-10 (binaries/atlantis-cd-it-687104.md,
 	// decision 0024 A1, C2): the Italian CD's executable (1997-07-31, eleven
 	// days before fr-687104), the same size, told apart by its PE timestamp.
@@ -346,7 +390,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
 	  false, false,
-	  16 },
+	  16,
+	  false, 20 },
 	// atlantis-re experiment 2026-10-18-08 (binaries/atlantis-cd-nl-688128.md,
 	// decision 0022 A1): the Dutch CD's executable (1997-06-05), the same
 	// size as atlantis-cd-en-688128, told apart by its PE timestamp.  821 of
@@ -374,7 +419,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kDos850,
 	  true, true,
 	  false, false,
-	  22 },
+	  22,
+	  false, 20 },
 	// atlantis-re experiment 2026-10-18-09 (binaries/atlantis-cd-sv-688128.md,
 	// decision 0023 A1): the Swedish CD's executable (1997-06-11), the same
 	// size as atlantis-cd-en-688128 and atlantis-cd-nl-688128, told apart by
@@ -408,7 +454,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kDos850,
 	  false, true,
 	  true, true,
-	  22 },
+	  22,
+	  false, 20 },
 	// atlantis-re experiment 2026-10-18-06 (binaries/atlantis-patch-fr-714240.md):
 	// the executable of Cryo's patch AT1CDINT.EXE ("1.01", 1999-12-17), the
 	// same size as the reference, told apart by its PE timestamp (GOG's).
@@ -430,7 +477,8 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, 0, false, Common::kWindows1252,
 	  false, false,
 	  false, false,
-	  22 },
+	  22,
+	  true, 20 },
 };
 
 // The build of an executable of `size` bytes and PE timestamp
@@ -462,6 +510,21 @@ inline const AtlantisExeBuild &atlantisExeBuild(uint32 size) {
 // `Annulla` zone 18 px, before the end of the word).
 inline int menuPosItemZoneByteWidth(const AtlantisExeBuild &b, bool minorBugFixes) {
 	return minorBugFixes ? 22 : b.menuPosItemByteWidth;
+}
+
+// LOADMUSIK's rules the port applies (music.cpp execMusicList): the build's
+// M2 volume test (atlantis-cd-fr-688640 FUN_00429184 @
+// 0x00429c52..0x00429c78, musicLoadMinVolume), kept with the minor bug
+// fixes, and M1 all-or-nothing copy (FUN_0041e830, musicLoadAllOrNothing),
+// which the minor bug fixes enhancement replaces with the other builds'
+// per-track copy (decision 0020 B).
+inline uint8 loadMusikMinVolume(const AtlantisExeBuild &b, bool minorBugFixes) {
+	(void)minorBugFixes;
+	return b.musicLoadMinVolume;
+}
+
+inline bool loadMusikAllOrNothing(const AtlantisExeBuild &b, bool minorBugFixes) {
+	return b.musicLoadAllOrNothing && !minorBugFixes;
 }
 
 // The PE TimeDateStamp of an executable: e_lfanew at 0x3c, then

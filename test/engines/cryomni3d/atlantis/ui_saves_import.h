@@ -3,13 +3,14 @@
 //
 // Original layouts: atlantis-re formats/ui-gam.md (checked on 74 real French
 // checkpoints, experiments 2026-10-14-12) and formats/ui-players-atl.md
-// (English 97-byte layout emulated, two real English files decoded; French
-// 95-byte layout [INFERRED] from the single third-party file of
-// evidence/saves: names 0x00..0x54, byte 0x55 = 85 = the chapter of its last
-// checkpoint pa85, letters "abcde" at 0x5a; the French executable has not
-// been read). Port: parseOriginalCheckpoint, readOriginalPlayersLetters
+// (English 97-byte layout emulated, two real English files decoded; 95-byte
+// layout of the 1997 builds [CONFIRMED-STATIC]: readers atlantis-cd-en-688128
+// @ 0x00419116..0x00419166 and atlantis-cd-fr-687104 @ 0x00418d29..0x00418d86
+// ReadFile 0x55 names, 5 chapters, 5 letters (0x5a); experiments
+// 2026-10-18-01 / -03, also de-687104 and sv-688128). Port:
+// parseOriginalCheckpoint, readOriginalPlayersLetters, readPlayersFile
 // (saveload_format.h), called directly on synthetic files laid out as the
-// original writes them.
+// original writes them; the 1997 row count against the emulated readers.
 
 #ifndef TEST_ATLANTIS_UI_SAVES_IMPORT_H
 #define TEST_ATLANTIS_UI_SAVES_IMPORT_H
@@ -65,10 +66,13 @@ public:
 		TS_ASSERT(!parseOriginalCheckpoint(b.data(), 2638, cp));
 	}
 
-	// The English build's players.atl has 6 chapter and 6 letter bytes (97),
-	// the French one 5 and 5 (95, the letters at 0x5a) -- the French split is
-	// [INFERRED] from the size of one third-party file (85 + 5 + 5), not read
-	// from the French executable.
+	// The 2001 reference build's players.atl has 6 chapter and 6 letter
+	// bytes (97, letters at 0x5b); the 1997 builds (English retail, French,
+	// German, Swedish) have 5 and 5 (95, letters at 0x5a), read from their
+	// executables (formats/ui-players-atl.md).  The 1997 markers ("New
+	// Player", "NOUVEAU JOUEUR") are tested in ui_fr1997.h and below; here
+	// the reference marker is used for both sizes since the layout is one
+	// code path.
 	void test_players_letters_both_builds() {
 		using namespace CryOmni3D::Atlantis;
 		for (int fr = 0; fr < 2; fr++) {
@@ -88,6 +92,52 @@ public:
 			TS_ASSERT(readPlayersFile(in2, players, chapters));
 			TS_ASSERT_EQUALS(players[0], Common::String("Alice"));
 			TS_ASSERT(players[1].empty());
+		}
+	}
+
+	// The row count with an empty name before the marker: names ALICE, "",
+	// BOB, then the marker, chapters 3 0 7.  Emulated 2026-10-21 (Fable
+	// pass 2 r1:saves-exe#0): the readers of atlantis-cd-en-688128
+	// (0x004190ce..0x004191c2, marker `New Player`) and atlantis-cd-fr-687104
+	// (0x00418ce1..0x00418dd5, `NOUVEAU JOUEUR`) count 4 rows, three players
+	// and the new-player row (one strcmp, against the marker); the
+	// reference's (0x0041916b..0x004192e0, `#New Player`, 97 bytes) counts 2,
+	// ALICE and the new-player row (a second strcmp against "").  The port
+	// keeps the empty-named row empty, its absent player.
+	void test_players_rows_empty_name() {
+		using namespace CryOmni3D::Atlantis;
+		static const char *const kMarkers[] = { "New Player", "NOUVEAU JOUEUR", "#New Player" };
+		for (uint m = 0; m < ARRAYSIZE(kMarkers); m++) {
+			const bool reference = (m == 2);
+			const uint size = reference ? 97 : 95;
+			Common::Array<byte> b(size, 0);
+			memcpy(b.data(), "ALICE", 5);
+			memcpy(b.data() + 34, "BOB", 3);
+			memcpy(b.data() + 51, kMarkers[m], strlen(kMarkers[m]));
+			b[85] = 3;
+			b[87] = 7;
+			memcpy(b.data() + (reference ? 0x5b : 0x5a), "abcde", 5);
+			Common::MemoryReadStream in(b.data(), size);
+			Common::String players[kSaveMaxPlayers];
+			int chapters[kSaveMaxPlayers];
+			TS_ASSERT(readPlayersFile(in, players, chapters, kMarkers[m], reference));
+			TSM_ASSERT_EQUALS(kMarkers[m], players[0], Common::String("ALICE"));
+			TSM_ASSERT_EQUALS(kMarkers[m], chapters[0], 3);
+			TSM_ASSERT(kMarkers[m], players[1].empty());
+			TSM_ASSERT_EQUALS(kMarkers[m], players[2], Common::String(reference ? "" : "BOB"));
+			TSM_ASSERT_EQUALS(kMarkers[m], chapters[2], reference ? 0 : 7);
+			TSM_ASSERT(kMarkers[m], players[3].empty() && players[4].empty());
+			// the 1997 file read with the reference's rule stops at row 1
+			if (!reference) {
+				Common::MemoryReadStream in2(b.data(), size);
+				TS_ASSERT(readPlayersFile(in2, players, chapters, kMarkers[m], true));
+				TSM_ASSERT(kMarkers[m], players[2].empty());
+			}
+			// the letters do not depend on the row count
+			Common::MemoryReadStream in3(b.data(), size);
+			char letters[kSaveMaxPlayers];
+			TS_ASSERT(readOriginalPlayersLetters(in3, letters, kMarkers[m], reference));
+			TSM_ASSERT_EQUALS(kMarkers[m], letters[2], 'c');
 		}
 	}
 };

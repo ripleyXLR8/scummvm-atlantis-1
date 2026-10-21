@@ -111,10 +111,15 @@ SaveStateList CryOmni3DMetaEngine::listSaves(const char *target) const {
 	Common::SaveFileManager *saveMan = g_system->getSavefileManager();
 
 	// Atlantis partitions save slots into per-player blocks of 100; load the
-	// player-profile names so each save can be labelled with its owner.  For
-	// other games this file is absent and no prefix is applied.
+	// player-profile names so each save can be labelled with its owner.
+	// Atlantis only: the profile file has a fixed name in the shared save
+	// directory.  Saves and profiles are shared by all Atlantis targets
+	// (atlantis.NNNN).
+	const Common::ConfigManager::Domain *dom = (target && ConfMan.hasGameDomain(target))
+	                                           ? ConfMan.getDomain(target) : nullptr;
+	const bool isAtlantis = dom && dom->contains("gameid") && dom->getVal("gameid") == "atlantis";
 	Common::String playerNames[5];
-	{
+	if (isAtlantis) {
 		Common::InSaveFile *pin = saveMan->openForLoading("atlantis-players.dat");
 		if (pin) {
 			if (pin->readUint32BE() == 0x41504c52u /* 'APLR' */
@@ -150,7 +155,7 @@ SaveStateList CryOmni3DMetaEngine::listSaves(const char *target) const {
 				if (in->read(saveName, kSaveDescriptionLen) == kSaveDescriptionLen) {
 					Common::String desc(saveName);
 					int player = (slotNum - 1) / 100;
-					if (player >= 0 && player < 5 && !playerNames[player].empty())
+					if (isAtlantis && player >= 0 && player < 5 && !playerNames[player].empty())
 						desc = playerNames[player] + ": " + desc;
 					saveList.push_back(SaveStateDescriptor(this, slotNum - 1, desc));
 				}

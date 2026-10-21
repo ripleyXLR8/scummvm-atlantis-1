@@ -20,7 +20,9 @@
 // (exe_build.h), readNewSoundNames (exe_newsound.h), fontMinAdvance
 // (menu_layout.cpp), nameEntryChar (menu_layout.cpp), BigFileArchive
 // (bigfile.cpp), splitSubtitleBitmap / drawSubtitleBitmapRow
-// (subtitle_layout.cpp), Video::HNMDecoder.
+// (subtitle_layout.cpp), Video::HNMDecoder; openCurrentDiscStream
+// (engine.cpp) and loadFontMinSprites (sprite_renderer.cpp) on zero-filled
+// engine storage (the engine peek of video_dialog.h).
 // Real files: `nl1997` (ATLANTIS.EXE and the four Dutch BIGCD*.BIG),
 // `en1997` and `data` in atlantis_test.cfg; skipped when absent.
 
@@ -45,6 +47,20 @@
 #include "cryomni3d/atlantis/exe_newsound.h"
 #include "cryomni3d/atlantis/menu_layout.h"
 #include "cryomni3d/atlantis/subtitle_layout.h"
+
+// The engine peek of video_dialog.h: the port's openCurrentDiscStream and
+// loadFontMinSprites are private members of an engine the test runner
+// cannot construct, so they are called on zero-filled storage with only
+// the members they touch constructed.  The first test header that includes
+// engine.h decides its access, hence the same defines here.
+#define private public
+#define protected public
+#include "cryomni3d/atlantis/dialog_view.h"
+#include "cryomni3d/atlantis/engine.h"
+#undef private
+#undef protected
+
+#include <new>
 
 namespace UiNl1997 {
 
@@ -95,6 +111,60 @@ inline Common::String md5Of(Common::SeekableReadStream *s) {
 }
 
 } // End of namespace UiNl1997
+
+namespace UiNl1997Peek {
+
+using namespace CryOmni3D::Atlantis;
+
+typedef CryOmni3DEngine_Atlantis Eng;
+
+// Engine::_activeEnhancements is protected in engines/engine.h, which other
+// test headers include first: reached through a derived class's member
+// pointer.
+struct EnhancementsPeek : ::Engine {
+	typedef int32 ::Engine::*Member;
+	static Member member() { return &EnhancementsPeek::_activeEnhancements; }
+};
+
+// An engine of the Dutch build with the four Dutch archives mounted as
+// the engine mounts them (disc numbers 1..4); never destroyed.
+inline Eng *nlEngine(const Common::String &dir, bool &opened) {
+	void *mem = ::operator new(sizeof(Eng));
+	memset(mem, 0, sizeof(Eng));
+	Eng *e = static_cast<Eng *>(mem);
+	e->_exeBuild = &atlantisExeBuild(688128, UiNl1997::kNlTimestamp);
+	new (&e->_bigFile) BigFileArchive();
+	new (&e->_fontMinSprites) Common::Array<SprSprite>();
+	new (&e->_fontMin2Sprites) Common::Array<SprSprite>();
+	SearchMan.addDirectory("ui_nl_data", Common::FSNode(Common::Path(dir, '/')), UiNl1997::kOwnArchivesFirst);
+	opened = true;
+	for (uint disc = 1; disc <= 4; disc++)
+		opened &= e->_bigFile.open(Common::Path(Common::String::format("BIGCD%u.BIG", disc)), disc);
+	SearchMan.remove("ui_nl_data");
+	return e;
+}
+
+// The glyphs of one disc's copy of an SPR member, read as the port reads
+// any SPR.
+inline Common::Array<SprSprite> discGlyphs(const BigFileArchive &big, const char *member, uint disc) {
+	Common::Array<SprSprite> out;
+	Common::ScopedPtr<Common::SeekableReadStream> s(big.createReadStreamForMemberOnDisc(member, disc));
+	if (s)
+		readSprFile(*s, out);
+	return out;
+}
+
+inline bool sameGlyphs(const Common::Array<SprSprite> &a, const Common::Array<SprSprite> &b) {
+	if (a.size() != b.size())
+		return false;
+	for (uint i = 0; i < a.size(); i++)
+		if (a[i].w != b[i].w || a[i].h != b[i].h || a[i].xoff != b[i].xoff || a[i].yoff != b[i].yoff ||
+		        a[i].pixels != b[i].pixels || a[i].blend != b[i].blend)
+			return false;
+	return true;
+}
+
+} // End of namespace UiNl1997Peek
 
 class UiNl1997TestSuite : public CxxTest::TestSuite {
 public:
@@ -376,6 +446,56 @@ public:
 		TS_ASSERT_EQUALS(md5Of(big.createReadStreamForMemberOnDisc("SPRLIST\\EPI.TXT", 7)),
 		                 md5Of(big.createReadStreamForMemberOnDisc("SPRLIST\\EPI.TXT", 1)));
 		TS_ASSERT(!big.createReadStreamForMemberOnDisc("NOPE\\NOPE.TXT", 2));
+	}
+
+	// F through the port's engine code (decision 0016 R1: the enhancement's
+	// alternative path has its own test): openCurrentDiscStream and
+	// loadFontMinSprites read the current disc's copy, so on disc 2 the
+	// older FONTMIN (the reference's file, md5 72e8d5b7...), FONTMIN2 and
+	// CREDITS.TXT, on discs 1, 3, 4 the newest (FONTMIN adf25e4b...); with
+	// kEnhMinorBugFixes disc 1's copy whatever the disc.
+	void test_current_disc_engine() {
+		using namespace UiNl1997Peek;
+		const Common::String dir = AtlantisTest::configValue("nl1997");
+		if (dir.empty()) { TS_WARN("nl1997 not configured; skipped"); return; }
+		bool opened = false;
+		Eng *e = nlEngine(dir, opened);
+		TS_ASSERT(opened);
+		if (!opened)
+			return;
+		int32 &enhancements = e->*EnhancementsPeek::member();
+		struct Member {
+			FileType type;
+			const char *name, *path;
+		};
+		static const Member kMembers[] = {
+			{ kFileTypeSprite2D, "FONTMIN.SPR", "SPRITE\\2D\\FONTMIN.SPR" },
+			{ kFileTypeSprite2D, "FONTMIN2.SPR", "SPRITE\\2D\\FONTMIN2.SPR" },
+			{ kFileTypeSprite, "CREDITS.TXT", "SPRLIST\\CREDITS.TXT" } };
+		// the two revisions' glyphs differ, so the comparisons below tell
+		// them apart
+		TS_ASSERT(!sameGlyphs(discGlyphs(e->_bigFile, kMembers[0].path, 1),
+		                      discGlyphs(e->_bigFile, kMembers[0].path, 2)));
+		for (int fixed = 0; fixed < 2; fixed++) {
+			enhancements = kEnhGameBreakingBugFixes | (fixed ? kEnhMinorBugFixes : 0);
+			for (uint disc = 1; disc <= 4; disc++) {
+				e->_currentDisc = (uint8)disc;
+				const uint from = fixed ? 1 : disc;
+				const Common::String what = Common::String::format("fixed %d disc %u", fixed, disc);
+				const Common::String fontMin = UiNl1997::md5Of(e->openCurrentDiscStream(kFileTypeSprite2D, "FONTMIN.SPR"));
+				TSM_ASSERT(what.c_str(), fontMin.hasPrefix(from == 2 ? "72e8d5b7" : "adf25e4b"));
+				for (uint m = 0; m < ARRAYSIZE(kMembers); m++) {
+					const Common::String got = UiNl1997::md5Of(e->openCurrentDiscStream(kMembers[m].type, kMembers[m].name));
+					TSM_ASSERT(what.c_str(), !got.empty());
+					TSM_ASSERT_EQUALS(what.c_str(), got,
+					                  UiNl1997::md5Of(e->_bigFile.createReadStreamForMemberOnDisc(kMembers[m].path, from)));
+				}
+				e->loadFontMinSprites();
+				TSM_ASSERT(what.c_str(), !e->_fontMinSprites.empty() && !e->_fontMin2Sprites.empty());
+				TSM_ASSERT(what.c_str(), sameGlyphs(e->_fontMinSprites, discGlyphs(e->_bigFile, kMembers[0].path, from)));
+				TSM_ASSERT(what.c_str(), sameGlyphs(e->_fontMin2Sprites, discGlyphs(e->_bigFile, kMembers[1].path, from)));
+			}
+		}
 	}
 
 	// F with archives mounted without disc numbers (the default: the order

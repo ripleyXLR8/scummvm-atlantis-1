@@ -107,8 +107,9 @@ public:
 
 	// 6: players.atl of 95 bytes (WinMain @ 0x00418d29..0x00418d86: 0x55
 	// name bytes, 5 chapters, 5 letters at 0x5a); the rows stop at the name
-	// equal to the marker `NOUVEAU JOUEUR` (0x00418d8d..0x00418dc4); names
-	// keep their case and bytes up to 0xa7.
+	// equal to the marker `NOUVEAU JOUEUR` (0x00418d8d..0x00418dc4; no test
+	// of an empty name, exe_build.h emptyNameEndsPlayerRows, tested in
+	// ui_saves_import.h); names keep their case and bytes up to 0xa7.
 	void test_players_atl_95_bytes() {
 		using namespace CryOmni3D::Atlantis;
 		Common::Array<byte> f(95, 0);
@@ -121,7 +122,9 @@ public:
 		Common::MemoryReadStream in(f.data(), f.size());
 		Common::String players[kSaveMaxPlayers];
 		int chapters[kSaveMaxPlayers];
-		TS_ASSERT(readPlayersFile(in, players, chapters, "NOUVEAU JOUEUR"));
+		const bool emptyEnds = atlantisExeBuild(687104).emptyNameEndsPlayerRows;
+		TS_ASSERT(!emptyEnds);
+		TS_ASSERT(readPlayersFile(in, players, chapters, "NOUVEAU JOUEUR", emptyEnds));
 		TS_ASSERT_EQUALS(players[0], Common::String("Am\xa3lie"));
 		TS_ASSERT_EQUALS(players[1], Common::String("bob#2"));
 		TS_ASSERT(players[2].empty());
@@ -129,7 +132,7 @@ public:
 		TS_ASSERT_EQUALS(chapters[1], 12);
 		Common::MemoryReadStream in2(f.data(), f.size());
 		char letters[kSaveMaxPlayers];
-		TS_ASSERT(readOriginalPlayersLetters(in2, letters, "NOUVEAU JOUEUR"));
+		TS_ASSERT(readOriginalPlayersLetters(in2, letters, "NOUVEAU JOUEUR", emptyEnds));
 		TS_ASSERT_EQUALS(letters[0], 'a');
 		TS_ASSERT_EQUALS(letters[1], 'b');
 	}

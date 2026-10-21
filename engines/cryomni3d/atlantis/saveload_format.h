@@ -45,11 +45,15 @@ Common::String epiEpisodeName(const byte *text, uint32 size, uint chapter);
 // Read a players file: the port's own ('APLR') or an original players.atl
 // (97 bytes: 5 names of 17 bytes, 6 chapter bytes, 6 letter bytes; rows end
 // at "#New Player" or an empty name, 0x0041916b..0x004192e0; 95 bytes with 5
-// and 5 in the 1997 builds, whose marker is "New Player", exe_build.h).
-// Returns false for neither.
+// and 5 in the 1997 builds, whose marker is "New Player" or its translation,
+// exe_build.h, and whose rows end at the marker only, an empty name being a
+// row: emptyNameEndsRows false, exe_build.h emptyNameEndsPlayerRows).  An
+// empty-named row read that way is left empty here, the port's absent
+// player.  Returns false for neither.
 bool readPlayersFile(Common::SeekableReadStream &in, Common::String players[kSaveMaxPlayers],
                      int chapters[kSaveMaxPlayers],
-                     const Common::String &newPlayerMarker = "#New Player");
+                     const Common::String &newPlayerMarker = "#New Player",
+                     bool emptyNameEndsRows = true);
 // Write the port's own players file.
 void writePlayersFile(Common::WriteStream &out, const Common::String players[kSaveMaxPlayers],
                       const int chapters[kSaveMaxPlayers]);
@@ -61,7 +65,8 @@ bool checkpointWritten(uint chapter);
 
 // The save-file letters of an original players.atl (`p<letter><N>.gam`).
 bool readOriginalPlayersLetters(Common::SeekableReadStream &in, char letters[kSaveMaxPlayers],
-                                const Common::String &newPlayerMarker = "#New Player");
+                                const Common::String &newPlayerMarker = "#New Player",
+                                bool emptyNameEndsRows = true);
 
 // An original checkpoint p<L><N>.gam (atlantis-re formats/ui-gam.md, checked
 // on 74 real files): the fields the port restores.

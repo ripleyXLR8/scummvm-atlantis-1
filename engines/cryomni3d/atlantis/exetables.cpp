@@ -55,13 +55,21 @@ void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 	debugC(1, kDebugScript, "loadAtlantisExeTables: atlantis.exe is %s", _exeBuild->name);
 	const AtlantisExeBuild &build = *_exeBuild;
 
-	// The player-row strings: the marker at 0x00496570, the label right
-	// after its NUL (FUN_0041e8a8 / FUN_00420d8c read them by address).  The
-	// 1997 builds store and draw their single string: `New Player`
-	// (atlantis-cd-en-688128 0x0048654a, FUN_0041e030 / FUN_0041fff4),
-	// `NOUVEAU JOUEUR` (atlantis-cd-fr-687104 0x00486546, FUN_0041d45c /
-	// FUN_0041fd6c; atlantis-cd-fr-688640 0x0048654a, FUN_0041e088 /
-	// FUN_00420064); the names array follows.
+	// The player-row marker at 0x00496570 (`#New Player`), which players.atl
+	// holds after the last name.  The original's new-player row is that
+	// marker drawn by FUN_00420d8c with '#' skipped (@ 0x00420eff); no code
+	// reads a label.  The string after the marker's NUL is the initial
+	// content of names[0], the first 17-byte row of the players.atl image
+	// (0x0049657c; 0x00496580 in the 1999 code), which the original never
+	// shows: WinMain's ReadFile @ 0x00419221 or the marker strcpy @
+	// 0x004191f6 overwrites it first.  The port takes it as the label when
+	// playerLabelAfterMarker: it is the marker without '#' in the reference,
+	// atlantis-patch-fr-714240 and the five GOG executables, so the row
+	// draws the same (exe_build.h).  The 1997 builds store and draw their
+	// single string: `New Player` (atlantis-cd-en-688128 0x0048654a,
+	// FUN_0041e030 / FUN_0041fff4), `NOUVEAU JOUEUR` (atlantis-cd-fr-687104
+	// 0x00486546, FUN_0041d45c / FUN_0041fd6c; atlantis-cd-fr-688640
+	// 0x0048654a, FUN_0041e088 / FUN_00420064); the names array follows.
 	exe.seek(build.fileOffset(build.playerRowVA));
 	auto readCString = [&exe]() {
 		Common::String str;

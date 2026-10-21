@@ -64,7 +64,7 @@ Common::String epiEpisodeName(const byte *text, uint32 size, uint chapter) {
 
 static bool readOriginalPlayersAtl(Common::SeekableReadStream &in, Common::String players[kSaveMaxPlayers],
                                    int chapters[kSaveMaxPlayers], char letters[kSaveMaxPlayers],
-                                   const Common::String &newPlayerMarker) {
+                                   const Common::String &newPlayerMarker, bool emptyNameEndsRows) {
 	byte b[kOrigPlayersSize];
 	const uint32 size = (uint32)(in.size() - in.pos());
 	if (size != kOrigPlayersSize && size != kOrigPlayersSizeFr)
@@ -82,7 +82,12 @@ static bool readOriginalPlayersAtl(Common::SeekableReadStream &in, Common::Strin
 		Common::String name;
 		for (uint j = 0; j < 17 && b[17 * i + j]; j++)
 			name += (char)b[17 * i + j];
-		if (name.empty() || name == newPlayerMarker)
+		// The row count stops at the marker, and in the 2001 code at an
+		// empty name too (atlantis-cd-en-714240 @ 0x0041928f..0x004192cf);
+		// the 1997 builds test the marker only (atlantis-cd-en-688128 @
+		// 0x00419194..0x004191b1, atlantis-cd-fr-687104 @
+		// 0x00418da7..0x00418dc4; exe_build.h emptyNameEndsPlayerRows).
+		if (name == newPlayerMarker || (emptyNameEndsRows && name.empty()))
 			break;
 		players[i] = name;
 		chapters[i] = b[85 + i];
@@ -91,7 +96,8 @@ static bool readOriginalPlayersAtl(Common::SeekableReadStream &in, Common::Strin
 }
 
 bool readPlayersFile(Common::SeekableReadStream &in, Common::String players[kSaveMaxPlayers],
-                     int chapters[kSaveMaxPlayers], const Common::String &newPlayerMarker) {
+                     int chapters[kSaveMaxPlayers], const Common::String &newPlayerMarker,
+                     bool emptyNameEndsRows) {
 	for (uint i = 0; i < kSaveMaxPlayers; i++) {
 		players[i].clear();
 		chapters[i] = 0;
@@ -116,7 +122,7 @@ bool readPlayersFile(Common::SeekableReadStream &in, Common::String players[kSav
 	}
 	if ((in.size() - start != kOrigPlayersSize && in.size() - start != kOrigPlayersSizeFr) || !in.seek(start))
 		return false;
-	return readOriginalPlayersAtl(in, players, chapters, nullptr, newPlayerMarker);
+	return readOriginalPlayersAtl(in, players, chapters, nullptr, newPlayerMarker, emptyNameEndsRows);
 }
 
 void writePlayersFile(Common::WriteStream &out, const Common::String players[kSaveMaxPlayers],
@@ -137,10 +143,10 @@ bool checkpointWritten(uint chapter) {
 }
 
 bool readOriginalPlayersLetters(Common::SeekableReadStream &in, char letters[kSaveMaxPlayers],
-                                const Common::String &newPlayerMarker) {
+                                const Common::String &newPlayerMarker, bool emptyNameEndsRows) {
 	Common::String players[kSaveMaxPlayers];
 	int chapters[kSaveMaxPlayers];
-	return readOriginalPlayersAtl(in, players, chapters, letters, newPlayerMarker);
+	return readOriginalPlayersAtl(in, players, chapters, letters, newPlayerMarker, emptyNameEndsRows);
 }
 
 bool parseOriginalCheckpoint(const byte *b, uint32 size, OrigCheckpoint &cp) {
