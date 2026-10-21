@@ -25,6 +25,8 @@
 #include "common/scummsys.h"
 #include "common/str.h"
 
+#include "cryomni3d/atlantis/apc_stream.h"
+
 namespace CryOmni3D {
 namespace Atlantis {
 
@@ -171,6 +173,26 @@ static const uint kOff1RowBytes = 0x500;
 inline void showScreenBuffer(const byte *screenBuffer, byte *surface, uint pitch) {
 	for (uint y = 0; y < kOff1Rows; y++)
 		memcpy(surface + y * pitch, screenBuffer + y * kOff1RowBytes, kOff1RowBytes);
+}
+
+// The voice step of a dialog line, as playSingleConLine runs it once the
+// .APC has been looked up: apcFile is the file, or null when it is absent
+// (FUN_00418920 returned 0).  The voice is decoded by makeAtlantisAPCStream,
+// which checks the "CRYO_APC" "1.20" header as FUN_00417cb4; an absent file
+// or a bad header returns null with nothing drawn (FUN_00430884 returns 0,
+// 0x0043099d..0x004309b2).  With a stream, an off1 line (screen not null)
+// gets the screen buffer on its screen (showScreenBuffer) here, so before
+// the caller can start the voice with the returned stream (FUN_00430884
+// copies at 0x00430a86..0x00430abb, starts the sample after).  screen null:
+// any other line, nothing drawn.
+inline Audio::AudioStream *loadLineVoice(Common::SeekableReadStream *apcFile,
+		const byte *screenBuffer, byte *screen, uint pitch) {
+	if (!apcFile)
+		return nullptr;
+	Audio::AudioStream *apc = makeAtlantisAPCStream(*apcFile);
+	if (apc && screen && screenBuffer)
+		showScreenBuffer(screenBuffer, screen, pitch);
+	return apc;
 }
 
 } // End of namespace DialogView

@@ -815,7 +815,7 @@ private:
 	bool _dialKeepScreen = false;
 	// The next dialog line is an "off1" one (FUN_00430884): once its voice
 	// has loaded, the screen buffer (_ixVideoBuffers) becomes the screen the
-	// subtitle goes over (DialogView::showScreenBuffer).
+	// subtitle goes over (DialogView::loadLineVoice).
 	bool _dialShowScreenBuffer = false;
 	// The next dialog line is played by FUN_00430258 (an "off" line, or a line
 	// without its .syc), which calls FUN_00425304 once before its wait loop.

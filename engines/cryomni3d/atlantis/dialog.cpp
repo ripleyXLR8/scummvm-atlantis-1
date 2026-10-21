@@ -589,7 +589,7 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 			if (fovChanged)
 				_omni3dMan.setHFov((double)kDialogCamFovDeg[camNum - 2] * M_PI / 180.0);
 			// off1: FUN_00430884 shows the screen buffer before the subtitle,
-			// once the voice has loaded (playSingleConLine).
+			// once the voice has loaded (playSingleConLine, DialogView::loadLineVoice).
 			_dialShowScreenBuffer = off1;
 			playSingleConLine(sec.id, conTrackLetter(lineIdx++), item.line.text, vid,
 			                  spfBase,
@@ -1174,18 +1174,19 @@ void CryOmni3DEngine_Atlantis::playSingleConLine(int sectionId, char track,
 	Common::String apcName = Common::String::format("ATA%04d%c.APC", sectionId, track);
 	Common::SeekableReadStream *apcFile = openBigFileStream(kFileTypeSound, apcName);
 
+	// off1 (FUN_00430884): with the voice loaded, the screen buffer becomes
+	// the screen, before the voice starts and the subtitle is drawn
+	// (DialogView::loadLineVoice); a missing voice or a bad header draws
+	// nothing.  keptScreen is what drawFrame shows under the subtitle.
+	const bool off1Screen = _dialShowScreenBuffer && _dialKeepScreen && _ixVideoBuffers &&
+	                        keptScreen.w == 640 && keptScreen.h == 480 &&
+	                        keptScreen.format.bytesPerPixel == 2;
+	Audio::AudioStream *apc = DialogView::loadLineVoice(apcFile, _ixVideoBuffers,
+	        off1Screen ? (byte *)keptScreen.getPixels() : nullptr, keptScreen.pitch);
+
 	if (!apcFile) {
 		debugC(1, kDebugScript, "playSingleConLine: no %s, line skipped", apcName.c_str());
 	} else {
-		Audio::AudioStream *apc = makeAtlantisAPCStream(*apcFile);
-		// off1 (FUN_00430884): with the voice loaded, the screen buffer
-		// becomes the screen, before the voice starts and the subtitle is
-		// drawn (0x00430a86..0x00430ad6, DialogView::showScreenBuffer); a
-		// missing voice or a bad header draws nothing.  keptScreen is what
-		// drawFrame shows under the subtitle.
-		if (apc && _dialShowScreenBuffer && _dialKeepScreen && _ixVideoBuffers &&
-		        keptScreen.w == 640 && keptScreen.h == 480 && keptScreen.format.bytesPerPixel == 2)
-			DialogView::showScreenBuffer(_ixVideoBuffers, (byte *)keptScreen.getPixels(), keptScreen.pitch);
 		if (apc) {
 			Audio::SoundHandle handle;
 			// With a talking head (FUN_0042ee88's loop) the voice starts at
