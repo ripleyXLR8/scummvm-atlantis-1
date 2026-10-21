@@ -253,7 +253,11 @@ void Atlantis_Toolbar::barIcons(Common::Array<BarIcon> &out) const {
 		icon.record = invIdx;
 		icon.slot = i;
 		icon.zone = _zones[kZoneInventory0 + i].rect;
-		icon.zone.translate(0, _position);
+		// The slot x a pick-up set (setPickupSlot): the zone's centre moves
+		// to pickupSlotX.
+		const int dx = ((int)i == _pickupSlot && !_pickupSlotFix)
+		               ? pickupSlotX(i) - (icon.zone.left + icon.zone.right) / 2 : 0;
+		icon.zone.translate(dx, _position);
 		out.push_back(icon);
 	}
 }
@@ -325,6 +329,9 @@ void Atlantis_Toolbar::slideFrame(const Graphics::Surface *original) {
 // drawn, until 443 (8 frames): the bar's offset from its up position is
 // 49, 42, .. 0.  The guest portraits move up with it.
 bool Atlantis_Toolbar::slideIn(const Graphics::Surface *original) {
+	// slotX[s] = 70 s + 42 for s = 0..8 (0x0042c30f): a pick-up's slot x is
+	// undone.
+	_pickupSlot = -1;
 	for (int slotY = 499 - 7; slotY >= 443 && !_engine->shouldAbort(); slotY -= 7) {
 		_position = (uint)(slotY - 443);
 		_engine->slideGuestPortraits(-7);
@@ -404,6 +411,12 @@ bool Atlantis_Toolbar::displayPickup(const Graphics::Surface *original, Object *
 	updateZones();
 
 	slideIn(original);
+
+	// The new record (the last one; obj is already in the inventory) and its
+	// slot x = index * 0x46 + 0x23 (0x00427ae2), stored after the slide-in.
+	const uint count = recordCount();
+	if (count && (*_inventory)[count - 1] == obj)
+		setPickupSlot(count - 1, _engine->enhancementEnabled(kEnhMinorBugFixes));
 
 	// The loop ends on the press edge of either button (FUN_0041a298 sets
 	// 0x0049611c on a VK_LBUTTON edge, 0x00496120 on a VK_RBUTTON edge); a

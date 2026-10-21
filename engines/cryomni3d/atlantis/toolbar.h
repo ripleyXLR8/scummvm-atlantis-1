@@ -73,6 +73,21 @@ public:
 			return slotY < 0x1fa;
 		return true;
 	}
+	// FUN_004278a0 @ 0x00427acf..0x00427ae2: after its slide-in reset the
+	// slot x table to 70 s + 42 (FUN_0042c2c4 @ 0x0042c30f), a pick-up stores
+	// slotX[count] = count * 0x46 + 0x23 for the new record (count = its
+	// index).  For a record < 9 that slot is drawn 7 px left of the others by
+	// the hold loop (FUN_0042cc98 @ 0x0042ce3c) and the slide-out
+	// (FUN_0042c59c @ 0x0042c6d9), until the next slide-in.  A record >= 9
+	// lands past the 9 slots the loops read.
+	// See atlantis-re: functions/scripts-FUN_004278a0.md, ui-FUN_0042c2c4.md.
+	static int pickupSlotX(uint record) { return (int)record * 0x46 + 0x23; }
+	// The pick-up's slot (setPickupSlot); fixSlotX (kEnhMinorBugFixes) keeps
+	// the slot at 70 s + 42.
+	void setPickupSlot(uint record, bool fixSlotX) {
+		_pickupSlot = record < kInventorySlots ? (int)record : -1;
+		_pickupSlotFix = fixSlotX;
+	}
 	// One icon of the bar frame: record (inventory index), its slot and the
 	// slot zone shifted by the slide position (drawInventoryIcon draws the
 	// icon's hotspot at its centre, iconHotspot).
@@ -143,6 +158,11 @@ private:
 	// the slide-out; and whether its record gate is fixed (kEnhMinorBugFixes).
 	int _slideOutSlotY = 0;
 	bool _slideOutGateFix = false;
+	// The slot whose x the last pick-up set to pickupSlotX (-1: none; reset
+	// by slideIn, as FUN_0042c2c4 resets the table), and whether it is kept
+	// at 70 s + 42 (kEnhMinorBugFixes).
+	int _pickupSlot = -1;
+	bool _pickupSlotFix = false;
 
 	struct MenuSprData {
 		Common::Array<uint16> pixels;

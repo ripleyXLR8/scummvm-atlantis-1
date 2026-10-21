@@ -28,7 +28,8 @@
 // runs drawToolbar (background), barIcons / barBackgroundDrawn and
 // slideOutRecordDrawn over the frames of FUN_0042c59c, the icons drawn as
 // drawInventoryIcon draws them (drawSprSprite at iconHotspot), against
-// atlantis-re/tools/emu/ui_bar_slide_out.py (golden ui_bar_slide_out.txt).
+// atlantis-re/tools/emu/ui_bar_slide_out.py (golden ui_bar_slide_out.txt),
+// pick-ups (setPickupSlot) included.
 // portInvent() calls conInvent (inventory.cpp), the "inventN" branch of
 // execConSetCommand (con_exec.cpp).
 
@@ -693,7 +694,14 @@ public:
 	// state slideOut sets; the icons drawn as drawInventoryIcon draws them
 	// (drawSprSprite at iconHotspot(zone, 0)); the strip placed at row 398
 	// as slideFrame places it.  With the gate fix (kEnhMinorBugFixes) the
-	// frames from 506 show the view only.
+	// frames from 506 show the view only.  The slot tables come from the
+	// original's slide-in FUN_0042c2c4; the pickup_* scenarios run the tail of
+	// FUN_004278a0, whose slotX[count] = count * 0x46 + 0x23 (@ 0x00427ae2)
+	// puts a new record < 9 7 px left on a left exit: the port's
+	// setPickupSlot / pickupSlotX, checked against the golden's slotx and
+	// icons (with kEnhMinorBugFixes the slot stays at 70 s + 42).  With 16
+	// records and first = 9 the background's gate (record first) reads past
+	// the table too and the bar is drawn on the 506 and 513 frames.
 	void test_slide_out_frames_vs_original() {
 		using namespace GraphicsToolbarTest;
 		typedef CryOmni3D::Atlantis::Atlantis_Toolbar TB;
@@ -732,12 +740,13 @@ public:
 			((uint16 *)view.getPixels())[i] = (uint16)((i * 2654435761U) >> 16);
 		const Common::String viewOnly = stripMd5(view);
 
-		uint frames = 0, bad = 0, badFix = 0, slivers = 0;
+		uint frames = 0, bad = 0, badFix = 0, slivers = 0, badSlotX = 0, pickupScenarios = 0;
 		for (int fix = 0; fix < 2; fix++) {
 			NullCb nc;
 			Common::ScopedPtr<TB> tb;
 			Common::ScopedPtr<CryOmni3D::Inventory> invp;
 			uint first = 0;
+			int pickupRec = -1;
 			for (uint li = 0; li < lines.size(); li++) {
 				const Common::String &ln = lines[li];
 				if (ln.hasPrefix("#"))
@@ -763,6 +772,31 @@ public:
 					                  0, TB::kBarHotspotY - TB::kBarSurfaceTop,
 					                  bar[0].pixels.data(), bar[0].blend.data());
 					tb->_inventoryOffset = first;
+					// A pick-up through FUN_004278a0: the port's setPickupSlot
+					// as displayPickup calls it after the slide-in.
+					const Common::String pickup = field(f, "pickup");
+					pickupRec = pickup == "-" ? -1 : atoi(pickup.c_str());
+					if (pickupRec >= 0) {
+						tb->setPickupSlot((uint)pickupRec, fix != 0);
+						if (!fix)
+							pickupScenarios++;
+					}
+					// slotX[0..8] at the slide-out (golden slotx) against the
+					// port's icon centres.
+					if (!fix) {
+						Common::Array<Common::String> sx;
+						splitOn(field(f, "slotx"), ',', sx);
+						TS_ASSERT_EQUALS(sx.size(), 9u);
+						for (uint k = 0; k < sx.size() && k < 9; k++) {
+							const Common::Rect &z = tb->_zones[k].rect;
+							const int portX = ((int)k == tb->_pickupSlot && !tb->_pickupSlotFix)
+							                  ? TB::pickupSlotX(k) : (z.left + z.right) / 2;
+							if (portX != atoi(sx[k].c_str())) {
+								badSlotX++;
+								TS_WARN(Common::String::format("%s: slot %u port x %d", ln.c_str(), k, portX).c_str());
+							}
+						}
+					}
 					continue;
 				}
 				// <scenario> frame= slotY= bg= icons= rows= md5=
@@ -803,9 +837,29 @@ public:
 					if (slotY == 0x1fa && field(f, "rows") != "-")
 						slivers++;
 				} else {
-					// The fix: the same frames before 506, the view alone from 506.
+					// The fix: the same frames before 506, the view alone from
+					// 506; a pick-up's slot at 70 s + 42 (its icon moved, so the
+					// md5 is not the original's on those frames).
+					Common::String want = field(f, "icons");
+					bool moved = false;
+					if (pickupRec >= 0 && pickupRec < 9 && want != "-") {
+						Common::Array<Common::String> ic;
+						splitOn(want, ',', ic);
+						want.clear();
+						for (uint k = 0; k < ic.size(); k++) {
+							Common::Array<Common::String> p;
+							splitOn(ic[k], ':', p);
+							if (p.size() == 5 && atoi(p[1].c_str()) == pickupRec) {
+								p[3] = Common::String::format("%d", pickupRec * 70 + 42);
+								moved = true;
+							}
+							if (k)
+								want += ",";
+							want += p[0] + ":" + p[1] + ":" + p[2] + ":" + p[3] + ":" + p[4];
+						}
+					}
 					const bool ok = slotY < 0x1fa
-					                ? (bgGot == field(f, "bg") && got == field(f, "icons") && md5 == field(f, "md5"))
+					                ? (bgGot == field(f, "bg") && got == want && (moved || md5 == field(f, "md5")))
 					                : (bgGot == "0" && got == "-" && md5 == viewOnly);
 					if (!ok) {
 						badFix++;
@@ -816,8 +870,10 @@ public:
 			}
 		}
 		view.free();
-		TS_ASSERT_EQUALS(frames, 77u);
-		TS_ASSERT_EQUALS(slivers, 6u);
+		TS_ASSERT_EQUALS(frames, 165u);
+		TS_ASSERT_EQUALS(slivers, 9u);
+		TS_ASSERT_EQUALS(pickupScenarios, 6u);
+		TS_ASSERT_EQUALS(badSlotX, 0u);
 		TS_ASSERT_EQUALS(bad, 0u);
 		TS_ASSERT_EQUALS(badFix, 0u);
 	}
