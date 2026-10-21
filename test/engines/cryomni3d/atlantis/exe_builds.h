@@ -121,11 +121,13 @@ public:
 		}
 		// Every build: the empty-name row end only in the 2001 / 1999 code
 		// (the reference, GOG, the patch: a second strcmp against "", as
-		// atlantis-cd-en-714240 @ 0x004192ae); 16 menu records only in
+		// atlantis-cd-en-714240 @ 0x004192ae) and the 1998 one of the Chinese
+		// CDs (atlantis-cd-zh-tw-696832 @ 0x004192af); 16 menu records only in
 		// en-688128 and fr-688640 (the only builds with `imul ...,0x81`).
 		for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++) {
 			const AtlantisExeBuild &b = kAtlantisExeBuilds[i];
-			TSM_ASSERT_EQUALS(b.name, b.emptyNameEndsPlayerRows, b.size >= 714240);
+			TSM_ASSERT_EQUALS(b.name, b.emptyNameEndsPlayerRows,
+			                  b.size >= 714240 || b.size == 696832 || b.size == 692736);
 			const Common::String n = b.name;
 			TSM_ASSERT_EQUALS(b.name, b.menuRecordsPerMenu,
 			                  (n == "atlantis-cd-en-688128" || n == "atlantis-cd-fr-688640") ? 16 : 20);
@@ -149,7 +151,8 @@ public:
 		TS_ASSERT_EQUALS(fr.conCodePage, Common::kWindows1252);
 		// No build but the French one of May 1997 has its music rules; it,
 		// the Dutch build (decision 0022 D) and the Swedish one (decision
-		// 0023 E) have DOS code page texts.
+		// 0023 E) have DOS code page texts, the Chinese ones Big5 and GBK
+		// (decision 0025 A1).
 		for (uint i = 0; i < ARRAYSIZE(kAtlantisExeBuilds); i++) {
 			const AtlantisExeBuild &b = kAtlantisExeBuilds[i];
 			if (b.size == 688640)
@@ -157,7 +160,10 @@ public:
 			TSM_ASSERT(b.name, !b.musicLoadAllOrNothing && b.musicLoadMinVolume == 0 && !b.musicStartSameTrackNoop);
 			TSM_ASSERT_EQUALS(b.name, b.conCodePage,
 			                  (!strcmp(b.name, "atlantis-cd-nl-688128") || !strcmp(b.name, "atlantis-cd-sv-688128")) ?
-			                  Common::kDos850 : Common::kWindows1252);
+			                  Common::kDos850 :
+			                  !strcmp(b.name, "atlantis-cd-zh-tw-696832") ? Common::kWindows950 :
+			                  !strcmp(b.name, "atlantis-cd-zh-cn-692736") ? Common::kWindows936 :
+			                  Common::kWindows1252);
 		}
 	}
 

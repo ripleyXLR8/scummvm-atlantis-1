@@ -947,6 +947,11 @@ private:
 	Common::Array<SubjSprite> _creditBlanSprites;
 	Common::Array<SubjSprite> _creditBleuSprites;
 	byte _creditCharWidths[256];   // populated by loadAtlantisExeTables
+	// AtlantisExeBuild::loadList kLoadListSprites: the chapter of each LOAD
+	// row and the width of its title frame (atlantis-cd-zh-tw-696832
+	// 0x00486619, 0x00486663, 74 bytes each), read by
+	// loadAtlantisExeTables; empty for the other builds.
+	Common::Array<byte> _loadListChapters, _loadListWidths;
 	Common::Array<SubjSprite> _menuSprites;
 
 	// Animated warp-view cursors (CURSEURS.SPR) + current group/frame state.

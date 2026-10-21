@@ -23,10 +23,8 @@ public:
 	// The archives of `dir` (the reference's, `data`, by default).
 	explicit Big(const Common::String &dir = AtlantisTest::dataDir()) : _dir(dir) {
 		for (int cd = 1; cd <= 4; cd++) {
-			Common::FSNode node(Common::Path(_dir, '/')
-			                    .appendComponent(Common::String::format("BIGCD%d.BIG", cd)));
 			Common::File f;
-			if (!f.open(node))
+			if (!f.open(archive(cd)))
 				continue;
 			f.seek(16);
 			uint32 n = f.readUint32LE();
@@ -70,10 +68,8 @@ public:
 		if (!_entries.contains(name))
 			return nullptr;
 		const BigEntry &e = _entries[name];
-		Common::FSNode node(Common::Path(_dir, '/')
-		                    .appendComponent(Common::String::format("BIGCD%d.BIG", e.cd)));
 		Common::File f;
-		if (!f.open(node))
+		if (!f.open(archive(e.cd)))
 			return nullptr;
 		f.seek(e.offset);
 		byte *buf = new byte[e.size];
@@ -83,6 +79,19 @@ public:
 	}
 
 private:
+	// BIGCD<cd>.BIG in any case: the Chinese discs name some of them in
+	// lower case (`bigcd2.big`; all four on the Simplified Chinese discs).
+	Common::FSNode archive(int cd) const {
+		const Common::String name = Common::String::format("BIGCD%d.BIG", cd);
+		Common::FSNode dir(Common::Path(_dir, '/'));
+		Common::FSList list;
+		if (dir.getChildren(list, Common::FSNode::kListFilesOnly))
+			for (uint i = 0; i < list.size(); i++)
+				if (list[i].getName().equalsIgnoreCase(name))
+					return list[i];
+		return dir.getChild(name);
+	}
+
 	Common::String _dir;
 	Common::HashMap<Common::String, BigEntry> _entries;
 	Common::Array<Common::String> _names;

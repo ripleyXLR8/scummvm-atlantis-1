@@ -29,11 +29,89 @@
 namespace CryOmni3D {
 namespace Atlantis {
 
+// The GDI subtitle breaker's cut marks (AtlantisExeBuild::cjkBreaker).
+enum CjkBreaker {
+	// The reference's breaker (100-byte window cut at a space,
+	// atlantis-cd-en-714240 FUN_0042ffe8), or a 1997 build's own
+	// (bitmapSubtitles, subtitleBreakBackOnly).
+	kCjkBreakerNone = 0,
+	// atlantis-cd-zh-tw-696832 FUN_0042f424: a 75-byte window; backwards
+	// from its end, a row ends after the Big5 pair `A1 41` `，`, `A1 43`
+	// `。`, `A1 46` `；`, `A1 48` `？`, `A1 49` `！`, `A1 4B` `…` or at a CR
+	// (@ 0x0042f510..0x0042f566), the next row starting right after it
+	// (@ 0x0042f5ad..0x0042f615); no lead-byte tracking, no stop at the
+	// window start.
+	kCjkBreakerBig5,
+	// atlantis-cd-zh-cn-692736 FUN_0042f424: the same window; after the
+	// GB2312 pair `A3 AC` `，`, `A1 A3` `。`, `A3 BF` `？`, `A3 A1` `！` or a
+	// CR, or before `A1 A1` (the ideographic space), the next row then
+	// starting one byte past its lead byte (@ 0x0042f510..0x0042f568,
+	// 0x0042f599..0x0042f5ef).
+	kCjkBreakerGb2312
+};
+
+// What the LOAD list shows for its rows (AtlantisExeBuild::loadList).
+enum LoadListMode {
+	// Each row its checkpoint's SPRLIST\EPI.TXT line in FONTMIN, the chapter
+	// from its file name (atlantis-cd-en-714240 FUN_0041cf78,
+	// 0x0041d3a1..0x0041d431; epiEpisodeName).
+	kLoadListEpiText = 0,
+	// Row i drawn as frame i of banks[0] (banks[1] when hovered), whatever
+	// the checkpoint; a pick sets the chapter to the byte i of the chapter
+	// table and draws frame i of banks[1] centred by the byte i of the width
+	// table (atlantis-cd-zh-tw-696832 FUN_0041ce00, FUN_004205a4,
+	// FUN_004208bc).
+	kLoadListSprites
+};
+
+// AtlantisExeBuild::loadList.
+struct AtlantisLoadList {
+	LoadListMode mode;
+	// kLoadListSprites: the two banks of SPRITE\2D, normal and hovered
+	// (atlantis-cd-zh-tw-696832 FUN_0041ce00: `epichi1.spr` 0x0048656e into
+	// 0x006bd86c @ 0x0041cf19..0x0041cf32, `epichi2.spr` 0x0048657a into
+	// 0x006bd870 @ 0x0041cf95..0x0041cfae; rows FUN_004205a4 @
+	// 0x0042060b..0x00420691 at (0x37, 0x6e + 22 x row)).
+	const char *banks[2];
+	// The chapter of each row: `mov al,[eax+0x00486619]` @ 0x0041d432 /
+	// 0x0041d442 stores it as the player's chapter (0x006be142) and the
+	// chapter to load (0x006bd7dc), over the one parsed from the file name.
+	uint32 chaptersVA;
+	// The width of each row's title frame: x = (0x280 - width) / 2 @
+	// 0x0041d3d6..0x0041d3ee, drawn at y 0x3c by FUN_004208bc @ 0x00420a22.
+	uint32 widthsVA;
+	// The entries of both tables (the frames of the banks): the chapter
+	// table's 74 bytes run up to the width table (0x00486619 + 74 =
+	// 0x00486663).
+	uint8 rows;
+};
+
+// AtlantisExeBuild::cinemaCaptions: sprites drawn over one CINEMA video.
+// atlantis-cd-zh-tw-696832: the CON `CINEMA=` command (FUN_00429958) resets
+// the frame 0x004865a0 and stores the value in 0x004865a1 (@ 0x00429fbe,
+// 0x00429fc8); for 20 (`cmp byte [0x4865a1],0x14` @ 0x00429fcd) it loads
+// `sprite\2d\` + `subchine.spr` (0x00486586) into 0x006bd868 (@
+// 0x00429fe9..0x0042a011), freed after the video (@ 0x0042a224..0x0042a235).
+// While that video plays the frame presenter FUN_0041afa0 (@
+// 0x0041b105..0x0041b2bc), with t the 200 Hz ticks since 0x004865a4: when
+// after < t < before (`cmp eax,0x4b0; jbe` @ 0x0041b11d, `cmp eax,0x4970;
+// jb` @ 0x0041b12f) draws the frame at (x, y) (0xa, 0x1ae pushed @
+// 0x0041b144..0x0041b14f), then steps it from k to k + 1 when t > steps[k]
+// (0x898 @ 0x0041b16f .. 0x4010 @ 0x0041b2aa, each tested against the
+// frame k it follows).
+struct AtlantisCinemaCaptions {
+	uint8 cinema;            // the CINEMA value; 0: no captions
+	const char *bank;        // SPRITE\2D bank
+	int16 x, y;
+	uint16 after, before;    // ticks
+	uint16 steps[10];        // ticks
+};
+
 // What the port needs to know about one build of atlantis.exe: where the
 // tables it reads sit, and the code differences between builds that change
 // behaviour.  Behaviour is established on the reference build
 // (atlantis-cd-en-714240); another build is described by its differences
-// (atlantis-re binaries/, decisions 0017 to 0024).
+// (atlantis-re binaries/, decisions 0017 to 0025).
 struct AtlantisExeBuild {
 	// atlantis-re binaries/ name.  The GOG row serves the five GOG language
 	// executables, atlantis-gog-fr-714752 with one string changed
@@ -216,6 +294,52 @@ struct AtlantisExeBuild {
 	// MenuRecordTable (menu_layout.h, menuRecordTableRecords below).
 	uint8 menuRecordsPerMenu;
 
+	// The Chinese CDs' differences (decision 0025 A1; atlantis-re
+	// binaries/atlantis-cd-zh-tw-696832.md Z1..Z14, atlantis-cd-zh-cn-692736.md
+	// items 1, 2).  Every other build holds the behaviour the port has for
+	// it: no CJK breaker, 14-px GDI rows, FONTMAX menus, EPI.TXT LOAD rows,
+	// no captions, SUBTITLES from the configuration, an 85-byte names block.
+	// The GDI subtitle breaker (CjkBreaker).
+	CjkBreaker cjkBreaker;
+	// The GDI subtitle drawer's row step: row i of n at y = 0x1ce - (n - i
+	// + 1) x step; 14 in the reference (FUN_00430178, subtitleLineY), 18 in
+	// atlantis-cd-zh-tw-696832 (FUN_0042f798 `imul eax,eax,0x12` @
+	// 0x0042f7f8, 0x0042f828) and atlantis-cd-zh-cn-692736 (FUN_0042f774 @
+	// 0x0042f7d4, 0x0042f804).  The bitmapSubtitles builds draw FONTS.BIN
+	// rows 10 px apart instead (kSubtitleBitmapRowStep); 14 here, unused.
+	uint8 subtitleRowStep;
+	// The banks of SPRITE\2D the menus' `/sprj=` `/sprr=` `/sprc=` records are
+	// drawn from, normal and hovered: atlantis-cd-zh-tw-696832 FUN_0042676c
+	// loads `sprchi1.spr` (0x00486556) into 0x006bd874 and `sprchi2.spr`
+	// (0x00486562) into 0x006bd878 (@ 0x004267a2..0x00426874) instead of
+	// FONTMAX / FONTMAX2 (0x006bd858 / 0x006bd854, then never loaded).
+	// nullptr: no bank (the reference's 0x006cd874 is never loaded; the
+	// FONTMAX text menus).
+	const char *menuSpriteBanks[2];
+	// The options menu's toggles drawn as sprites of menuSpriteBanks: the
+	// record parser atlantis-cd-zh-tw-696832 FUN_004201e8 turns id 9 into 9 +
+	// SUBTITLES (0x004860a8) in menu 2 (@ 0x00420212..0x00420225: 9 off, 10
+	// on) and id 12 into 13 when the OMNI 3D flag 0x004860ac is 1 (@
+	// 0x0042022e..0x00420242, in any menu).
+	bool menuToggleSprites;
+	// The LOAD list's rows (AtlantisLoadList).
+	AtlantisLoadList loadList;
+	// Captions over a CINEMA video (AtlantisCinemaCaptions).
+	AtlantisCinemaCaptions cinemaCaptions;
+	// SUBTITLES (0x004860a8) set to 1 at every start-up:
+	// atlantis-cd-zh-tw-696832 and atlantis-cd-zh-cn-692736 WinMain `mov
+	// dword [0x4860a8],1` @ 0x0041971f; the reference and the others start
+	// at the file's 0 (the port: the configuration's `subtitles`).
+	bool subtitlesOnAtStart;
+	// The players.atl names block WinMain reads first: 0x55 = 85 bytes in
+	// every other build (5 rows of 17; the file is 97 bytes in the 1999 /
+	// 2001 code, 95 in the 1997 builds), 0x66 = 102 in the Chinese builds
+	// (`push 0x66` @ 0x0041921a into 0x004865b3, then 6 chapters into
+	// 0x006be142 @ 0x00419237 and 6 letters into 0x006be148 @ 0x00419254: a
+	// 114-byte file; writers atlantis-cd-zh-tw-696832 FUN_0041dd14 @
+	// 0x0041e574, FUN_0041e65c @ 0x0041e9b0, FUN_0042cb1c @ 0x0042d147).
+	uint8 playersNamesBlock;
+
 	uint32 fileOffset(uint32 va) const { return va - dgroupVA + dgroupRawPtr; }
 };
 
@@ -264,7 +388,9 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	// muriaPlacedFrames; musicLoadAllOrNothing, musicLoadMinVolume,
 	// musicStartSameTrackNoop, conCodePage; rpLogoVideo, creditsPerRun;
 	// subtitleBreakBackOnly, nameSwedishLetters; menuPosItemByteWidth,
-	// emptyNameEndsPlayerRows, menuRecordsPerMenu.
+	// emptyNameEndsPlayerRows, menuRecordsPerMenu; cjkBreaker,
+	// subtitleRowStep, menuSpriteBanks, menuToggleSprites; loadList;
+	// cinemaCaptions; subtitlesOnAtStart, playersNamesBlock.
 	{ "atlantis-cd-en-714240", 714240, 0x3b8275d6, 0x00490000, 0x71200,
 	  0x004967b0, 0x00496884, 0x004966fc, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
@@ -274,7 +400,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false,
 	  false, false,
 	  22,
-	  true, 20 },
+	  true, 20,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	{ "atlantis-gog-fr-714752", 714752, 0x385a4dc6, 0x00490000, 0x71200,
 	  0x004967b4, 0x00496888, 0x00496700, 0x004961e0, 0x004b0000, 0x004d0000,
 	  0x00496570, true,
@@ -284,7 +414,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false,
 	  false, false,
 	  22,
-	  true, 20 },
+	  true, 20,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	{ "atlantis-cd-en-688128", 688128, 0x33886fd1, 0x00480000, 0x6c400,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
@@ -294,7 +428,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, true,
 	  false, false,
 	  22,
-	  false, 16 },
+	  false, 16,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	{ "atlantis-cd-fr-687104", 687104, 0x33ef1516, 0x00480000, 0x6ba00,
 	  0x00486788, 0x0048685c, 0x004866d5, 0x004861cc, 0x004a0000, 0x004b0000,
 	  0x00486546, false,
@@ -304,7 +442,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false,
 	  false, false,
 	  22,
-	  false, 20 },
+	  false, 20,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	{ "atlantis-cd-fr-688640", 688640, 0x33818054, 0x00480000, 0x6c600,
 	  0x0048678c, 0x00486860, 0x004866d9, 0x004861d0, 0x004a0000, 0x004b0000,
 	  0x0048654a, false,
@@ -314,7 +456,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, true,
 	  false, false,
 	  22,
-	  false, 16 },
+	  false, 16,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	// atlantis-re experiment 2026-10-18-07 (binaries/atlantis-cd-de-687104.md,
 	// decision 0021 A1): the German CD's executable (1997-08-18), the same
 	// size as atlantis-cd-fr-687104, told apart by its PE timestamp.  Its
@@ -338,7 +484,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false,
 	  false, false,
 	  22,
-	  false, 20 },
+	  false, 20,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	// atlantis-re experiment 2026-10-18-10 (binaries/atlantis-cd-es-687104.md,
 	// decision 0024 A1): the Spanish CD's executable (1997-08-28), the same
 	// size as atlantis-cd-fr-687104 and atlantis-cd-de-687104, told apart by
@@ -364,7 +514,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false,
 	  false, false,
 	  22,
-	  false, 20 },
+	  false, 20,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	// atlantis-re experiment 2026-10-18-10 (binaries/atlantis-cd-it-687104.md,
 	// decision 0024 A1, C2): the Italian CD's executable (1997-07-31, eleven
 	// days before fr-687104), the same size, told apart by its PE timestamp.
@@ -392,7 +546,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false,
 	  false, false,
 	  16,
-	  false, 20 },
+	  false, 20,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	// atlantis-re experiment 2026-10-18-08 (binaries/atlantis-cd-nl-688128.md,
 	// decision 0022 A1): the Dutch CD's executable (1997-06-05), the same
 	// size as atlantis-cd-en-688128, told apart by its PE timestamp.  821 of
@@ -421,7 +579,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  true, true,
 	  false, false,
 	  22,
-	  false, 20 },
+	  false, 20,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	// atlantis-re experiment 2026-10-18-09 (binaries/atlantis-cd-sv-688128.md,
 	// decision 0023 A1): the Swedish CD's executable (1997-06-11), the same
 	// size as atlantis-cd-en-688128 and atlantis-cd-nl-688128, told apart by
@@ -456,7 +618,11 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, true,
 	  true, true,
 	  22,
-	  false, 20 },
+	  false, 20,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
 	// atlantis-re experiment 2026-10-18-06 (binaries/atlantis-patch-fr-714240.md):
 	// the executable of Cryo's patch AT1CDINT.EXE ("1.01", 1999-12-17), the
 	// same size as the reference, told apart by its PE timestamp (GOG's).
@@ -479,7 +645,78 @@ static const AtlantisExeBuild kAtlantisExeBuilds[] = {
 	  false, false,
 	  false, false,
 	  22,
-	  true, 20 },
+	  true, 20,
+	  kCjkBreakerNone, 14, { nullptr, nullptr }, false,
+	  { kLoadListEpiText, { nullptr, nullptr }, 0, 0, 0 },
+	  { 0, nullptr, 0, 0, 0, 0, { 0 } },
+	  false, 85 },
+	// atlantis-re experiment 2026-10-19-01 (binaries/atlantis-cd-zh-tw-696832.md,
+	// decision 0025 A1): the Traditional Chinese CD's executable
+	// (1998-07-17).  Its parent is atlantis-pe-2018-695296 (the "Perfect
+	// Edition" executable, not supported), fr-687104's code line moved
+	// toward the reference, plus fourteen changes of its own (Z1..Z14).
+	// Hence fr-687104's flags (no cursor 0x219 / 0x21a rule in FUN_00422990,
+	// no forced Rhea camera in FUN_00427cc0, the alternative game-over
+	// narrations with the voice after the image in FUN_00425e80, no
+	// OBJETENMAIN forced by the hexagon, ogre 3 x 200, rat pacing 5 ticks
+	// after each pass in FUN_00436938, the music copy rules) but pe-2018's:
+	// the three-click SUBTITLES (FUN_0041d5c0 @ 0x0041d658..0x0041d67a), the
+	// LOAD knob at 0x7b (FUN_0041ce00 `mov word [0x602774],0x7b` @
+	// 0x0041d17a) with the clamp, the rat T0023 search restarted (FUN_00435b8c
+	// `mov word [0x762b74],0` @ 0x00435bc3), the Muria hook after two frames;
+	// the '#' rule of the player list (FUN_004206e8 `cmp byte
+	// [eax+0x4865b3],0x23` @ 0x004207da, 0x0042085b), here with a marker
+	// without '#' (`New Player` 0x004865a8, one string, marker = label), so
+	// the row is drawn as stored; names 0x20..0xa7 as typed (FUN_0041dd14 @
+	// 0x0041e0fd); rows ending at an empty name too (WinMain strcmp against
+	// "" 0x004abd18 @ 0x004192af..0x004192cc); 20 menu records (`imul
+	// eax,eax,0xa1` in FUN_0041f5a0), 22 px per positioned byte (@
+	// 0x0041f968); CREDITS.TXT loaded once at start-up (FUN_0042676c @
+	// 0x0042697f).  Every table at its address holds the reference's bytes
+	// (inventory 0x0048688c, guests 0x00486960, the reference's 256 credits
+	// widths 0x004867d8, the newsound table 0x004861dc with pointers in
+	// 0x004ab49c..0x004abcb0).  CON texts Big5 (code page 950, decision 0025
+	// A1); the Chinese fields below.
+	{ "atlantis-cd-zh-tw-696832", 696832, 0x35af1f09, 0x00480000, 0x6dc00,
+	  0x0048688c, 0x00486960, 0x004867d8, 0x004861dc, 0x004a0000, 0x004b0000,
+	  0x004865a8, false,
+	  false, false, true,
+	  false, true, false, false, false, true, true, false, 3, 200, false, true, false, 2,
+	  false, 0, false, Common::kWindows950,
+	  false, false,
+	  false, false,
+	  22,
+	  true, 20,
+	  kCjkBreakerBig5, 18, { "SPRCHI1.SPR", "SPRCHI2.SPR" }, true,
+	  { kLoadListSprites, { "EPICHI1.SPR", "EPICHI2.SPR" }, 0x00486619, 0x00486663, 74 },
+	  { 20, "SUBCHINE.SPR", 10, 430, 1200, 18800,
+	    { 2200, 4400, 5000, 7200, 7800, 9400, 10600, 12600, 14800, 16400 } },
+	  true, 102 },
+	// atlantis-re experiment 2026-10-19-01 (binaries/atlantis-cd-zh-cn-692736.md,
+	// decision 0025 A1): the Simplified Chinese CD's executable
+	// (1999-03-18), atlantis-cd-zh-tw-696832's program with two functions
+	// changed: the subtitle breaker FUN_0042f424 (GB2312 marks, item 1) and
+	// the hens' weighing FUN_004412ec (a developer's TGA capture removed,
+	// item 2, not modelled).  DGROUP equals zh-tw's at the same addresses but
+	// the four `F:\oeuf` strings, 0xe00 bytes lower in the file
+	// (evidence/compare/zh_cn_692736_vs_zh_tw_696832_dgroup.txt); the
+	// functions after the breaker 0x24 bytes lower (the drawer FUN_0042f774).
+	// CON texts GB2312 with GBK pairs (code page 936).
+	{ "atlantis-cd-zh-cn-692736", 692736, 0x36f11f20, 0x00480000, 0x6ce00,
+	  0x0048688c, 0x00486960, 0x004867d8, 0x004861dc, 0x004a0000, 0x004b0000,
+	  0x004865a8, false,
+	  false, false, true,
+	  false, true, false, false, false, true, true, false, 3, 200, false, true, false, 2,
+	  false, 0, false, Common::kWindows936,
+	  false, false,
+	  false, false,
+	  22,
+	  true, 20,
+	  kCjkBreakerGb2312, 18, { "SPRCHI1.SPR", "SPRCHI2.SPR" }, true,
+	  { kLoadListSprites, { "EPICHI1.SPR", "EPICHI2.SPR" }, 0x00486619, 0x00486663, 74 },
+	  { 20, "SUBCHINE.SPR", 10, 430, 1200, 18800,
+	    { 2200, 4400, 5000, 7200, 7800, 9400, 10600, 12600, 14800, 16400 } },
+	  true, 102 },
 };
 
 // The build of an executable of `size` bytes and PE timestamp

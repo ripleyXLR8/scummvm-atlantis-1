@@ -775,6 +775,46 @@ static const CryOmni3DGameDescription gameDescriptions[] = {
 	},
 
 	// Atlantis: The Lost Tales
+	// Traditional Chinese Windows CD (4 discs, July 1998; its own executable,
+	// a 1998 build with Big5 subtitles and Chinese menu sprites, and the
+	// Traditional Chinese BIGCD*.BIG with English voices; atlantis-re
+	// binaries/atlantis-cd-zh-tw-696832.md, decision 0025 B1)
+	{
+		{
+			"atlantis",
+			"",
+			AD_ENTRY2s("atlantis.exe", "f40f1e6a240730d325168f4224da8457", 696832,
+			           "BIGCD1.BIG",  "7f65366bdac230d7735250a22c98d01e", 636420567),
+			Common::ZH_TWN,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
+	// Simplified Chinese Windows CD (4 discs, March 1999; its own executable,
+	// zh-tw's with a GB2312 subtitle breaker, and the Simplified Chinese
+	// bigcd*.big, file names in lower case on these discs; atlantis-re
+	// binaries/atlantis-cd-zh-cn-692736.md, decision 0025 B1)
+	{
+		{
+			"atlantis",
+			"",
+			AD_ENTRY2s("atlantis.exe", "591701abaaaa4efa3751da60a42fb7ad", 692736,
+			           "bigcd1.big",  "920fff5d0adda30f14a5699554b4f529", 636421642),
+			Common::ZH_CHN,
+			Common::kPlatformWindows,
+			ADGF_UNSTABLE,
+			GUI_OPTIONS_ATLANTIS
+		},
+		GType_ATLANTIS,
+		0,
+	},
+
+	// Atlantis: The Lost Tales
 	// French Windows CD, first pressing of May 1997 (its own executable and
 	// the May French BIGCD*.BIG, member names as the reference's; atlantis-re
 	// binaries/atlantis-cd-fr-688640.md)

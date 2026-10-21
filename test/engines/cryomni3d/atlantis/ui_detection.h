@@ -346,6 +346,38 @@ public:
 		checkCdRelease(dir, 687104, Common::IT_ITA, "f085d533d5bae3d9ca0a19e601d1f238", kBigs);
 	}
 
+	// The Traditional Chinese CD (atlantis-cd-zh-tw-696832, decision 0025
+	// B1): its own executable with its own archives (disc 2's named
+	// `bigcd2.big`).  `zhtw` in atlantis_test.cfg names a folder with that
+	// atlantis.exe and the four archives (atlantis-re
+	// binaries/atlantis-cd-zh-tw-696832.md, "Companion files").
+	void test_zhtw_entry_matches_files() {
+		const Common::String dir = AtlantisTest::configValue("zhtw");
+		if (dir.empty()) { TS_WARN("zhtw not configured; skipped"); return; }
+		static const BigFact kBigs[4] = {
+			{ "BIGCD1.BIG", 636420567, "7f65366bdac230d7735250a22c98d01e" },
+			{ "BIGCD2.BIG", 590097429, "c475e07e1ce75451ca3887523d35c67e" },
+			{ "BIGCD3.BIG", 638978343, "5544ba460f0fd229f2ee9a9b7bed03ab" },
+			{ "BIGCD4.BIG", 355901775, "cae2e037324125798fdf0737ef80f920" } };
+		checkCdRelease(dir, 696832, Common::ZH_TWN, "a15cca94ccf1753c4307acf63c87e193", kBigs);
+	}
+
+	// The Simplified Chinese CD (atlantis-cd-zh-cn-692736, decision 0025
+	// B1): its own executable with its own archives, every name in lower
+	// case.  `zhcn` in atlantis_test.cfg names a folder with that
+	// atlantis.exe and the four archives (atlantis-re
+	// binaries/atlantis-cd-zh-cn-692736.md, "Companion files").
+	void test_zhcn_entry_matches_files() {
+		const Common::String dir = AtlantisTest::configValue("zhcn");
+		if (dir.empty()) { TS_WARN("zhcn not configured; skipped"); return; }
+		static const BigFact kBigs[4] = {
+			{ "bigcd1.big", 636421642, "920fff5d0adda30f14a5699554b4f529" },
+			{ "bigcd2.big", 590097772, "b72744c8ae4850b95d67115169212671" },
+			{ "bigcd3.big", 638978643, "6bfba0a0149e745fe0f0e748ee52c54a" },
+			{ "bigcd4.big", 355901870, "d5b0c327b93d774f821ea2fef3a01666" } };
+		checkCdRelease(dir, 692736, Common::ZH_CHN, "c176f535a549baefb980f147ae02fbb1", kBigs);
+	}
+
 	// The French CD's first pressing of May 1997 (atlantis-cd-fr-688640):
 	// its own executable with the May French archives.  `frmay1997` in
 	// atlantis_test.cfg names a folder with that ATLANTIS.EXE and the four
@@ -513,6 +545,8 @@ public:
 		const Common::String sv = AtlantisTest::configValue("sv1997");
 		const Common::String es = AtlantisTest::configValue("es1997");
 		const Common::String it = AtlantisTest::configValue("it1997");
+		const Common::String zhTw = AtlantisTest::configValue("zhtw");
+		const Common::String zhCn = AtlantisTest::configValue("zhcn");
 		struct Case { Common::String exeDir, bigDir; const char *extra; Common::Language lang; uint32 exeSize; };
 		Common::Array<Case> cases;
 		if (AtlantisTest::haveData())
@@ -563,6 +597,16 @@ public:
 				for (uint b = 0; b < ARRAYSIZE(same); b++)
 					if (a != b && !same[a].empty() && !same[b].empty())
 						TSM_ASSERT((same[a] + " + " + same[b]).c_str(), fullMatches(same[a], same[b]).empty());
+		}
+		if (!zhTw.empty())
+			cases.push_back({ zhTw, zhTw, "", Common::ZH_TWN, 696832 });
+		if (!zhCn.empty())
+			cases.push_back({ zhCn, zhCn, "", Common::ZH_CHN, 692736 });
+		// the two Chinese releases: each executable with the other's
+		// archives matches nothing
+		if (!zhTw.empty() && !zhCn.empty()) {
+			TS_ASSERT(fullMatches(zhTw, zhCn).empty());
+			TS_ASSERT(fullMatches(zhCn, zhTw).empty());
 		}
 		if (!patch.empty()) {
 			cases.push_back({ patch, patch, "AT1CDINT patch", Common::EN_ANY, 714240 });

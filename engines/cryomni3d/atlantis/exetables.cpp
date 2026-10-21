@@ -120,6 +120,22 @@ void CryOmni3DEngine_Atlantis::loadAtlantisExeTables() {
 	exe.seek(build.fileOffset(build.creditWidthsVA));
 	exe.read(_creditCharWidths, sizeof(_creditCharWidths));
 	debugC(1, kDebugScript, "loadAtlantisExeTables: credit char-width table loaded");
+
+	// The LOAD list's tables of the sprite-row builds (exe_build.h loadList):
+	// the chapter of each row (atlantis-cd-zh-tw-696832 0x00486619, read @
+	// 0x0041d432 / 0x0041d442) and the width of its title frame (0x00486663,
+	// @ 0x0041d3d6).
+	_loadListChapters.clear();
+	_loadListWidths.clear();
+	if (build.loadList.mode == kLoadListSprites) {
+		_loadListChapters.resize(build.loadList.rows);
+		_loadListWidths.resize(build.loadList.rows);
+		exe.seek(build.fileOffset(build.loadList.chaptersVA));
+		exe.read(_loadListChapters.data(), _loadListChapters.size());
+		exe.seek(build.fileOffset(build.loadList.widthsVA));
+		exe.read(_loadListWidths.data(), _loadListWidths.size());
+		debugC(1, kDebugScript, "loadAtlantisExeTables: %u LOAD list rows", _loadListChapters.size());
+	}
 }
 
 void CryOmni3DEngine_Atlantis::setupObjects() {
