@@ -409,8 +409,12 @@ public:
 		// the space-free runs of the golden: `x` * 75, `x` * 76 + " tail",
 		// "short " + `x` * 80; en-688128's rows as emulated with the zero
 		// tail of a first line after start-up (10 empty rows; 77 | 5; a
-		// fault), sv-688128 faults: the port's cuts (76 and 87 at the end
-		// of the text, decision 0016 row 26; 75, decision 0023 D2)
+		// fault), sv-688128 faults. The port's cuts: the bitmap breaker
+		// (backOnly false) 76; 77 | 5; " short" | 81 (a window with no
+		// space cut at the forward space or at the end of the text,
+		// atlantis-re video-FUN_0042ffe8 Builds, unreachable with the
+		// shipped lines); the Swedish breaker cuts at 75 (decision 0023
+		// D2, decision 0016 row 26)
 		const Common::String run75 = Common::String(75, 'x');
 		const Common::String run81 = Common::String(76, 'x') + " tail";
 		const Common::String run86 = "short " + Common::String(80, 'x');

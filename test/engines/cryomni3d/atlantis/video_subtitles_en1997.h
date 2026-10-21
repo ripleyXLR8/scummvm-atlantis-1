@@ -316,7 +316,8 @@ public:
 
 	// The scan of the shipped dialog lines in the golden ({'lines': 2540,
 	// 'max_rows': 5, 'rows_hist': {...}, 'max_row_len': 81, 'rows_over_79':
-	// 3, ...}): the port's rows give the same statistics.
+	// 2, ...}, each line as the first after start-up): the port's rows give
+	// the same statistics.
 	void test_con_scan_vs_golden() {
 		if (!AtlantisTest::haveData()) { TS_WARN("data not configured; skipped"); return; }
 		Common::Array<Common::String> lines;
