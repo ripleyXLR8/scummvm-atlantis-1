@@ -4,6 +4,12 @@
 
 #include "cryomni3d/atlantis/dialog_view.h"
 #include "cryomni3d/atlantis/omni3d.h"
+#include "cryomni3d/atlantis/con_script.h"
+
+// castConLine is a member of the engine, which cannot be constructed here:
+// the same zero-filled storage as video_dialog.h (which, earlier in the
+// runner, defines it first).
+#include "video_dialog.h"
 
 // video audit — the view behind each dialog line.
 //
@@ -15,7 +21,9 @@
 //
 // Port code exercised directly: DialogView::lineView (dialog_view.h), driven
 // as CryOmni3DEngine_Atlantis::playConSection drives it: the kept angles
-// carry from line to line, the entry angles follow entryUpdate.
+// carry from line to line, the entry angles follow entryUpdate; and, in
+// test_cam_fov_vs_original, CryOmni3DEngine_Atlantis::castConLine
+// (dialog.cpp) and DialogView::LineFov on an Omni3DManagerAtlantis.
 
 class VideoDialogViewTestSuite : public CxxTest::TestSuite {
 	struct L {
@@ -135,8 +143,11 @@ public:
 	// corrected 2026-10-21: this said 75.137 for 901 A, a value the ad hoc
 	// hook carried over from the section run before it); CHAPI003 /40 A
 	// [Lascoyt,269,0,cam2] (521): 20.68, cam 2's;
-	// CHAPI056 /747 A [Seth] (514): 48.0, cam 4's; /747 B [Anna] (663):
-	// 20.68, cam 2's.
+	// CHAPI056 /747 A [Seth] (514) and /747 B [Anna] (663): the cam's FOV
+	// (48.0 for cam 4, 20.68 for cam 2).  Their cams are drawn from the clock
+	// FUN_00451d0c (0x004289d5), which the harness stubs: the golden has
+	// /747 A on cam 4 in two walks and on cam 2 in a third, /747 B the
+	// other way round; what the original decides is a cam FOV or none.
 	void test_cam_fov() {
 		using namespace CryOmni3D::Atlantis;
 		const DialogView::Angles kept = {rad(30), rad(5)};
@@ -153,12 +164,29 @@ public:
 	// sections, atlantis-re tools/emu/video_dialog_line_view.py --all): its
 	// "orig head row R camC clic P fov F" lines give ClicPerso as
 	// 0x00428a9d tests it and the FOV in effect at the call of FUN_0042ee88
-	// (0x00428b1c): the cam's FOV, 75.137 after a per-line reset
-	// (0x00428b4d), or 'entry' (no FUN_0045179a since the walk began).  The
-	// port sets kDialogCamFovDeg[cam - 2] when DialogView::lineView says
-	// camFov (playConSection), else keeps its warp FOV kWarpFovDeg.  A line
-	// is a Seth line when its header starts with "[Seth" (a head line has no
-	// off flag).
+	// (0x00428b1c): the cam's FOV, or 'entry' (no FUN_0045179a since the
+	// walk began).
+	//
+	// Port code run, as playConSection runs it on each dialog line of the
+	// walk: CryOmni3DEngine_Atlantis::castConLine on the line as the port's
+	// ConScript parses its header (ClicPerso carried from the walk's click,
+	// else the speaker lookup resolveSpeakerPersoId; the header flags; the
+	// cam from pickDialCam), DialogView::lineView on its perso, then
+	// DialogView::LineFov on a real Omni3DManagerAtlantis set to kWarpFovDeg
+	// (engine.cpp init): the FOV while the line plays and after it.  The test
+	// itself sets ClicPerso at each walk's start (the golden's "ClicPerso N")
+	// and back to 0 after every line (playConSection, 0x00428b39).
+	//
+	// Checked: the perso equals the original's ClicPerso on every head line;
+	// a line with camN in its header gets the original's cam; the FOV while
+	// the line plays equals the original's, 75.137 for 'entry' (the FOV the
+	// walk started with, [CONFIRMED-STATIC] in the original, atlantis-re
+	// experiment 2026-10-21-05); after the line 75.137, the original's
+	// per-line reset (0x00428b48 / 0x00428b4d).  Not checked here: the cam of
+	// a line without camN, drawn from the clock (FUN_00451d0c) by both, the
+	// harness's being a stub; for those lines LineFov gets the original's
+	// cam.  Nor the port's voice-only case of a missing .syc (the harness
+	// stubs FUN_0042ee88): voiceOnly is the header's off flag.
 	void test_cam_fov_vs_original() {
 		using namespace CryOmni3D::Atlantis;
 		if (AtlantisTest::goldenDir().empty()) {
@@ -167,42 +195,90 @@ public:
 		}
 		Common::Array<Common::String> golden;
 		TS_ASSERT(AtlantisTest::loadGoldenLines("video_dialog_line_view.txt", golden));
+		VideoPeek::Eng *e = VideoPeek::rawEngine();
+		e->_exeBuild = &kAtlantisExeBuilds[0];   // the reference build
+		new (&e->_gameVars) Common::HashMap<Common::String, int>();
+		new (&e->_dialInitData) Common::HashMap<int, VideoPeek::Eng::DialInitEntry>();
+		Omni3DManagerAtlantis omni;
+		omni.init((double)kWarpFovDeg * M_PI / 180.0);
 		const DialogView::Angles kept = {rad(30), rad(5)};
 		const double vmax = rad(50) * 0.9;
-		uint heads = 0, camFovs = 0, resets = 0, entries = 0, bad = 0;
+		uint walks = 0, lines = 0, heads = 0, camFovs = 0, entries = 0, explicitCams = 0, bad = 0;
 		for (uint g = 0; g < golden.size(); g++) {
 			const char *l = golden[g].c_str();
-			const char *h = strstr(l, "orig head row ");
+			if (!strncmp(l, "== ", 3)) {
+				const char *c = strstr(l, "ClicPerso ");
+				TS_ASSERT(c);
+				if (!c)
+					continue;
+				walks++;
+				e->_gameVars["clicperso"] = atoi(c + 10);
+				e->_lastDialCam = 0;
+				continue;
+			}
+			int sec = 0;
+			char letter = 0;
 			const char *b = strchr(l, '[');
+			const char *close = b ? strchr(b, ']') : nullptr;
+			if (sscanf(l, " %d%c [", &sec, &letter) != 2 || !b || !close || !strstr(l, " orig "))
+				continue;
+			lines++;
+			// The header as the port's parser reads it.
+			const Common::String text = "/1\r\n/sel(Vue=1)\r\n" + Common::String(b, close + 1) + " x\r\n/000\r\n";
+			ConScript script;
+			script.parse(text.c_str(), text.size());
+			if (script.sections().empty() || script.sections()[0].items.empty() ||
+			        script.sections()[0].items[0].isSet) {
+				TS_FAIL(Common::String::format("%s: header not parsed", l).c_str());
+				continue;
+			}
+			const ConLine &line = script.sections()[0].items[0].line;
+			const VideoPeek::Eng::ConLineCast cast = e->castConLine(line);
+			e->_lastDialCam = cast.camNum;
+			e->_gameVars["clicperso"] = 0;   // after every line (0x00428b39)
+
+			const char *h = strstr(l, "orig head row ");
 			int row = 0, cam = 0, clic = 0;
 			char fov[16] = "";
-			if (!h || !b || sscanf(h, "orig head row %d cam%d clic %d fov %15s", &row, &cam, &clic, fov) != 4)
+			if (!h || sscanf(h, "orig head row %d cam%d clic %d fov %15s", &row, &cam, &clic, fov) != 4)
 				continue;
 			heads++;
-			const bool seth = strncmp(b, "[Seth", 5) == 0;
-			const bool camFov = DialogView::lineView(kept, seth, clic, false, 0, 0, vmax).camFov;
-			const double port = camFov ? kDialogCamFovDeg[cam - 2] : kWarpFovDeg;
-			bool ok;
+			bool ok = cast.persoId == clic && !cast.offFlag;
+			int fovCam = cam;
+			if (cast.explicitCam) {
+				explicitCams++;
+				ok = ok && cast.camNum == cam;
+				fovCam = cast.camNum;
+			}
+			const DialogView::Line view = DialogView::lineView(kept, cast.sethLine && !cast.offFlag,
+			    cast.persoId, line.hasAngle, rad(line.angleX), rad(line.angleY), vmax);
+			double during;
+			{
+				const DialogView::LineFov lineFov(omni, true, view, cast.offFlag, fovCam);
+				during = omni.getHFov() * 180.0 / M_PI;
+			}
+			const double after = omni.getHFov() * 180.0 / M_PI;
+			double orig;
 			if (!strcmp(fov, "entry")) {
 				entries++;
-				ok = !camFov;   // neither sets a FOV for the line
+				orig = kWarpFovDeg;   // the walk's entry FOV (static, see above)
 			} else {
-				const double orig = atof(fov);
-				if (fabs(orig - kWarpFovDeg) < 0.0005)
-					resets++;
-				else
-					camFovs++;
-				ok = fabs(orig - port) < 0.0005;
+				camFovs++;
+				orig = atof(fov);
 			}
+			ok = ok && fabs(during - orig) < 0.0005 && fabs(after - kWarpFovDeg) < 0.0005;
 			if (!ok) {
 				bad++;
-				TS_WARN(Common::String::format("%s: port FOV %.3f", l, port).c_str());
+				TS_WARN(Common::String::format("%s: port perso %d cam %d, FOV %.3f at cam %d, after %.3f",
+				        l, cast.persoId, cast.camNum, during, fovCam, after).c_str());
 			}
 		}
+		TS_ASSERT_EQUALS(walks, 926u);
+		TS_ASSERT_EQUALS(lines, 2373u);
 		TS_ASSERT_EQUALS(heads, 2048u);
 		TS_ASSERT_EQUALS(camFovs, 2044u);
-		TS_ASSERT_EQUALS(resets, 0u);
 		TS_ASSERT_EQUALS(entries, 4u);   // CHAPI056 /744 A, CHAPI065 /901 A, CHAPI068 /998 A, CHAPI069 /1019 A
+		TS_ASSERT_EQUALS(explicitCams, 248u);
 		TS_ASSERT_EQUALS(bad, 0u);
 	}
 };

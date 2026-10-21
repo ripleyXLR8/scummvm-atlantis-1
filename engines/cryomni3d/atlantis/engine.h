@@ -464,6 +464,20 @@ private:
 	// camN, else randomise like the original (avoiding the previous cam and any
 	// cam whose UBB resource is missing).  See atlantis.exe FUN_0042844c.
 	int pickDialCam(int persoId, int explicitCam, bool sethLine = false, bool offLine = false);
+	// The speaker, header flags and camera of one dialog line, as
+	// FUN_0042844c takes them (0x00428689..0x004289ea): the perso is
+	// ClicPerso, or the speaker lookup (written to ClicPerso) when ClicPerso
+	// is 0; the header tail flags; the cam from pickDialCam.  Called by
+	// playConSection for every dialog line.
+	struct ConLineCast {
+		int persoId;
+		bool sethLine;     // the speaker starts with "Seth"
+		bool offFlag;      // "off", "off0" or "off1" before the ']'
+		bool off0, off1;
+		int explicitCam;   // 0, or 2..5 from "camN" / "CamN"
+		int camNum;        // 2..5
+	};
+	ConLineCast castConLine(const ConLine &line);
 	// Play one dialog line: stream its UBB talking-head video over the warp
 	// panorama (or just the panorama when off-camera), play the matching APC
 	// speech track and overlay the subtitle.  `spfBaseName` names the per-cam

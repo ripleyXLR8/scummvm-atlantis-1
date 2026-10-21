@@ -26,6 +26,7 @@
 #include "common/str.h"
 
 #include "cryomni3d/atlantis/apc_stream.h"
+#include "cryomni3d/atlantis/omni3d.h"
 
 namespace CryOmni3D {
 namespace Atlantis {
@@ -51,7 +52,9 @@ struct Line {
 	Angles kept;          // 0x00bcb59c / 0x00bcb598 during and after the line
 	bool entryUpdate;     // the section-end angles become `kept` before the line
 	bool camFov;          // the camera's FOV is set (FUN_0045179a(FOV[cam])); else
-	                      // the FOV of the last reset (75.137) stays
+	                      // no FOV call: the FOV in effect stays (for the four
+	                      // shipped lines, each the first of its walk, the
+	                      // FOV the walk started with; see LineFov)
 };
 
 // What FUN_0042844c carries along one walk, through /go targets too
@@ -123,6 +126,41 @@ inline Line lineView(const Angles &kept, bool sethPath, int clicPerso,
 	}
 	return l;
 }
+
+// The panorama's FOV over one talking-head line, as playConSection plays
+// it: the cam's (kDialogCamFovDeg, the table 0x00496080) when the line sets
+// one (Line::camFov: FUN_0042844c @ 0x00428a14 / 0x00428ada), not for a
+// voice-only line (FUN_00430258 draws at 75.137 whatever was set, 0x0043044c;
+// off0 / off1 do not redraw the view) nor without a panorama; else the FOV
+// in effect stays.  The original resets 75.137 after every line
+// (0x00428b43..0x00428b4d); the port puts back the FOV it had before the
+// line, which is kWarpFovDeg 75.137 (engine.cpp init; every other FOV change
+// of the port is put back the same way).  For the four shipped lines with no
+// FOV call (CHAPI056 /744 A, CHAPI065 /901 A, CHAPI068 /998 A, CHAPI069
+// /1019 A, each the first line of its walk) the original's FOV is the one the
+// walk started with, 75.137 [CONFIRMED-STATIC] (atlantis-re experiment
+// 2026-10-21-05: FUN_00423ad8 0x00423ed4 -> FUN_0044a424 0x0044a706, or a
+// previous walk's 0x00428cc2).
+class LineFov {
+public:
+	LineFov(Omni3DManagerAtlantis &omni, bool warpLoaded, const Line &l, bool voiceOnly, int camNum)
+	    : _omni(omni), _saved(omni.getHFov()), _set(warpLoaded && !voiceOnly && l.camFov) {
+		if (_set)
+			_omni.setHFov((double)kDialogCamFovDeg[camNum - 2] * M_PI / 180.0);
+	}
+	~LineFov() {
+		if (_set)
+			_omni.setHFov(_saved);
+	}
+
+private:
+	LineFov(const LineFov &);
+	LineFov &operator=(const LineFov &);
+
+	Omni3DManagerAtlantis &_omni;
+	const double _saved;
+	const bool _set;
+};
 
 // A talking-head line (not voice-only) whose UBB does not open.  A row with
 // no INITDIAL record has an empty UBB name, so FUN_0042ee88 opens

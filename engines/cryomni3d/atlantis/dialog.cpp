@@ -193,6 +193,42 @@ int CryOmni3DEngine_Atlantis::pickDialCam(int persoId, int explicitCam, bool set
 	return cam;
 }
 
+CryOmni3DEngine_Atlantis::ConLineCast CryOmni3DEngine_Atlantis::castConLine(const ConLine &line) {
+	ConLineCast c;
+	// FUN_00428f58 runs only when ClicPerso is 0 (0x00428689) and writes
+	// its result there; the camera choice then reads ClicPerso (0x004287bf).
+	// playConSection sets it back to 0 after every line (0x00428b39).
+	c.persoId = _gameVars.getValOrDefault("clicperso", 0);
+	if (c.persoId == 0) {
+		c.persoId = resolveSpeakerPersoId(line.speaker);
+		_gameVars["clicperso"] = c.persoId;
+	}
+	// The header is tested at its end, just before ']' (FUN_0042844c @
+	// 0x004286a6..0x0042877e), case-sensitively: "off", "off0", "off1"
+	// (no camera choice), "cam"/"Cam" + one character (explicit camera,
+	// atoi of that character, 2 when out of 2..5).  "Seth" at the start
+	// selects the single-draw path (0x00428608).
+	const Common::String &hdrTail = line.params.empty() ? line.speaker : line.params;
+	const uint tl = hdrTail.size();
+	auto tailIs = [&](const char *lit, uint back) {
+		uint n = strlen(lit);
+		return tl >= back && memcmp(hdrTail.c_str() + tl - back, lit, n) == 0;
+	};
+	c.explicitCam = 0;
+	if (tailIs("cam", 4) || tailIs("Cam", 4)) {
+		const char d = hdrTail[tl - 1];
+		c.explicitCam = (d >= '0' && d <= '9') ? d - '0' : 0;
+		if (c.explicitCam < 2 || c.explicitCam > 5)
+			c.explicitCam = 2;
+	}
+	c.sethLine = line.speaker.hasPrefix("Seth");
+	c.off0 = tailIs("off0", 4);
+	c.off1 = tailIs("off1", 4);
+	c.offFlag = tailIs("off", 3) || c.off0 || c.off1;
+	c.camNum = pickDialCam(c.persoId, c.explicitCam, c.sethLine, c.offFlag);
+	return c;
+}
+
 void CryOmni3DEngine_Atlantis::drawGivenObject(Graphics::Surface &dst) const {
 	if (_dialogGivenObjSprite < 0 || (uint)_dialogGivenObjSprite >= _objSprites.size())
 		return;
@@ -430,35 +466,13 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 		// FUN_00427420 @ 0x00427707..0x00427722): the 1997 breakers read it.
 		_subtitleText.store(conLineBufferText(item.line.raw));
 
-		// Dialog line — resolve the on-screen speaker and the talking-head shot.
-		// FUN_00428f58 runs only when ClicPerso is 0 (0x00428689) and writes
-		// its result there; the camera choice then reads ClicPerso (0x004287bf).
-		int persoId = _gameVars.getValOrDefault("clicperso", 0);
-		if (persoId == 0) {
-			persoId = resolveSpeakerPersoId(item.line.speaker);
-			_gameVars["clicperso"] = persoId;
-		}
-		// The header is tested at its end, just before ']' (FUN_0042844c @
-		// 0x004286a6..0x0042877e), case-sensitively: "off", "off0", "off1"
-		// (no camera choice), "cam"/"Cam" + one character (explicit camera,
-		// atoi of that character, 2 when out of 2..5).  "Seth" at the start
-		// selects the single-draw path (0x00428608).
-		const Common::String &hdrTail = item.line.params.empty() ? item.line.speaker : item.line.params;
-		const uint tl = hdrTail.size();
-		auto tailIs = [&](const char *lit, uint back) {
-			uint n = strlen(lit);
-			return tl >= back && memcmp(hdrTail.c_str() + tl - back, lit, n) == 0;
-		};
-		int explicitCam = 0;
-		if (tailIs("cam", 4) || tailIs("Cam", 4)) {
-			const char d = hdrTail[tl - 1];
-			explicitCam = (d >= '0' && d <= '9') ? d - '0' : 0;
-			if (explicitCam < 2 || explicitCam > 5)
-				explicitCam = 2;
-		}
-		const bool sethLine = item.line.speaker.hasPrefix("Seth");
-		const bool offFlag = tailIs("off", 3) || tailIs("off0", 4) || tailIs("off1", 4);
-		int camNum = pickDialCam(persoId, explicitCam, sethLine, offFlag);
+		// Dialog line — resolve the on-screen speaker and the talking-head
+		// shot (castConLine).
+		const ConLineCast cast = castConLine(item.line);
+		const int persoId = cast.persoId;
+		const bool sethLine = cast.sethLine;
+		const bool offFlag = cast.offFlag;
+		const int camNum = cast.camNum;
 
 		// Off-camera variants (off / off0 / off1) play as voiceover: no head
 		// shot, view at the kept angles (below).  "off" (FUN_00430258)
@@ -476,8 +490,8 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 		// (_dialShowScreenBuffer; atlantis-re tools/emu/video_dialog_off1.py).
 		// The reference's CON files have no off1 header; the GOG.com
 		// release's have 30 (CHAPI031, 036, 048, 058, 062).
-		const bool off1 = tailIs("off1", 4);
-		_dialKeepScreen = tailIs("off0", 4) || off1;
+		const bool off1 = cast.off1;
+		_dialKeepScreen = cast.off0 || off1;
 
 		Common::String vid;
 		Common::String spfBase;
@@ -577,17 +591,15 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 			}
 			lineIdx++;
 		} else {
-			// The camera's FOV (kDialogCamFovDeg) is set only on the Seth path
-			// (0x004289ff..0x00428a14) and for ClicPerso >= 0x200
-			// (0x00428a9d..0x00428ada); a talking head with ClicPerso below
-			// 0x200 (CHAPI056 /744 A [Anna], ClicPerso 329) keeps the FOV of
-			// the last reset, 75.137 (DialogView::Line::camFov).  The
+			// The camera's FOV over the line (DialogView::LineFov): set only
+			// on the Seth path (0x004289ff..0x00428a14) and for ClicPerso >=
+			// 0x200 (0x00428a9d..0x00428ada); a talking head with ClicPerso
+			// below 0x200 (CHAPI056 /744 A [Anna], ClicPerso 329; the first
+			// line of its walk) sets none and keeps the FOV the walk started
+			// with, 75.137 (atlantis-re experiment 2026-10-21-05).  The
 			// voice-only players draw at 75.137 whatever was set (FUN_00430258
 			// @ 0x0043044c) or do not redraw the view (off0, off1).
-			const double savedHFov = _omni3dMan.getHFov();
-			const bool fovChanged = _warpLoaded && !voiceOnly && view.camFov;
-			if (fovChanged)
-				_omni3dMan.setHFov((double)kDialogCamFovDeg[camNum - 2] * M_PI / 180.0);
+			const DialogView::LineFov fov(_omni3dMan, _warpLoaded, view, voiceOnly, camNum);
 			// off1: FUN_00430884 shows the screen buffer before the subtitle,
 			// once the voice has loaded (playSingleConLine, DialogView::loadLineVoice).
 			_dialShowScreenBuffer = off1;
@@ -597,8 +609,6 @@ void CryOmni3DEngine_Atlantis::playConSection(ConSection &sec, const DialogView:
 			                  /*interactiveDialog=*/sec.isCon,
 			                  (!voiceOnly && !vid.empty()) ? dialRow : -1);
 			_dialShowScreenBuffer = false;
-			if (fovChanged)
-				_omni3dMan.setHFov(savedHFov);
 		}
 		_dialVoiceOff = false;
 		_gameVars["clicperso"] = 0;   // after every line (0x00428b39)
