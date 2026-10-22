@@ -177,8 +177,9 @@ void CryOmni3DEngine_Atlantis::subtitleRows(const Common::String &text, Common::
 		// (zh-tw's calls @ 0x0042e747, 0x0042f897, 0x0042fc08, 0x0042fea4 and
 		// the game over's @ 0x004262f2): on the text buffer as the dialog
 		// code and the game over fill it (the byte after ']', the text and
-		// its final blanks); zh-cn's row after an ideographic space in step
-		// with the minor bug fixes (decision 0025 D2)
+		// its final blanks); with the minor bug fixes, zh-cn's row after an
+		// ideographic space in step (decision 0025 D2) and its marks read at
+		// character boundaries only (decision 0016 row 39)
 		splitSubtitleCjk(_subtitleText.text(), rows, _exeBuild->cjkBreaker,
 		                 enhancementEnabled(kEnhMinorBugFixes));
 	else if (_exeBuild->bitmapSubtitles)
