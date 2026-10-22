@@ -278,8 +278,24 @@ void splitSubtitleCjk(const Common::String &buf, Common::Array<Common::String> &
 		// mark gives rows of 0 or 1 byte and left one less each, until the
 		// rest is the last row; past 8 rows the original writes beyond its
 		// row buffers, effects [UNKNOWN]; no shipped text does it).
+		//
+		// With the minor bug fixes, zh-cn reads its marks at character
+		// boundaries only, counted from the row start s (lead bytes 0x81..0xfe
+		// take two bytes): the original tracks no lead bytes and takes a mark
+		// read across two characters (A3 A1 from the trail byte of `。` and
+		// the lead byte of `　`, read as `！`; A3 BF read as `？`), cutting
+		// inside a character (decision 0016 row 39, the owner's answer of
+		// 2026-10-21 to decision 0025).
+		const bool boundariesOnly = minorBugFixes && breaker == kCjkBreakerGb2312;
+		auto isBoundary = [&](int pos) {
+			int c = s;
+			while (c < pos)
+				c += at(c) >= 0x81 && at(c) <= 0xfe ? 2 : 1;
+			return c == pos;
+		};
 		int k = 1;
-		while (k <= kWindow && !cjkCutAt(breaker, at(e - k), at(e - k + 1)))
+		while (k <= kWindow &&
+		        !(cjkCutAt(breaker, at(e - k), at(e - k + 1)) && (!boundariesOnly || isBoundary(e - k))))
 			k++;
 		int count, skip = 2;
 		if (k <= kWindow) {
@@ -288,7 +304,14 @@ void splitSubtitleCjk(const Common::String &buf, Common::Array<Common::String> &
 			// (s = e - 74), but the byte after the mark and its trail byte in
 			// the later ones (s = e - 73).  add [ebp-0x20] = 0, skip
 			// [ebp-0x1c] = 2 (@ 0x0042f59f; zh-cn @ 0x0042f58b).
-			const byte c0 = at(s + kWindow - k), c1 = at(s + kWindow - 1 - k);
+			byte c0 = at(s + kWindow - k), c1 = at(s + kWindow - 1 - k);
+			// With the minor bug fixes (zh-cn), only at a character boundary
+			// too: in the later rows the pair is the mark's trail byte and the
+			// byte after it, never one, so add stays 0 and the row ends after
+			// the mark (the original's add 1 there, on `。` then `　` read as
+			// A3 A1, took the space's lead byte into the row; CHAPI062).
+			if (boundariesOnly && !isBoundary(s + kWindow - 1 - k))
+				c0 = c1 = 0;
 			int add = 0;
 			if (breaker == kCjkBreakerBig5) {
 				// 0x0042f5ad..0x0042f615: add 1 when c0 is 41 43 46 48 49 4B.
@@ -306,12 +329,12 @@ void splitSubtitleCjk(const Common::String &buf, Common::Array<Common::String> &
 				// that row reads its pairs one byte out of step (72 rows of
 				// 50 shipped lines, atlantis-re
 				// evidence/golden/video_subtitles_zh_cn.txt).  With the minor
-				// bug fixes the skip is the other marks' 2 (decision 0025 D2):
-				// the 27 rows started on a space mended; the other 45 follow
-				// a mark read across two characters (22 cuts: 20 the trail
-				// byte of `。` and the lead byte of `　`, A3 A1, read as `！`;
-				// 2 A3 BF read as `？`), as the original with the skip patched
-				// to 2 (the golden's scan).
+				// bug fixes the skip is the other marks' 2 (decision 0025 D2),
+				// and with the marks read at character boundaries only (above)
+				// every row decodes, as the original with the skip patched to
+				// 2 and both pair checks hooked to boundaries (the golden's
+				// third scan; with the skip alone 45 rows of 23 lines stayed
+				// out of step).
 				if (c1 == 0xa1 && c0 == 0xa1) {
 					add = -1;
 					skip = minorBugFixes ? 2 : 1;

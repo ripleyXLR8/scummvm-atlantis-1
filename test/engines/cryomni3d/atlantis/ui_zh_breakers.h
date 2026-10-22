@@ -11,8 +11,11 @@
 //     row, the rows that do not decode in the code page (zh-cn's rows
 //     started one byte out of step after an ideographic space), the lines
 //     of 4 rows or more, and the MD5 of every line's rows;
-//   - zh-cn with the minor bug fixes (D2) against the original with its
-//     skip after an ideographic space patched to 2 (@ 0x0042f5f2);
+//   - zh-cn with the minor bug fixes (D2 and decision 0016 row 39) against
+//     the original with its skip after an ideographic space patched to 2
+//     (@ 0x0042f5f2) and its two pair checks hooked to read marks at
+//     character boundaries only (@ 0x0042f510, 0x0042f599): every row
+//     decodes;
 //   - zh-tw's line with no mark in its first window (CHAPI084, 80 bytes),
 //     where the original's scan does not return: the port's cut at the
 //     last character boundary within 75 bytes (D3).
@@ -375,7 +378,8 @@ public:
 	// Every dialog line of each release, broken as the engine breaks it,
 	// against the golden's scan of the original (and, for zh-cn under the
 	// minor bug fixes, of the original with the skip after A1 A1 patched to
-	// 2); zh-tw's runaway line cut by D3; every line the port's CON parser
+	// 2 and its marks read at character boundaries only, where every row
+	// decodes); zh-tw's runaway line cut by D3; every line the port's CON parser
 	// hands to the dialog is one of the lines scanned.
 	void test_scan_vs_golden() {
 		using namespace UiZhBreakers;
@@ -422,11 +426,14 @@ public:
 				TS_ASSERT_EQUALS(sc.faults, (int)goldenFaults);
 				if (k == 1 && fixes) {
 					const Common::String want = Common::String::format(
-					        "# skip after A1 A1 patched to 2 (@ 0x0042f5f2): rows md5 %s; rows that do not "
-					        "decode as gbk: %d in %d lines", sc.md5.c_str(), sc.broken, sc.linesBroken);
+					        "# skip 2 and marks read at character boundaries only (hooks @ 0x0042f510, "
+					        "0x0042f599): rows md5 %s; rows that do not decode as gbk: %d in %d lines",
+					        sc.md5.c_str(), sc.broken, sc.linesBroken);
 					TSM_ASSERT(want.c_str(), lineWithPrefix(golden, want));
-					TS_ASSERT_EQUALS(sc.broken, 45);
-					TS_ASSERT_EQUALS(sc.linesBroken, 23);
+					TS_ASSERT_EQUALS(sc.broken, 0);
+					TS_ASSERT_EQUALS(sc.linesBroken, 0);
+					TS_ASSERT_EQUALS(sc.over8, 0);
+					TS_ASSERT_EQUALS(sc.longest, 75);
 					continue;
 				}
 				// the counts line, the md5 line

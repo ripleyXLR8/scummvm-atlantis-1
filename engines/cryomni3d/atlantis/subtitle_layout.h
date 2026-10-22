@@ -119,8 +119,10 @@ void splitSubtitleBitmap(const Common::String &text, Common::Array<Common::Strin
 // otherwise each 75-byte window is cut backwards after a double-byte
 // punctuation mark (see the code for the original's arithmetic, kept as it
 // is, and zh-cn's row started one byte out of step after an ideographic
-// space).  minorBugFixes (kEnhMinorBugFixes, decision 0025 D2): zh-cn's row
-// after an ideographic space starts past the whole space.  A window with no
+// space).  minorBugFixes (kEnhMinorBugFixes, decision 0025 D2 and decision
+// 0016 row 39): zh-cn's row after an ideographic space starts past the whole
+// space, and zh-cn reads its marks at character boundaries only, so every
+// row decodes.  A window with no
 // mark within 75 bytes is cut at the last character boundary (decision 0025
 // D3, a deviation: the original's scan runs on below the buffer).
 void splitSubtitleCjk(const Common::String &buf, Common::Array<Common::String> &lines, CjkBreaker breaker,
